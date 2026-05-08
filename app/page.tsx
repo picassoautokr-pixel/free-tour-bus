@@ -32,6 +32,7 @@ export default function Home() {
   const [organizationType, setOrganizationType] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const [additionalNotes, setAdditionalNotes] = useState("");
 
   const addStopover = () => {
     setStopovers((currentStopovers) =>
@@ -297,6 +298,22 @@ export default function Home() {
                 ※ 허위 자료 제출 시 지원이 제한될 수 있습니다.
               </p>
             </div>
+          </div>
+
+          <div className="mt-9 border-t border-slate-100 pt-8">
+            <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+              기타 요청사항
+            </h2>
+            <textarea
+              className="mt-5 h-[120px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+              placeholder="추가 요청사항이나 전달 내용을 입력해주세요."
+              value={additionalNotes}
+              onChange={(event) => setAdditionalNotes(event.target.value)}
+              rows={4}
+            />
+            <p className="mt-3 px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+              ※ 선택 입력 항목입니다.
+            </p>
           </div>
         </div>
       </section>
