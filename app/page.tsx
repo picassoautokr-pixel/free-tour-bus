@@ -1,51 +1,52 @@
 export default function Home() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-sky-50 pb-24">
-      <header className="flex h-[76px] items-center justify-between rounded-b-[2rem] bg-blue-600 px-6 text-white shadow-lg shadow-blue-900/20">
-        <h1 className="rounded-xl bg-white px-4 py-2 text-lg font-black tracking-tight text-blue-700 shadow-sm">
+    <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
+      <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-blue-600 to-blue-500 px-6 text-white shadow-lg shadow-blue-900/20">
+        <h1 className="rounded-2xl bg-white px-4 py-2.5 text-lg font-black tracking-[-0.04em] text-blue-700 shadow-sm ring-1 ring-white/60">
           무료관광버스
         </h1>
         <button
           type="button"
-          className="text-sm font-medium text-white/90 underline-offset-4 hover:underline"
+          className="rounded-full px-3 py-2 text-sm font-semibold text-white/90 transition hover:bg-white/10 hover:text-white"
         >
           로그인
         </button>
       </header>
 
-      <section className="bg-sky-50 px-6 pb-20 pt-12 text-center">
-        <p className="text-[2.05rem] font-black leading-[1.25] tracking-[-0.055em] text-slate-950">
+      <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">
+        <div className="pointer-events-none absolute left-1/2 top-8 h-44 w-44 -translate-x-1/2 rounded-full bg-white/70 blur-3xl" />
+        <p className="relative text-[2.12rem] font-black leading-[1.18] tracking-[-0.06em] text-slate-950">
           관광버스도 무료!
           <br />
           재테크 정보도 무료!
         </p>
-        <p className="mt-6 text-base font-medium leading-8 tracking-[-0.03em] text-slate-500">
+        <p className="relative mt-6 text-[1.03rem] font-semibold leading-8 tracking-[-0.035em] text-slate-500">
           열심히 일한 당신은 전액 무료~
           <br />
           신청만 하면 지원 가능~
         </p>
       </section>
 
-      <section className="-mt-10 px-5">
-        <div className="flex min-h-40 items-center justify-center rounded-[1.75rem] bg-white px-6 py-10 shadow-xl shadow-cyan-900/15 ring-1 ring-slate-100">
-          <p className="text-lg font-bold tracking-[-0.03em] text-slate-700">
+      <section className="-mt-12 px-5">
+        <div className="flex min-h-44 items-center justify-center rounded-[2rem] bg-white px-7 py-12 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
+          <p className="text-lg font-black tracking-[-0.04em] text-slate-700">
             신청폼 영역
           </p>
         </div>
       </section>
 
-      <section className="mt-9 px-5">
-        <div className="rounded-[1.5rem] bg-white p-6 shadow-lg shadow-cyan-900/10">
-          <h2 className="mb-5 flex items-center gap-2 text-xl font-black tracking-[-0.04em] text-slate-950">
+      <section className="mt-8 px-5">
+        <div className="rounded-[1.75rem] bg-white p-6 shadow-[0_14px_35px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
+          <h2 className="mb-5 flex items-center gap-2.5 text-xl font-black tracking-[-0.045em] text-slate-950">
             <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-blue-500 text-xs font-black text-blue-500">
               !
             </span>
             신청 조건
           </h2>
 
-          <div className="space-y-4">
-            <div className="rounded-xl bg-blue-50 p-5">
-              <p className="flex items-center gap-2 text-lg font-black tracking-[-0.04em] text-slate-950">
+          <div className="space-y-3.5">
+            <div className="rounded-2xl bg-blue-50 p-5 ring-1 ring-blue-100/60">
+              <p className="flex items-center gap-2.5 text-lg font-black tracking-[-0.045em] text-slate-950">
                 <svg
                   aria-hidden="true"
                   className="h-5 w-5 text-blue-500"
@@ -62,11 +63,11 @@ export default function Home() {
                 </svg>
                 단체 인원
               </p>
-              <p className="mt-3 text-sm font-medium text-slate-500">10인 이상</p>
+              <p className="mt-3 text-sm font-semibold text-slate-500">10인 이상</p>
             </div>
 
-            <div className="rounded-xl bg-emerald-50 p-5">
-              <p className="flex items-center gap-2 text-lg font-black tracking-[-0.04em] text-slate-950">
+            <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-100/70">
+              <p className="flex items-center gap-2.5 text-lg font-black tracking-[-0.045em] text-slate-950">
                 <svg
                   aria-hidden="true"
                   className="h-5 w-5 text-emerald-500"
@@ -83,25 +84,25 @@ export default function Home() {
                 </svg>
                 지원 대상
               </p>
-              <p className="mt-3 text-sm font-medium text-slate-500">
+              <p className="mt-3 text-sm font-semibold text-slate-500">
                 직장 및 소속이 있는 단체
               </p>
             </div>
 
-            <div className="rounded-xl bg-blue-50 p-5">
-              <p className="flex items-center gap-2 text-lg font-black tracking-[-0.04em] text-slate-950">
+            <div className="rounded-2xl bg-blue-50 p-5 ring-1 ring-blue-100/60">
+              <p className="flex items-center gap-2.5 text-lg font-black tracking-[-0.045em] text-slate-950">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-blue-500 text-xs font-black text-blue-500">
                   !
                 </span>
                 지원 제외
               </p>
-              <p className="mt-3 text-sm font-medium text-slate-500">
+              <p className="mt-3 text-sm font-semibold text-slate-500">
                 금융업, 일반 동호회
               </p>
             </div>
           </div>
 
-          <p className="mt-5 text-center text-sm leading-6 text-slate-500">
+          <p className="mt-5 text-center text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
             ※ 신청 후 관리자 심사를 거쳐 영업일 기준 3-5일 이내 결과를
             통보해드립니다
           </p>
@@ -110,7 +111,7 @@ export default function Home() {
 
       <button
         type="button"
-        className="fixed bottom-6 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-50 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-xl shadow-yellow-900/25 transition hover:-translate-y-0.5 hover:bg-yellow-200 active:translate-y-0"
+        className="fixed bottom-6 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-50 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(161,98,7,0.35)] ring-1 ring-yellow-200 transition hover:-translate-y-1 hover:bg-yellow-200 active:translate-y-0"
       >
         <svg
           aria-hidden="true"
