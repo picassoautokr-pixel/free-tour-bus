@@ -10,6 +10,16 @@ const applicationTypes = [
 
 const tripTypes = ["왕복", "편도"];
 const busGrades = ["일반", "프리미엄"];
+const organizationTypes = [
+  "회사",
+  "학교",
+  "교회",
+  "공공기관",
+  "협회",
+  "기타 소속단체",
+  "금융업",
+  "일반 동호회",
+];
 
 export default function Home() {
   const [selectedApplicationType, setSelectedApplicationType] = useState(
@@ -18,6 +28,10 @@ export default function Home() {
   const [selectedTripType, setSelectedTripType] = useState(tripTypes[0]);
   const [selectedBusGrade, setSelectedBusGrade] = useState(busGrades[0]);
   const [stopovers, setStopovers] = useState<string[]>([]);
+  const [applicantName, setApplicantName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
+  const [organizationType, setOrganizationType] = useState("");
 
   const addStopover = () => {
     setStopovers((currentStopovers) =>
@@ -194,6 +208,51 @@ export default function Home() {
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
                 placeholder="인원수 입력"
               />
+            </div>
+          </div>
+
+          <div className="mt-9 border-t border-slate-100 pt-8">
+            <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+              신청자 정보
+            </h2>
+
+            <div className="mt-5 space-y-3.5">
+              <input
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                placeholder="신청자 이름 입력"
+                value={applicantName}
+                onChange={(event) => setApplicantName(event.target.value)}
+              />
+              <input
+                type="tel"
+                inputMode="numeric"
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                placeholder="010-1234-5678"
+                value={phoneNumber}
+                onChange={(event) => setPhoneNumber(event.target.value)}
+              />
+              <input
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                placeholder="단체명 입력"
+                value={organizationName}
+                onChange={(event) => setOrganizationName(event.target.value)}
+              />
+              <select
+                className={`h-14 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none focus:border-blue-500 ${
+                  organizationType ? "text-slate-700" : "text-slate-400"
+                }`}
+                value={organizationType}
+                onChange={(event) => setOrganizationType(event.target.value)}
+              >
+                <option value="" disabled>
+                  단체 유형 선택
+                </option>
+                {organizationTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
