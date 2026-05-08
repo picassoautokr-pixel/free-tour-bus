@@ -1,4 +1,18 @@
+"use client";
+
+import { useState } from "react";
+
+const applicationTypes = [
+  "기계약 전세버스 지원금 신청",
+  "전세버스 신규 신청",
+  "파트너 소개 신청",
+];
+
 export default function Home() {
+  const [selectedApplicationType, setSelectedApplicationType] = useState(
+    applicationTypes[0],
+  );
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
       <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-blue-600 to-blue-500 px-6 text-white shadow-lg shadow-blue-900/20">
@@ -28,8 +42,34 @@ export default function Home() {
       </section>
 
       <section className="-mt-12 px-5">
-        <div className="flex min-h-44 items-center justify-center rounded-[2rem] bg-white px-7 py-12 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
-          <p className="text-lg font-black tracking-[-0.04em] text-slate-700">
+        <div className="rounded-[2rem] bg-white px-6 py-7 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
+          <div>
+            <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+              신청 유형
+            </h2>
+            <div className="mt-4 grid gap-3">
+              {applicationTypes.map((applicationType) => {
+                const isSelected = selectedApplicationType === applicationType;
+
+                return (
+                  <button
+                    key={applicationType}
+                    type="button"
+                    onClick={() => setSelectedApplicationType(applicationType)}
+                    className={`min-h-14 rounded-2xl border px-4 text-left text-base font-extrabold tracking-[-0.035em] transition ${
+                      isSelected
+                        ? "border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-950/20"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    {applicationType}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="mt-8 flex min-h-28 items-center justify-center rounded-2xl bg-slate-50 text-lg font-black tracking-[-0.04em] text-slate-700">
             신청폼 영역
           </p>
         </div>
