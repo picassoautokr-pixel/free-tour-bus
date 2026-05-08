@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const applicationTypes = [
   "기계약 전세버스 지원금 신청",
@@ -30,6 +30,8 @@ export default function Home() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [organizationType, setOrganizationType] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const addStopover = () => {
     setStopovers((currentStopovers) =>
@@ -253,6 +255,46 @@ export default function Home() {
               </select>
               <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
                 ※ 일부 업종 및 일반 동호회는 지원 대상에서 제외될 수 있습니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-9 border-t border-slate-100 pt-8">
+            <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+              증빙자료 첨부
+            </h2>
+            <p className="mt-3 text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
+              전세버스 견적서 또는 결제 영수증을 첨부해주세요.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.hwp"
+                className="sr-only"
+                onChange={(event) =>
+                  setAttachmentFile(event.target.files?.[0] ?? null)
+                }
+              />
+              <div className="flex min-h-[4.25rem] items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <button
+                  type="button"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  className="shrink-0 rounded-full bg-blue-50 px-4 py-2.5 text-sm font-bold tracking-[-0.03em] text-blue-700 ring-1 ring-blue-100 transition hover:bg-blue-100"
+                >
+                  파일 선택
+                </button>
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[-0.02em] text-slate-700">
+                  {attachmentFile ? attachmentFile.name : "선택된 파일 없음"}
+                </p>
+              </div>
+
+              <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+                PDF, JPG, PNG, DOC, HWP 파일 지원
+              </p>
+              <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+                ※ 허위 자료 제출 시 지원이 제한될 수 있습니다.
               </p>
             </div>
           </div>
