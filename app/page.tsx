@@ -13,13 +13,13 @@ export default function Home() {
         </button>
       </header>
 
-      <section className="bg-gradient-to-b from-sky-50 to-cyan-50 px-6 pb-20 pt-10 text-center">
-        <p className="text-[2rem] font-black leading-[1.18] tracking-[-0.05em] text-slate-950">
+      <section className="bg-sky-50 px-6 pb-20 pt-12 text-center">
+        <p className="text-[2.05rem] font-black leading-[1.25] tracking-[-0.055em] text-slate-950">
           관광버스도 무료!
           <br />
           재테크 정보도 무료!
         </p>
-        <p className="mt-6 text-base font-medium leading-7 tracking-[-0.03em] text-slate-500">
+        <p className="mt-6 text-base font-medium leading-8 tracking-[-0.03em] text-slate-500">
           열심히 일한 당신은 전액 무료~
           <br />
           신청만 하면 지원 가능~
