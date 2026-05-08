@@ -41,13 +41,13 @@ export default function Home() {
         </p>
       </section>
 
-      <section className="-mt-12 px-5">
-        <div className="rounded-[2rem] bg-white px-6 py-7 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
+      <section className="relative z-10 -mt-10 overflow-visible px-5">
+        <div className="overflow-visible rounded-[2rem] bg-white px-6 pb-8 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div>
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
               신청 유형
             </h2>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-5 grid gap-3">
               {applicationTypes.map((applicationType) => {
                 const isSelected = selectedApplicationType === applicationType;
 
