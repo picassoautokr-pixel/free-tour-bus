@@ -110,7 +110,7 @@ export default function Home() {
 
       <button
         type="button"
-        className="fixed bottom-6 right-[max(1.5rem,calc((100vw-480px)/2+1.5rem))] flex items-center gap-2 rounded-full bg-yellow-300 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-yellow-900/25 transition hover:bg-yellow-200"
+        className="fixed bottom-6 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-50 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-xl shadow-yellow-900/25 transition hover:-translate-y-0.5 hover:bg-yellow-200 active:translate-y-0"
       >
         <svg
           aria-hidden="true"
