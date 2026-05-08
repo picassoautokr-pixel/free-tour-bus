@@ -11,14 +11,12 @@ const applicationTypes = [
 const tripTypes = ["왕복", "편도"];
 const busGrades = ["일반", "프리미엄"];
 const organizationTypes = [
-  "회사",
+  "회사/직장",
   "학교",
-  "교회",
+  "교회/종교단체",
   "공공기관",
-  "협회",
+  "협회/단체",
   "기타 소속단체",
-  "금융업",
-  "일반 동호회",
 ];
 
 export default function Home() {
@@ -253,6 +251,9 @@ export default function Home() {
                   </option>
                 ))}
               </select>
+              <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+                ※ 일부 업종 및 일반 동호회는 지원 대상에서 제외될 수 있습니다.
+              </p>
             </div>
           </div>
         </div>
@@ -320,7 +321,7 @@ export default function Home() {
                 지원 제외
               </p>
               <p className="mt-3 text-sm font-semibold text-slate-500">
-                금융업, 일반 동호회
+                금융업, 일반 동호회, 소속 확인이 어려운 임의 모임
               </p>
             </div>
           </div>
