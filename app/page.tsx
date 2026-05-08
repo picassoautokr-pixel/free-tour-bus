@@ -8,10 +8,30 @@ const applicationTypes = [
   "파트너 소개 신청",
 ];
 
+const tripTypes = ["왕복", "편도"];
+const busGrades = ["일반", "프리미엄"];
+
 export default function Home() {
   const [selectedApplicationType, setSelectedApplicationType] = useState(
     applicationTypes[0],
   );
+  const [selectedTripType, setSelectedTripType] = useState(tripTypes[0]);
+  const [selectedBusGrade, setSelectedBusGrade] = useState(busGrades[0]);
+  const [stopovers, setStopovers] = useState<string[]>([]);
+
+  const addStopover = () => {
+    setStopovers((currentStopovers) =>
+      currentStopovers.length >= 3 ? currentStopovers : [...currentStopovers, ""],
+    );
+  };
+
+  const updateStopover = (index: number, value: string) => {
+    setStopovers((currentStopovers) =>
+      currentStopovers.map((stopover, stopoverIndex) =>
+        stopoverIndex === index ? value : stopover,
+      ),
+    );
+  };
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
@@ -69,9 +89,113 @@ export default function Home() {
             </div>
           </div>
 
-          <p className="mt-8 flex min-h-28 items-center justify-center rounded-2xl bg-slate-50 text-lg font-black tracking-[-0.04em] text-slate-700">
-            신청폼 영역
-          </p>
+          <div className="mt-9 border-t border-slate-100 pt-8">
+            <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+              이동 정보
+            </h2>
+
+            <div className="mt-5 space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                {tripTypes.map((tripType) => {
+                  const isSelected = selectedTripType === tripType;
+
+                  return (
+                    <button
+                      key={tripType}
+                      type="button"
+                      onClick={() => setSelectedTripType(tripType)}
+                      className={`h-12 rounded-full border text-base font-black tracking-[-0.035em] transition ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      {tripType}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {busGrades.map((busGrade) => {
+                  const isSelected = selectedBusGrade === busGrade;
+
+                  return (
+                    <button
+                      key={busGrade}
+                      type="button"
+                      onClick={() => setSelectedBusGrade(busGrade)}
+                      className={`h-12 rounded-full border text-base font-black tracking-[-0.035em] transition ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      {busGrade}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3.5">
+                <input
+                  className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                  placeholder="출발지 입력"
+                />
+                <input
+                  className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                  placeholder="도착지 입력"
+                />
+
+                {stopovers.map((stopover, index) => (
+                  <input
+                    key={`stopover-${index + 1}`}
+                    className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                    placeholder={`경유지 ${index + 1} 입력`}
+                    value={stopover}
+                    onChange={(event) => updateStopover(index, event.target.value)}
+                  />
+                ))}
+
+                <button
+                  type="button"
+                  onClick={addStopover}
+                  disabled={stopovers.length >= 3}
+                  className="h-11 rounded-full px-1 text-left text-base font-black tracking-[-0.035em] text-blue-500 transition hover:text-blue-600 disabled:text-slate-300"
+                >
+                  + 경유지 추가
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold tracking-[-0.03em] text-slate-500">
+                    가는 날짜
+                  </span>
+                  <input
+                    type="date"
+                    className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold tracking-[-0.03em] text-slate-500">
+                    오는 날짜
+                  </span>
+                  <input
+                    type="date"
+                    className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500"
+                  />
+                </label>
+              </div>
+
+              <input
+                type="number"
+                inputMode="numeric"
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                placeholder="인원수 입력"
+              />
+            </div>
+          </div>
         </div>
       </section>
 
