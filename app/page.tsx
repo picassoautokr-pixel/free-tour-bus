@@ -77,7 +77,7 @@ export default function Home() {
       </section>
 
       <section className="relative z-10 -mt-10 overflow-visible px-5">
-        <div className="overflow-visible rounded-[2rem] bg-white px-6 pb-8 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
+        <div className="overflow-visible rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div>
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
               신청 유형
@@ -314,6 +314,19 @@ export default function Home() {
             <p className="mt-3 px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
               ※ 선택 입력 항목입니다.
             </p>
+          </div>
+
+          <div className="mt-9 border-t border-slate-100 pt-8">
+            <p className="mb-5 text-center text-xs font-medium leading-6 tracking-[-0.02em] text-slate-400">
+              신청 후 관리자 심사를 통해 지원 여부가 안내됩니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => console.log("submit")}
+              className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950"
+            >
+              무료버스 신청하기
+            </button>
           </div>
         </div>
       </section>
