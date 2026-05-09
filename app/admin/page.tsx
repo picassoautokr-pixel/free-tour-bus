@@ -125,6 +125,75 @@ function isPersistableApplicationId(id: string): boolean {
   return id.length > 0 && !id.startsWith("idx-");
 }
 
+/** 로컬 날짜 기준 오늘 접수 여부 */
+function isCreatedAtSameLocalDay(
+  createdAt: string | null,
+  ref: Date,
+): boolean {
+  if (createdAt == null || createdAt.trim() === "") return false;
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === ref.getFullYear() &&
+    d.getMonth() === ref.getMonth() &&
+    d.getDate() === ref.getDate()
+  );
+}
+
+/** 로컬 달력 기준 이번 달 접수 여부 */
+function isCreatedAtSameLocalMonth(
+  createdAt: string | null,
+  ref: Date,
+): boolean {
+  if (createdAt == null || createdAt.trim() === "") return false;
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth()
+  );
+}
+
+type DashboardStats = {
+  total: number;
+  todayCount: number;
+  monthCount: number;
+  pending: number;
+  reviewing: number;
+  approved: number;
+  rejected: number;
+};
+
+function computeDashboardStats(rows: ApplicationDetail[]): DashboardStats {
+  const now = new Date();
+  let todayCount = 0;
+  let monthCount = 0;
+  let pending = 0;
+  let reviewing = 0;
+  let approved = 0;
+  let rejected = 0;
+
+  for (const row of rows) {
+    if (isCreatedAtSameLocalDay(row.created_at, now)) todayCount++;
+    if (isCreatedAtSameLocalMonth(row.created_at, now)) monthCount++;
+
+    const known = parseKnownApplicationStatus(row.status);
+    if (known === "pending") pending++;
+    else if (known === "reviewing") reviewing++;
+    else if (known === "approved") approved++;
+    else if (known === "rejected") rejected++;
+  }
+
+  return {
+    total: rows.length,
+    todayCount,
+    monthCount,
+    pending,
+    reviewing,
+    approved,
+    rejected,
+  };
+}
+
 function safeText(value: unknown, emptyLabel = "—"): string {
   if (value == null) return emptyLabel;
   const s = String(value).trim();
@@ -1457,6 +1526,11 @@ export default function AdminApplicationsPage() {
     return copy;
   })();
 
+  const dashboardStats: DashboardStats = useMemo(
+    () => computeDashboardStats(rows),
+    [rows],
+  );
+
   const handleSortClick = (key: SortKey) => {
     if (key === sortKey) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -1694,6 +1768,79 @@ export default function AdminApplicationsPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <section
+          className="mb-5"
+          aria-labelledby="admin-dashboard-heading"
+        >
+          <h2
+            id="admin-dashboard-heading"
+            className="mb-3 text-sm font-black tracking-tight text-slate-900"
+          >
+            운영 통계
+          </h2>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                전체 신청
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-slate-900">
+                {dashboardStats.total}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                오늘 신청
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-slate-900">
+                {dashboardStats.todayCount}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                이번 달 신청
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-slate-900">
+                {dashboardStats.monthCount}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 shadow-sm ring-1 ring-blue-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-blue-800">
+                접수완료
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-blue-950">
+                {dashboardStats.pending}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm ring-1 ring-amber-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-amber-900">
+                검토중
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-amber-950">
+                {dashboardStats.reviewing}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm ring-1 ring-emerald-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-900">
+                승인완료
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-emerald-950">
+                {dashboardStats.approved}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-red-200 bg-red-50/70 p-4 shadow-sm ring-1 ring-red-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-red-900">
+                반려
+              </p>
+              <p className="mt-2 text-2xl font-black tabular-nums text-red-950">
+                {dashboardStats.rejected}
+              </p>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] font-medium text-slate-400">
+            검색·필터와 무관하게 전체 신청 데이터 기준입니다.
+          </p>
+        </section>
+
         <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <label className="block flex-1">
