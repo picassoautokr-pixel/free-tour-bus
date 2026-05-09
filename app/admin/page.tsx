@@ -340,6 +340,161 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function statusLabelForSms(rawStatus: string): string {
+  const trimmed = rawStatus.trim();
+  const known = parseKnownApplicationStatus(trimmed);
+  if (known === "pending") return "접수완료";
+  if (known === "reviewing") return "검토중";
+  if (known === "approved") return "승인완료";
+  if (known === "rejected") return "반려";
+  return trimmed === "" || trimmed === "—" ? "—" : trimmed;
+}
+
+function buildDefaultSmsText(row: ApplicationDetail): string {
+  const status = coerceApplicationStatus(row.status);
+  const memo = row.admin_memo.trim();
+
+  if (status === "pending") {
+    return `[무료관광버스]\n신청이 정상 접수되었습니다.\n\n담당자 검토 후 순차적으로 안내드리겠습니다.\n감사합니다.\n`;
+  }
+  if (status === "reviewing") {
+    return `[무료관광버스]\n신청 내용 검토 중입니다.\n\n추가 확인 후 안내드리겠습니다.\n감사합니다.\n`;
+  }
+  if (status === "approved") {
+    return `[무료관광버스]\n신청이 승인되었습니다.\n\n담당자가 순차 연락드릴 예정입니다.\n감사합니다.\n`;
+  }
+
+  return `[무료관광버스]\n신청이 반려되었습니다.\n\n사유:\n${memo || "사유 미기재"}\n\n문의사항은 고객센터로 연락 부탁드립니다.\n`;
+}
+
+function SmsModal({
+  row,
+  open,
+  message,
+  onChangeMessage,
+  onCopy,
+  onClose,
+}: {
+  row: ApplicationDetail;
+  open: boolean;
+  message: string;
+  onChangeMessage: (next: string) => void;
+  onCopy: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 px-4 py-10 backdrop-blur-[2px]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sms-modal-title"
+    >
+      <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
+          <div>
+            <h3 id="sms-modal-title" className="text-lg font-black tracking-tight">
+              문자 발송 준비
+            </h3>
+            <p className="mt-1 text-xs font-semibold text-white/70">
+              복사 후 문자 앱/발송 시스템에 붙여넣기 하세요.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-2 text-white/80 transition hover:bg-white/10 hover:text-white"
+            aria-label="닫기"
+          >
+            <svg
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18 18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                신청자명
+              </p>
+              <p className="mt-1 text-sm font-bold text-slate-900">
+                {row.applicant_name}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                연락처
+              </p>
+              <p className="mt-1 text-sm font-bold text-slate-900">{row.phone}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                현재 상태
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <StatusBadge status={row.status} />
+                <span className="text-xs font-semibold text-slate-600">
+                  {statusLabelForSms(row.status)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              문자 내용
+            </span>
+            <textarea
+              value={message}
+              onChange={(e) => onChangeMessage(e.target.value)}
+              className="mt-2 min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </label>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCopy}
+              className="h-11 rounded-2xl bg-blue-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+            >
+              복사하기
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetailField({
   label,
   children,
@@ -489,6 +644,7 @@ function DetailSlidePanel({
   open,
   onClose,
   onStatusSaved,
+  onOpenSms,
 }: {
   row: ApplicationDetail | null;
   open: boolean;
@@ -498,6 +654,7 @@ function DetailSlidePanel({
     nextStatus: ApplicationStatusValue,
     nextMemo: string,
   ) => void;
+  onOpenSms: (row: ApplicationDetail) => void;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -555,30 +712,46 @@ function DetailSlidePanel({
               {formatCreatedAt(row.created_at)}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-            aria-label="닫기"
-          >
-            <svg
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenSms(row)}
+              className="hidden h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 sm:inline-flex"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18 18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+              문자 발송
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              aria-label="닫기"
+            >
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18 18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 pb-8 pt-2 sm:px-6">
+          <button
+            type="button"
+            onClick={() => onOpenSms(row)}
+            className="mb-3 inline-flex h-10 w-full items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 sm:hidden"
+          >
+            문자 발송
+          </button>
           <dl>
             <DetailField label="신청 유형">{row.application_type}</DetailField>
             <DetailField label="왕복 / 편도">{row.trip_type}</DetailField>
@@ -792,6 +965,9 @@ export default function AdminApplicationsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<ApplicationDetail | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [smsOpen, setSmsOpen] = useState(false);
+  const [smsRow, setSmsRow] = useState<ApplicationDetail | null>(null);
+  const [smsText, setSmsText] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
@@ -802,6 +978,27 @@ export default function AdminApplicationsPage() {
     const timerId = window.setTimeout(() => setToastMessage(null), 3200);
     return () => window.clearTimeout(timerId);
   }, [toastMessage]);
+
+  const openSms = useCallback((row: ApplicationDetail) => {
+    setSmsRow(row);
+    setSmsText(buildDefaultSmsText(row));
+    setSmsOpen(true);
+  }, []);
+
+  const closeSms = useCallback(() => {
+    setSmsOpen(false);
+    setSmsRow(null);
+  }, []);
+
+  const handleCopySms = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(smsText);
+      setToastMessage("복사 완료");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setToastMessage(`복사 실패: ${message}`);
+    }
+  }, [smsText]);
 
   useEffect(() => {
     // 로그인된 관리자 이메일 표시용
@@ -1423,7 +1620,19 @@ export default function AdminApplicationsPage() {
         open={detailOpen}
         onClose={closeDetail}
         onStatusSaved={handleStatusSaved}
+        onOpenSms={openSms}
       />
+
+      {smsRow ? (
+        <SmsModal
+          row={smsRow}
+          open={smsOpen}
+          message={smsText}
+          onChangeMessage={setSmsText}
+          onCopy={() => void handleCopySms()}
+          onClose={closeSms}
+        />
+      ) : null}
 
       {toastMessage ? (
         <div
