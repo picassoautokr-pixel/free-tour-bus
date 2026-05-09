@@ -174,6 +174,32 @@ function memoPreview(memo: string, maxChars = 28): string {
   return `${trimmed.slice(0, maxChars)}…`;
 }
 
+function getFileExtFromNameOrUrl(name: string, url: string): string {
+  const raw = (name || "").trim();
+  const fromName = raw.includes(".") ? raw.split(".").pop() ?? "" : "";
+  const fromUrl = (() => {
+    try {
+      const u = new URL(url);
+      const p = u.pathname;
+      const last = p.split("/").pop() ?? "";
+      return last.includes(".") ? last.split(".").pop() ?? "" : "";
+    } catch {
+      const last = url.split("?")[0]?.split("#")[0]?.split("/").pop() ?? "";
+      return last.includes(".") ? last.split(".").pop() ?? "" : "";
+    }
+  })();
+
+  return (fromName || fromUrl).toLowerCase();
+}
+
+function isImageExt(ext: string) {
+  return ["jpg", "jpeg", "png", "webp"].includes(ext);
+}
+
+function isPdfExt(ext: string) {
+  return ext === "pdf";
+}
+
 function normalizeRows(data: unknown): ApplicationDetail[] {
   if (data == null) return [];
   if (!Array.isArray(data)) return [];
@@ -493,6 +519,9 @@ function DetailSlidePanel({
   const fileName = row.file_name.trim();
   const fileHttpUrl =
     fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+  const fileExt = getFileExtFromNameOrUrl(fileName, fileUrl);
+  const isImage = fileHttpUrl && isImageExt(fileExt);
+  const isPdf = fileHttpUrl && isPdfExt(fileExt);
 
   // 이전 데이터 호환 (attachment_url)
   const legacyUrl = row.attachment_url.trim();
@@ -603,21 +632,95 @@ function DetailSlidePanel({
               </dt>
               <dd className="mt-1 break-all text-sm font-medium">
                 {fileUrl !== "" ? (
-                  <div className="flex flex-col gap-2">
-                    <div className="text-sm font-semibold text-slate-900">
-                      {fileName !== "" ? fileName : "첨부파일"}
+                  <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-900">
+                          {fileName !== "" ? fileName : "첨부파일"}
+                        </div>
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          업로드됨
+                        </p>
+                      </div>
+                      {isPdf ? (
+                        <span className="shrink-0 rounded-xl bg-white px-2.5 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200">
+                          PDF
+                        </span>
+                      ) : null}
                     </div>
-                    {fileHttpUrl ? (
+
+                    {isImage ? (
                       <a
                         href={fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex h-10 w-fit items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+                        className="mt-3 block overflow-hidden rounded-xl ring-1 ring-slate-200 transition hover:ring-slate-300"
+                        title="클릭하여 원본 보기"
                       >
-                        첨부파일 보기
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={fileUrl}
+                          alt={fileName !== "" ? fileName : "첨부 이미지"}
+                          className="h-40 w-full object-cover sm:h-48"
+                          loading="lazy"
+                        />
                       </a>
+                    ) : isPdf ? (
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-white p-3 ring-1 ring-slate-200">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600 ring-1 ring-red-100"
+                            aria-hidden
+                          >
+                            <svg
+                              className="h-5 w-5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"
+                              />
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M14 3v6h6"
+                              />
+                            </svg>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            PDF 문서
+                          </p>
+                        </div>
+                        <a
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+                        >
+                          PDF 열기
+                        </a>
+                      </div>
+                    ) : fileHttpUrl ? (
+                      <div className="mt-3">
+                        <a
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-10 w-fit items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+                        >
+                          첨부파일 보기
+                        </a>
+                        <p className="mt-2 break-all text-xs font-medium text-slate-500">
+                          {fileUrl}
+                        </p>
+                      </div>
                     ) : (
-                      <div className="text-xs font-medium text-slate-500">
+                      <div className="mt-3 break-all text-xs font-medium text-slate-500">
                         {fileUrl}
                       </div>
                     )}
@@ -636,7 +739,9 @@ function DetailSlidePanel({
                     legacyUrl
                   )
                 ) : (
-                  <span className="text-slate-400">첨부파일 없음</span>
+                  <div className="mt-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                    첨부파일 없음
+                  </div>
                 )}
               </dd>
             </div>
