@@ -2,10 +2,10 @@
 
 import { BottomSheet } from "@/components/BottomSheet";
 
-const KAKAO_CHAT_URL = "https://open.kakao.com/";
+const KAKAO_CHAT_URL = "https://open.kakao.com/o/spkjNeui";
 /** tel / sms URI용 (하이픈 없음) */
-const CONTACT_PHONE_DIGITS = "01000000000";
-const CONTACT_PHONE_LABEL = "010-0000-0000";
+const CONTACT_PHONE_DIGITS = "01056789833";
+const CONTACT_PHONE_LABEL = "010-5678-9833";
 const SMS_DEFAULT_BODY = "안녕하세요. 무료관광버스 문의드립니다.";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
