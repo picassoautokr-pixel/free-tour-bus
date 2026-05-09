@@ -447,7 +447,7 @@ export default function Home() {
         <div className="relative z-10 overflow-visible rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div>
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
-              신청유형 (한가지를 선택해주세요)
+              신청유형 (한 가지를 선택해주세요)
             </h2>
             <div className="mt-5 grid gap-3">
               {customerApplicationTypes.map((applicationType) => {
