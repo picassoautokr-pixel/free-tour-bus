@@ -27,7 +27,9 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 로컬에서만 테스트할 때는 `http://localhost:3000` 을 그대로 사용하면 됩니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You can start editing the landing page at `src/app/(site)/page.tsx`. The page auto-updates as you edit the file.
+
+관리자 신청 목록(STEP 1): 개발 서버 실행 후 [http://localhost:3000/admin](http://localhost:3000/admin) · 소스 `src/app/admin/page.tsx`.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
