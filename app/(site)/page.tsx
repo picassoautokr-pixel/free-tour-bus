@@ -51,16 +51,20 @@ const formatPhoneNumber = (value: string) => {
   return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
 };
 
-function makeUploadObjectKey(originalName: string) {
-  const safeName = originalName.replace(/[^\w.\-()가-힣\s]/g, "_").trim();
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+function makeUploadObjectKey(fileName: string) {
+  // Storage path에는 영문/숫자/하이픈/언더스코어만 사용 (확장자 유지)
+  const extRaw = fileName.split(".").pop() ?? "";
+  const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, "");
+
   const rand =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `${Math.random().toString(16).slice(2)}${Date.now()}`;
 
-  // 폴더를 한 번 더 나눠서 관리
-  return `applications/${ts}_${rand}_${safeName || "file"}`;
+  const safeRand = String(rand).toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  const safeFileName = `${Date.now()}_${safeRand}${ext ? `.${ext}` : ""}`;
+
+  return `applications/${safeFileName}`;
 }
 
 type FormData = {
