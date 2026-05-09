@@ -6,7 +6,7 @@ import { createSupabaseClient } from "@/lib/supabase";
 
 const applicationTypes = [
   "기예약된 전세버스 지원금 신청",
-  "지원금 확정된 제휴버스 신청",
+  "지원금이 확정된 제휴버스 추천 비교",
   "지원금 확정 버스로 제휴신청(업체등록용)",
 ];
 
@@ -335,13 +335,13 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
-      <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-blue-600 to-blue-500 px-6 text-white shadow-lg shadow-blue-900/20">
-        <h1 className="rounded-2xl bg-white px-4 py-2.5 text-lg font-black tracking-[-0.04em] text-blue-700 shadow-sm ring-1 ring-white/60">
+      <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-[#06152B] to-[#081223] px-6 text-white shadow-lg shadow-black/35 ring-1 ring-white/5">
+        <h1 className="rounded-2xl bg-white px-4 py-2.5 text-lg font-black tracking-[-0.04em] text-[#06152B] shadow-sm ring-1 ring-white/50">
           무료관광버스
         </h1>
         <button
           type="button"
-          className="rounded-full px-3 py-2 text-sm font-semibold text-white/90 transition hover:bg-white/10 hover:text-white"
+          className="rounded-full px-3 py-2 text-sm font-semibold text-white/95 transition hover:bg-white/12 hover:text-white"
         >
           로그인
         </button>

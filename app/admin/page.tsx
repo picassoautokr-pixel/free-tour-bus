@@ -133,7 +133,8 @@ function safeText(value: unknown, emptyLabel = "—"): string {
 /** DB 예전 신청유형 문자열을 현재 화면 명칭으로 표시 */
 const LEGACY_APPLICATION_TYPE_LABELS: Record<string, string> = {
   "기계약 전세버스 지원금 신청": "기예약된 전세버스 지원금 신청",
-  "전세버스 신규 신청": "지원금 확정된 제휴버스 신청",
+  "전세버스 신규 신청": "지원금이 확정된 제휴버스 추천 비교",
+  "지원금 확정된 제휴버스 신청": "지원금이 확정된 제휴버스 추천 비교",
   "파트너 소개 신청": "지원금 확정 버스로 제휴신청(업체등록용)",
 };
 
@@ -501,6 +502,14 @@ function SmsModal({
                 연락처
               </p>
               <p className="mt-1 text-sm font-bold text-slate-900">{row.phone}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                신청 유형
+              </p>
+              <p className="mt-1 text-sm font-bold leading-snug text-slate-900">
+                {displayApplicationTypeLabel(row.application_type)}
+              </p>
             </div>
             <div className="sm:col-span-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
