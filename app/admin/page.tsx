@@ -28,8 +28,37 @@ type ApplicationDetail = {
   organization_type: string;
   request_message: string;
   attachment_url: string;
+  admin_memo: string;
   status: string;
 };
+
+const APPLICATION_STATUSES = [
+  { value: "pending", label: "접수완료" },
+  { value: "reviewing", label: "검토중" },
+  { value: "approved", label: "승인완료" },
+  { value: "rejected", label: "반려" },
+] as const;
+
+type ApplicationStatusValue = (typeof APPLICATION_STATUSES)[number]["value"];
+
+/** DB에 정의된 값 또는 레거시 별칭만 매핑합니다. 알 수 없으면 null. */
+function parseKnownApplicationStatus(raw: string): ApplicationStatusValue | null {
+  const n = raw.trim().toLowerCase();
+  if (n === "approve" || n === "approved") return "approved";
+  if (n === "reject" || n === "rejected" || n === "denied") return "rejected";
+  if (n === "reviewing" || n === "review") return "reviewing";
+  if (n === "pending") return "pending";
+  return null;
+}
+
+/** 선택 UI 초기값용 — 미매핑이면 pending 으로 둡니다. */
+function coerceApplicationStatus(raw: string): ApplicationStatusValue {
+  return parseKnownApplicationStatus(raw) ?? "pending";
+}
+
+function isPersistableApplicationId(id: string): boolean {
+  return id.length > 0 && !id.startsWith("idx-");
+}
 
 function safeText(value: unknown, emptyLabel = "—"): string {
   if (value == null) return emptyLabel;
@@ -133,6 +162,7 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
       organization_type: safeText(r.organization_type),
       request_message: safeText(r.request_message),
       attachment_url: attachmentDisplay === "—" ? "" : attachmentDisplay,
+      admin_memo: safeText(r.admin_memo, ""),
       status: safeText(r.status, ""),
     };
   });
@@ -170,33 +200,39 @@ function formatDateOnly(value: string | null): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const normalized = status.trim().toLowerCase();
+  const trimmed = status.trim();
+  if (trimmed === "" || trimmed === "—") {
+    return (
+      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-100">
+        —
+      </span>
+    );
+  }
+
+  const known = parseKnownApplicationStatus(status);
 
   let label: string;
   let className: string;
 
-  if (normalized === "" || normalized === "—") {
-    label = "—";
-    className =
-      "border-slate-200 bg-slate-50 text-slate-600 ring-slate-100";
-  } else if (normalized === "pending") {
-    label = "접수완료";
-    className =
-      "border-emerald-200 bg-emerald-50 text-emerald-800 ring-emerald-100";
-  } else if (normalized === "approved" || normalized === "approve") {
-    label = "승인";
-    className = "border-blue-200 bg-blue-50 text-blue-800 ring-blue-100";
-  } else if (
-    normalized === "rejected" ||
-    normalized === "reject" ||
-    normalized === "denied"
-  ) {
-    label = "반려";
-    className = "border-red-200 bg-red-50 text-red-800 ring-red-100";
-  } else {
-    label = status;
+  if (known === null) {
+    label = trimmed;
     className =
       "border-slate-200 bg-slate-50 text-slate-700 ring-slate-100";
+  } else if (known === "pending") {
+    label = "접수완료";
+    className =
+      "border-blue-200 bg-blue-50 text-blue-800 ring-blue-100";
+  } else if (known === "reviewing") {
+    label = "검토중";
+    className =
+      "border-amber-300 bg-amber-50 text-amber-950 ring-amber-100";
+  } else if (known === "approved") {
+    label = "승인완료";
+    className =
+      "border-emerald-300 bg-emerald-50 text-emerald-900 ring-emerald-100";
+  } else {
+    label = "반려";
+    className = "border-red-200 bg-red-50 text-red-800 ring-red-100";
   }
 
   return (
@@ -225,14 +261,147 @@ function DetailField({
   );
 }
 
+function StatusChangeSection({
+  rowId,
+  statusFromServer,
+  memoFromServer,
+  onSaved,
+}: {
+  rowId: string;
+  statusFromServer: string;
+  memoFromServer: string;
+  onSaved: (nextStatus: ApplicationStatusValue, nextMemo: string) => void;
+}) {
+  const persistedId = isPersistableApplicationId(rowId);
+  const normalizedSaved = coerceApplicationStatus(statusFromServer);
+
+  const [selected, setSelected] = useState<ApplicationStatusValue>(() =>
+    coerceApplicationStatus(statusFromServer),
+  );
+  const [memo, setMemo] = useState(() => memoFromServer ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const unchanged =
+    selected === normalizedSaved &&
+    (memo ?? "").trim() === (memoFromServer ?? "").trim();
+
+  const handleSave = async () => {
+    if (!persistedId) {
+      setError(
+        "이 행은 임시 ID입니다. 목록 상단의 새로고침 후 다시 시도해 주세요.",
+      );
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const supabase = createSupabaseClient();
+      const { error: updateError } = await supabase
+        .from("applications")
+        .update({ status: selected, admin_memo: memo })
+        .eq("id", rowId);
+
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+
+      onSaved(selected, memo);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100/80">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        상태 변경
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        내부용 메모이며 저장 후 목록 배지가 바로 반영됩니다.
+      </p>
+
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        <select
+          value={selected}
+          onChange={(e) =>
+            setSelected(e.target.value as ApplicationStatusValue)
+          }
+          disabled={saving || !persistedId}
+          className="h-11 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+          aria-label="신청 상태 선택"
+        >
+          {APPLICATION_STATUSES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-3">
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            관리자 메모
+          </span>
+          <textarea
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            disabled={saving || !persistedId}
+            placeholder="반려 이유, 승인 참고사항, 지원금 전달 담당자에게 공유할 내용을 입력하세요."
+            className="mt-2 min-h-[140px] w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+          />
+          <p className="mt-2 text-xs text-slate-500">
+            ※ 내부용 메모입니다. 신청자에게 노출되지 않습니다.
+          </p>
+        </label>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => void handleSave()}
+        disabled={saving || !persistedId || unchanged}
+        className="mt-3 h-11 w-full rounded-xl bg-slate-900 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        {saving ? "저장 중…" : "상태 및 메모 저장"}
+      </button>
+
+      {!persistedId ? (
+        <p className="mt-2 text-xs font-medium text-amber-700">
+          신청 ID를 확인할 수 없어 저장할 수 없습니다.
+        </p>
+      ) : null}
+
+      {error ? (
+        <div
+          className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium leading-relaxed text-red-800"
+          role="alert"
+        >
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DetailSlidePanel({
   row,
   open,
   onClose,
+  onStatusSaved,
 }: {
   row: ApplicationDetail | null;
   open: boolean;
   onClose: () => void;
+  onStatusSaved: (
+    applicationId: string,
+    nextStatus: ApplicationStatusValue,
+    nextMemo: string,
+  ) => void;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -375,13 +544,35 @@ function DetailSlidePanel({
             </div>
             <div className="border-b border-slate-100 py-3 last:border-b-0">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                상태
+                현재 상태
               </dt>
               <dd className="mt-1">
                 <StatusBadge status={row.status} />
               </dd>
             </div>
+            <div className="border-b border-slate-100 py-3 last:border-b-0">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                관리자 메모 (내부용)
+              </dt>
+              <dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-slate-900">
+                {row.admin_memo.trim() === "" ? (
+                  <span className="text-slate-400">—</span>
+                ) : (
+                  row.admin_memo
+                )}
+              </dd>
+            </div>
           </dl>
+
+          <StatusChangeSection
+            key={row.id}
+            rowId={row.id}
+            statusFromServer={row.status}
+            memoFromServer={row.admin_memo}
+            onSaved={(nextStatus, nextMemo) =>
+              onStatusSaved(row.id, nextStatus, nextMemo)
+            }
+          />
         </div>
       </aside>
     </>
@@ -394,6 +585,36 @@ export default function AdminApplicationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<ApplicationDetail | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (toastMessage == null) return;
+    const timerId = window.setTimeout(() => setToastMessage(null), 3200);
+    return () => window.clearTimeout(timerId);
+  }, [toastMessage]);
+
+  const handleStatusSaved = useCallback(
+    (
+      applicationId: string,
+      nextStatus: ApplicationStatusValue,
+      nextMemo: string,
+    ) => {
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === applicationId
+            ? { ...r, status: nextStatus, admin_memo: nextMemo }
+            : r,
+        ),
+      );
+      setSelected((prev) =>
+        prev && prev.id === applicationId
+          ? { ...prev, status: nextStatus, admin_memo: nextMemo }
+          : prev,
+      );
+      setToastMessage("저장되었습니다.");
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -525,6 +746,11 @@ export default function AdminApplicationsPage() {
                     <p className="mt-1 text-sm text-slate-600">
                       {row.application_type}
                     </p>
+                    {row.admin_memo.trim() !== "" ? (
+                      <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                        <span aria-hidden>📝</span> 메모 있음
+                      </p>
+                    ) : null}
                     <dl className="mt-4 space-y-2 text-sm">
                       <div className="flex justify-between gap-2">
                         <dt className="text-slate-500">연락처</dt>
@@ -590,6 +816,9 @@ export default function AdminApplicationsPage() {
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
                       상태
                     </th>
+                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
+                      메모
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -638,6 +867,9 @@ export default function AdminApplicationsPage() {
                       <td className="whitespace-nowrap px-4 py-3">
                         <StatusBadge status={row.status} />
                       </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                        {row.admin_memo.trim() !== "" ? "📝" : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -651,7 +883,40 @@ export default function AdminApplicationsPage() {
         )}
       </main>
 
-      <DetailSlidePanel row={selected} open={detailOpen} onClose={closeDetail} />
+      <DetailSlidePanel
+        row={selected}
+        open={detailOpen}
+        onClose={closeDetail}
+        onStatusSaved={handleStatusSaved}
+      />
+
+      {toastMessage ? (
+        <div
+          className="fixed bottom-6 left-1/2 z-[60] flex max-w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-lg shadow-emerald-900/10 ring-1 ring-emerald-100"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+            aria-hidden
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          </span>
+          <span className="leading-snug">{toastMessage}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
