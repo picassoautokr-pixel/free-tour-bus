@@ -716,7 +716,7 @@ function DetailSlidePanel({
             <button
               type="button"
               onClick={() => onOpenSms(row)}
-              className="hidden h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 sm:inline-flex"
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 max-[480px]:hidden"
             >
               문자 발송
             </button>
@@ -748,7 +748,7 @@ function DetailSlidePanel({
           <button
             type="button"
             onClick={() => onOpenSms(row)}
-            className="mb-3 inline-flex h-10 w-full items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 sm:hidden"
+            className="mb-3 hidden h-10 w-full items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 max-[480px]:inline-flex"
           >
             문자 발송
           </button>
@@ -939,6 +939,16 @@ function DetailSlidePanel({
               </dd>
             </div>
           </dl>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => onOpenSms(row)}
+              className="inline-flex h-11 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-black text-slate-900 shadow-sm transition hover:bg-slate-50"
+            >
+              문자 발송
+            </button>
+          </div>
 
           <StatusChangeSection
             key={row.id}
