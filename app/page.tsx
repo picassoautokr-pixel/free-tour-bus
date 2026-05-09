@@ -21,6 +21,24 @@ const organizationTypes = [
   "기타 소속단체",
 ];
 
+/** Supabase `applications`에 넣는 컬럼만 (id·created_at 등 자동값 제외) */
+type ApplicationInsertPayload = {
+  application_type: string;
+  trip_type: string;
+  bus_grade: string;
+  departure: string;
+  destination: string;
+  departure_date: string | null;
+  return_date: string | null;
+  passenger_count: number;
+  applicant_name: string;
+  phone: string;
+  organization_name: string;
+  organization_type: string | null;
+  request_message: string;
+  status: string;
+};
+
 /** 숫자만 담긴 문자열을 010-1234-5678 형태로 보여줍니다. */
 function formatPhoneDisplay(digits: string) {
   if (digits.length <= 3) return digits;
@@ -437,7 +455,7 @@ export default function Home() {
                 try {
                   const supabase = createSupabaseClient();
 
-                  const insertPayload = {
+                  const insertPayload: ApplicationInsertPayload = {
                     application_type: selectedApplicationType,
                     trip_type: selectedTripType,
                     bus_grade: selectedBusGrade,
@@ -458,6 +476,15 @@ export default function Home() {
                     request_message: additionalNotes.trim(),
                     status: "pending",
                   };
+
+                  console.log(
+                    "[applications insert] payload (id must be absent):",
+                    JSON.stringify(insertPayload),
+                  );
+                  console.log(
+                    "[applications insert] includes id?:",
+                    Object.prototype.hasOwnProperty.call(insertPayload, "id"),
+                  );
 
                   const { error } = await supabase
                     .from("applications")
