@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -40,6 +41,8 @@ const APPLICATION_STATUSES = [
 ] as const;
 
 type ApplicationStatusValue = (typeof APPLICATION_STATUSES)[number]["value"];
+
+type StatusFilterValue = "all" | ApplicationStatusValue;
 
 /** DB에 정의된 값 또는 레거시 별칭만 매핑합니다. 알 수 없으면 null. */
 function parseKnownApplicationStatus(raw: string): ApplicationStatusValue | null {
@@ -593,6 +596,8 @@ export default function AdminApplicationsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<ApplicationDetail | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
 
   useEffect(() => {
     if (toastMessage == null) return;
@@ -666,6 +671,32 @@ export default function AdminApplicationsPage() {
     setSelected(null);
   };
 
+  const filteredRows = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const hasTerm = term.length > 0;
+
+    return rows.filter((row) => {
+      if (statusFilter !== "all") {
+        const known = parseKnownApplicationStatus(row.status);
+        if (known !== statusFilter) return false;
+      }
+
+      if (!hasTerm) return true;
+
+      const haystack = [
+        row.applicant_name,
+        row.phone,
+        row.organization_name,
+        row.departure,
+        row.destination,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(term);
+    });
+  }, [rows, searchTerm, statusFilter]);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="border-b border-slate-200 bg-white shadow-sm">
@@ -690,6 +721,39 @@ export default function AdminApplicationsPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <label className="block flex-1">
+              <span className="sr-only">검색</span>
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="신청자명, 연락처, 단체명, 출발지, 도착지 검색"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </label>
+            <label className="block sm:w-[220px]">
+              <span className="sr-only">상태 필터</span>
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as StatusFilterValue)
+                }
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="all">전체</option>
+                <option value="pending">접수완료</option>
+                <option value="reviewing">검토중</option>
+                <option value="approved">승인완료</option>
+                <option value="rejected">반려</option>
+              </select>
+            </label>
+          </div>
+          <p className="mt-3 text-xs font-medium text-slate-500">
+            총 {rows.length}건 중 {filteredRows.length}건 표시
+          </p>
+        </div>
+
         {loading ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
             <div
@@ -731,10 +795,19 @@ export default function AdminApplicationsPage() {
               신청이 접수되면 이곳에 표시됩니다.
             </p>
           </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-sm">
+            <p className="text-base font-semibold text-slate-700">
+              조건에 맞는 신청 내역이 없습니다.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              검색어 또는 상태 필터를 조정해 주세요.
+            </p>
+          </div>
         ) : (
           <>
             <ul className="space-y-4 md:hidden">
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <li key={row.id}>
                   <button
                     type="button"
@@ -830,7 +903,7 @@ export default function AdminApplicationsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {rows.map((row) => (
+                  {filteredRows.map((row) => (
                     <tr
                       key={row.id}
                       className="cursor-pointer hover:bg-slate-50/80"
@@ -892,7 +965,7 @@ export default function AdminApplicationsPage() {
             </div>
 
             <p className="mt-4 text-center text-xs text-slate-500">
-              총 {rows.length}건 · 최신 신청일 순 · 행 클릭 시 상세
+              총 {rows.length}건 중 {filteredRows.length}건 표시 · 최신 신청일 순 · 행 클릭 시 상세
             </p>
           </>
         )}
