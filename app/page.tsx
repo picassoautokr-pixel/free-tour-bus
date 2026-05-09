@@ -49,45 +49,104 @@ const formatPhoneNumber = (value: string) => {
   return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
 };
 
-export default function Home() {
-  type FormData = {
-    applicationType: string;
-    tripType: string;
-    busGrade: string;
-    departure: string;
-    destination: string;
-    stopovers: string[];
-    departureDate: string;
-    returnDate: string;
-    partyCount: string;
-    applicantName: string;
-    phone: string;
-    organizationName: string;
-    organizationType: string;
-    additionalNotes: string;
-  };
+type FormData = {
+  applicationType: string;
+  tripType: string;
+  busGrade: string;
+  departure: string;
+  destination: string;
+  stopovers: string[];
+  departureDate: string;
+  returnDate: string;
+  passengerCount: string;
+  applicantName: string;
+  phone: string;
+  organizationName: string;
+  organizationType: string;
+  requestMessage: string;
+};
 
+const INITIAL_FORM_DATA: FormData = {
+  applicationType: "기계약 전세버스 지원금 신청",
+  tripType: "왕복",
+  busGrade: "일반",
+  departure: "",
+  destination: "",
+  stopovers: [],
+  departureDate: "",
+  returnDate: "",
+  passengerCount: "",
+  applicantName: "",
+  phone: "",
+  organizationName: "",
+  organizationType: "",
+  requestMessage: "",
+};
+
+/** 이전 버전 draft 키(partyCount, additionalNotes 등)를 새 formData로 맞춥니다. */
+function normalizeDraftRaw(saved: string): Partial<FormData> | null {
+  try {
+    const parsed = JSON.parse(saved) as Record<string, unknown>;
+    const partial: Partial<FormData> = {};
+
+    if (typeof parsed.applicationType === "string")
+      partial.applicationType = parsed.applicationType;
+    if (typeof parsed.selectedApplicationType === "string")
+      partial.applicationType = parsed.selectedApplicationType;
+
+    if (typeof parsed.tripType === "string") partial.tripType = parsed.tripType;
+    if (typeof parsed.selectedTripType === "string")
+      partial.tripType = parsed.selectedTripType;
+
+    if (typeof parsed.busGrade === "string") partial.busGrade = parsed.busGrade;
+    if (typeof parsed.selectedBusGrade === "string")
+      partial.busGrade = parsed.selectedBusGrade;
+
+    if (typeof parsed.departure === "string") partial.departure = parsed.departure;
+    if (typeof parsed.destination === "string")
+      partial.destination = parsed.destination;
+
+    if (Array.isArray(parsed.stopovers))
+      partial.stopovers = parsed.stopovers.filter((v) => typeof v === "string");
+
+    if (typeof parsed.departureDate === "string")
+      partial.departureDate = parsed.departureDate;
+    if (typeof parsed.returnDate === "string")
+      partial.returnDate = parsed.returnDate;
+
+    if (typeof parsed.passengerCount === "string")
+      partial.passengerCount = parsed.passengerCount;
+    if (typeof parsed.partyCount === "string")
+      partial.passengerCount = parsed.partyCount;
+
+    if (typeof parsed.applicantName === "string")
+      partial.applicantName = parsed.applicantName;
+    if (typeof parsed.phone === "string") partial.phone = parsed.phone;
+    if (typeof parsed.organizationName === "string")
+      partial.organizationName = parsed.organizationName;
+    if (typeof parsed.organizationType === "string")
+      partial.organizationType = parsed.organizationType;
+
+    if (typeof parsed.requestMessage === "string")
+      partial.requestMessage = parsed.requestMessage;
+    if (typeof parsed.additionalNotes === "string")
+      partial.requestMessage = parsed.additionalNotes;
+
+    return partial;
+  } catch {
+    return null;
+  }
+}
+
+export default function Home() {
   const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
-  const [formData, setFormData] = useState<FormData>({
-    applicationType: applicationTypes[0],
-    tripType: tripTypes[0],
-    busGrade: busGrades[0],
-    departure: "",
-    destination: "",
-    stopovers: [],
-    departureDate: "",
-    returnDate: "",
-    partyCount: "",
-    applicantName: "",
-    phone: "",
-    organizationName: "",
-    organizationType: "",
-    additionalNotes: "",
-  });
+  const [formData, setFormData] = useState<FormData>(() => ({
+    ...INITIAL_FORM_DATA,
+  }));
 
   const [phoneError, setPhoneError] = useState(false);
-  const [partyCountError, setPartyCountError] = useState(false);
+  const [passengerCountError, setPassengerCountError] = useState(false);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
@@ -103,7 +162,8 @@ export default function Home() {
     try {
       const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
       if (!saved) return;
-      const parsed = JSON.parse(saved) as Partial<FormData>;
+      const parsed = normalizeDraftRaw(saved);
+      if (!parsed) return;
       setFormData((prev) => ({
         ...prev,
         ...parsed,
@@ -145,11 +205,11 @@ export default function Home() {
 
     const phoneDigits = formData.phone.replace(/[^0-9]/g, "");
     const phoneOk = phoneDigits.length === 11 && phoneDigits.startsWith("010");
-    const parsedCount = Number.parseInt(formData.partyCount, 10);
+    const parsedCount = Number.parseInt(formData.passengerCount, 10);
     const headcountOk = Number.isFinite(parsedCount) && parsedCount >= 10;
 
     setPhoneError(!phoneOk);
-    setPartyCountError(!headcountOk);
+    setPassengerCountError(!headcountOk);
 
     if (!phoneOk || !headcountOk) return;
 
@@ -179,7 +239,7 @@ export default function Home() {
           formData.organizationType.trim() === ""
             ? null
             : formData.organizationType.trim(),
-        request_message: formData.additionalNotes.trim(),
+        request_message: formData.requestMessage.trim(),
         status: "pending",
       };
 
@@ -421,21 +481,21 @@ export default function Home() {
                   inputMode="numeric"
                   min={1}
                   className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
-                    partyCountError
+                    passengerCountError
                       ? "border-red-400 focus:border-red-500"
                       : "border-slate-200 focus:border-blue-500"
                   }`}
                   placeholder="인원수 입력"
-                  value={formData.partyCount}
+                  value={formData.passengerCount}
                   onChange={(event) => {
                     setFormData((prev) => ({
                       ...prev,
-                      partyCount: event.target.value,
+                      passengerCount: event.target.value,
                     }));
-                    setPartyCountError(false);
+                    setPassengerCountError(false);
                   }}
                 />
-                {partyCountError ? (
+                {passengerCountError ? (
                   <p className="px-1 text-xs font-medium leading-5 text-red-500">
                     10인 이상 단체만 신청 가능합니다.
                   </p>
@@ -474,12 +534,13 @@ export default function Home() {
                   }`}
                   placeholder="010-1234-5678"
                   value={formData.phone}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    setPhoneError(false);
                     setFormData((prev) => ({
                       ...prev,
                       phone: formatPhoneNumber(e.target.value),
-                    }))
-                  }
+                    }));
+                  }}
                 />
                 {phoneError ? (
                   <p className="px-1 text-xs font-medium leading-5 text-red-500">
@@ -577,11 +638,11 @@ export default function Home() {
             <textarea
               className="mt-5 h-[120px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
               placeholder="추가 요청사항이나 전달 내용을 입력해주세요."
-              value={formData.additionalNotes}
+              value={formData.requestMessage}
               onChange={(event) =>
                 setFormData((prev) => ({
                   ...prev,
-                  additionalNotes: event.target.value,
+                  requestMessage: event.target.value,
                 }))
               }
               rows={4}
