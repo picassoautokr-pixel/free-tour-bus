@@ -44,6 +44,20 @@ type ApplicationStatusValue = (typeof APPLICATION_STATUSES)[number]["value"];
 
 type StatusFilterValue = "all" | ApplicationStatusValue;
 
+type SortKey =
+  | "created_at"
+  | "application_type"
+  | "applicant_name"
+  | "phone"
+  | "organization_name"
+  | "departure"
+  | "destination"
+  | "passenger_count"
+  | "status"
+  | "admin_memo";
+
+type SortDirection = "asc" | "desc";
+
 /** DB에 정의된 값 또는 레거시 별칭만 매핑합니다. 알 수 없으면 null. */
 function parseKnownApplicationStatus(raw: string): ApplicationStatusValue | null {
   const n = raw.trim().toLowerCase();
@@ -52,6 +66,17 @@ function parseKnownApplicationStatus(raw: string): ApplicationStatusValue | null
   if (n === "reviewing" || n === "review") return "reviewing";
   if (n === "pending") return "pending";
   return null;
+}
+
+function statusLabelForSearch(rawStatus: string): string {
+  const trimmed = rawStatus.trim();
+  if (trimmed === "" || trimmed === "—") return "";
+  const known = parseKnownApplicationStatus(trimmed);
+  if (known === "pending") return "접수완료";
+  if (known === "reviewing") return "검토중";
+  if (known === "approved") return "승인완료";
+  if (known === "rejected") return "반려";
+  return trimmed;
 }
 
 /** 선택 UI 초기값용 — 미매핑이면 pending 으로 둡니다. */
@@ -598,6 +623,8 @@ export default function AdminApplicationsPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
     if (toastMessage == null) return;
@@ -689,6 +716,8 @@ export default function AdminApplicationsPage() {
         row.organization_name,
         row.departure,
         row.destination,
+        row.status,
+        statusLabelForSearch(row.status),
       ]
         .join(" ")
         .toLowerCase();
@@ -696,6 +725,69 @@ export default function AdminApplicationsPage() {
       return haystack.includes(term);
     });
   }, [rows, searchTerm, statusFilter]);
+
+  const filteredAndSortedRows = useMemo(() => {
+    const copy = [...filteredRows];
+
+    const directionFactor = sortDirection === "asc" ? 1 : -1;
+
+    const getTimestamp = (v: string | null) => {
+      if (v == null || v === "") return Number.NEGATIVE_INFINITY;
+      const t = new Date(v).getTime();
+      return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+    };
+
+    const cmpText = (a: string, b: string) =>
+      a.localeCompare(b, "ko-KR", { sensitivity: "base" });
+
+    copy.sort((a, b) => {
+      if (sortKey === "created_at") {
+        return (getTimestamp(a.created_at) - getTimestamp(b.created_at)) * directionFactor;
+      }
+
+      if (sortKey === "passenger_count") {
+        const av = a.passenger_count ?? Number.NEGATIVE_INFINITY;
+        const bv = b.passenger_count ?? Number.NEGATIVE_INFINITY;
+        return (av - bv) * directionFactor;
+      }
+
+      if (sortKey === "status") {
+        const al = statusLabelForSearch(a.status);
+        const bl = statusLabelForSearch(b.status);
+        return cmpText(al, bl) * directionFactor;
+      }
+
+      const av = safeText(
+        (a as unknown as Record<string, unknown>)[sortKey],
+        "",
+      );
+      const bv = safeText(
+        (b as unknown as Record<string, unknown>)[sortKey],
+        "",
+      );
+      return cmpText(av, bv) * directionFactor;
+    });
+
+    return copy;
+  }, [filteredRows, sortKey, sortDirection]);
+
+  const handleSortClick = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  };
+
+  const sortIndicator = (key: SortKey) => {
+    if (key !== sortKey) return null;
+    return (
+      <span className="ml-1 text-[10px] font-black text-slate-500" aria-hidden>
+        {sortDirection === "asc" ? "▲" : "▼"}
+      </span>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -750,7 +842,7 @@ export default function AdminApplicationsPage() {
             </label>
           </div>
           <p className="mt-3 text-xs font-medium text-slate-500">
-            총 {rows.length}건 중 {filteredRows.length}건 표시
+            총 {rows.length}건 중 {filteredAndSortedRows.length}건 표시
           </p>
         </div>
 
@@ -807,7 +899,7 @@ export default function AdminApplicationsPage() {
         ) : (
           <>
             <ul className="space-y-4 md:hidden">
-              {filteredRows.map((row) => (
+              {filteredAndSortedRows.map((row) => (
                 <li key={row.id}>
                   <button
                     type="button"
@@ -870,40 +962,100 @@ export default function AdminApplicationsPage() {
               <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      신청일
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("created_at")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        신청일{sortIndicator("created_at")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      신청 유형
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("application_type")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        신청 유형{sortIndicator("application_type")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      신청자명
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("applicant_name")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        신청자명{sortIndicator("applicant_name")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      연락처
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("phone")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        연락처{sortIndicator("phone")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      단체명
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("organization_name")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        단체명{sortIndicator("organization_name")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      출발지
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("departure")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        출발지{sortIndicator("departure")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      도착지
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("destination")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        도착지{sortIndicator("destination")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      인원수
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("passenger_count")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        인원수{sortIndicator("passenger_count")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      상태
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("status")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        상태{sortIndicator("status")}
+                      </button>
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
-                      메모
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("admin_memo")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        메모{sortIndicator("admin_memo")}
+                      </button>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {filteredRows.map((row) => (
+                  {filteredAndSortedRows.map((row) => (
                     <tr
                       key={row.id}
                       className="cursor-pointer hover:bg-slate-50/80"
@@ -965,7 +1117,7 @@ export default function AdminApplicationsPage() {
             </div>
 
             <p className="mt-4 text-center text-xs text-slate-500">
-              총 {rows.length}건 중 {filteredRows.length}건 표시 · 최신 신청일 순 · 행 클릭 시 상세
+              총 {rows.length}건 중 {filteredAndSortedRows.length}건 표시 · 행 클릭 시 상세
             </p>
           </>
         )}
