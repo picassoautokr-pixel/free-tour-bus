@@ -1077,15 +1077,23 @@ export default function AdminApplicationsPage() {
   const [toast, setToast] = useState<AdminToast | null>(null);
   const [realtimeToast, setRealtimeToast] =
     useState<RealtimeToastPayload | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState(() =>
-    typeof window !== "undefined" &&
-    window.localStorage.getItem(NOTIFICATION_SOUND_PREF_KEY) === "1",
-  );
+  /** SSR과 첫 클라이언트 페인트를 일치시키기 위해 초기값은 false, 마운트 후 localStorage 동기화 */
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const soundEnabledRef = useRef(false);
   const realtimeToastTimerRef = useRef<number | null>(null);
 
   soundEnabledRef.current = soundEnabled;
+
+  useEffect(() => {
+    try {
+      setSoundEnabled(
+        window.localStorage.getItem(NOTIFICATION_SOUND_PREF_KEY) === "1",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const [unseenRealtimeCount, setUnseenRealtimeCount] = useState(0);
   const [recentNotifications, setRecentNotifications] = useState<
