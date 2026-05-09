@@ -156,6 +156,14 @@ export default function Home() {
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(
     null,
   );
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- 클라이언트 hydration 확인용 */
+    setIsHydrated(true);
+    console.log("hydrated on client");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -287,6 +295,13 @@ export default function Home() {
 
       <p className="px-6 pt-3 text-center text-xs font-semibold text-red-500">
         모바일 수정 테스트 v20260509
+      </p>
+      <p
+        className={`px-6 pt-1 text-center text-xs font-semibold ${
+          isHydrated ? "text-green-600" : "text-red-500"
+        }`}
+      >
+        {isHydrated ? "JS 실행중" : "JS 실행 안됨"}
       </p>
 
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">
