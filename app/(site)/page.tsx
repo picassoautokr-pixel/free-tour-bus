@@ -5,10 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { createSupabaseClient } from "@/lib/supabase";
 
 const applicationTypes = [
-  "기계약 전세버스 지원금 신청",
-  "전세버스 신규 신청",
-  "파트너 소개 신청",
+  "기예약된 전세버스 지원금 신청",
+  "지원금 확정된 제휴버스 신청",
+  "지원금 확정 버스로 제휴신청(업체등록용)",
 ];
+
+/** 증빙자료 첨부 영역을 표시하는 신청 유형만 */
+const APPLICATION_TYPE_REQUIRES_ATTACHMENT =
+  "기예약된 전세버스 지원금 신청";
 
 const tripTypes = ["왕복", "편도"];
 const busGrades = ["일반", "프리미엄"];
@@ -18,6 +22,8 @@ const TIME_SLOT_OPTIONS = [
   { value: "morning", label: "오전", db: "오전" },
   { value: "afternoon", label: "오후", db: "오후" },
   { value: "evening", label: "저녁", db: "저녁" },
+  { value: "undecided", label: "미정", db: "미정" },
+  { value: "negotiated", label: "협의", db: "협의" },
   { value: "custom", label: "직접입력", db: "" },
 ] as const;
 
@@ -81,16 +87,6 @@ function makeUploadObjectKey(fileName: string) {
   return `applications/${safeFileName}`;
 }
 
-function isDepartureTimeSlot(v: string): v is DepartureTimeSlot {
-  return (
-    v === "dawn" ||
-    v === "morning" ||
-    v === "afternoon" ||
-    v === "evening" ||
-    v === "custom"
-  );
-}
-
 /** DB `departure_time` 컬럼에 저장할 문자열 */
 function resolveDepartureTimeForDb(
   slot: DepartureTimeSlot,
@@ -123,7 +119,7 @@ type FormData = {
 };
 
 const INITIAL_FORM_DATA: FormData = {
-  applicationType: "기계약 전세버스 지원금 신청",
+  applicationType: APPLICATION_TYPE_REQUIRES_ATTACHMENT,
   tripType: "왕복",
   busGrade: "일반",
   departure: "",
@@ -140,113 +136,6 @@ const INITIAL_FORM_DATA: FormData = {
   organizationType: "",
   requestMessage: "",
 };
-
-/** 이전 버전 draft 키(partyCount, additionalNotes 등)를 새 formData로 맞춥니다. */
-function normalizeDraftRaw(saved: string): Partial<FormData> | null {
-  try {
-    const parsed = JSON.parse(saved) as Record<string, unknown>;
-    const partial: Partial<FormData> = {};
-
-    if (typeof parsed.applicationType === "string")
-      partial.applicationType = parsed.applicationType;
-    if (typeof parsed.selectedApplicationType === "string")
-      partial.applicationType = parsed.selectedApplicationType;
-
-    if (typeof parsed.tripType === "string") partial.tripType = parsed.tripType;
-    if (typeof parsed.selectedTripType === "string")
-      partial.tripType = parsed.selectedTripType;
-
-    if (typeof parsed.busGrade === "string") partial.busGrade = parsed.busGrade;
-    if (typeof parsed.selectedBusGrade === "string")
-      partial.busGrade = parsed.selectedBusGrade;
-
-    if (typeof parsed.departure === "string") partial.departure = parsed.departure;
-    if (typeof parsed.destination === "string")
-      partial.destination = parsed.destination;
-
-    /* 레거시: 상세주소 필드가 있으면 출발/도착 한 줄로 병합 */
-    const legacyDepDetail =
-      typeof parsed.departureDetail === "string"
-        ? parsed.departureDetail
-        : typeof parsed.departure_detail === "string"
-          ? parsed.departure_detail
-          : "";
-    const legacyDestDetail =
-      typeof parsed.destinationDetail === "string"
-        ? parsed.destinationDetail
-        : typeof parsed.destination_detail === "string"
-          ? parsed.destination_detail
-          : "";
-    if (legacyDepDetail.trim() !== "" && typeof parsed.departure === "string") {
-      partial.departure = `${parsed.departure} ${legacyDepDetail}`.trim();
-    }
-    if (
-      legacyDestDetail.trim() !== "" &&
-      typeof parsed.destination === "string"
-    ) {
-      partial.destination = `${parsed.destination} ${legacyDestDetail}`.trim();
-    }
-
-    if (
-      typeof parsed.departureTimeSlot === "string" &&
-      isDepartureTimeSlot(parsed.departureTimeSlot)
-    ) {
-      partial.departureTimeSlot = parsed.departureTimeSlot;
-    }
-    if (typeof parsed.departureTimeCustom === "string") {
-      partial.departureTimeCustom = parsed.departureTimeCustom;
-    }
-
-    /* 레거시: 시간 문자열만 있는 경우 */
-    if (partial.departureTimeSlot == null) {
-      const raw =
-        typeof parsed.departureTime === "string"
-          ? parsed.departureTime
-          : typeof parsed.departure_time === "string"
-            ? parsed.departure_time
-            : "";
-      const t = raw.trim();
-      if (t === "새벽") partial.departureTimeSlot = "dawn";
-      else if (t === "오전") partial.departureTimeSlot = "morning";
-      else if (t === "오후") partial.departureTimeSlot = "afternoon";
-      else if (t === "저녁") partial.departureTimeSlot = "evening";
-      else if (/^\d{1,2}:\d{2}/.test(t)) {
-        partial.departureTimeSlot = "custom";
-        partial.departureTimeCustom = t.slice(0, 5);
-      }
-    }
-
-    if (Array.isArray(parsed.stopovers))
-      partial.stopovers = parsed.stopovers.filter((v) => typeof v === "string");
-
-    if (typeof parsed.departureDate === "string")
-      partial.departureDate = parsed.departureDate;
-    if (typeof parsed.returnDate === "string")
-      partial.returnDate = parsed.returnDate;
-
-    if (typeof parsed.passengerCount === "string")
-      partial.passengerCount = parsed.passengerCount;
-    if (typeof parsed.partyCount === "string")
-      partial.passengerCount = parsed.partyCount;
-
-    if (typeof parsed.applicantName === "string")
-      partial.applicantName = parsed.applicantName;
-    if (typeof parsed.phone === "string") partial.phone = parsed.phone;
-    if (typeof parsed.organizationName === "string")
-      partial.organizationName = parsed.organizationName;
-    if (typeof parsed.organizationType === "string")
-      partial.organizationType = parsed.organizationType;
-
-    if (typeof parsed.requestMessage === "string")
-      partial.requestMessage = parsed.requestMessage;
-    if (typeof parsed.additionalNotes === "string")
-      partial.requestMessage = parsed.additionalNotes;
-
-    return partial;
-  } catch {
-    return null;
-  }
-}
 
 export default function Home() {
   const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -271,32 +160,12 @@ export default function Home() {
   );
 
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
     try {
-      const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (!saved) return;
-      const parsed = normalizeDraftRaw(saved);
-      if (!parsed) return;
-      setFormData((prev) => ({
-        ...prev,
-        ...parsed,
-        stopovers: Array.isArray(parsed.stopovers)
-          ? parsed.stopovers.filter((v) => typeof v === "string")
-          : prev.stopovers,
-      }));
-    } catch (e) {
-      console.warn("[draft restore] failed:", e);
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      /* ignore */
     }
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(formData));
-    } catch (e) {
-      console.warn("[draft save] failed:", e);
-    }
-  }, [formData]);
 
   const handleAddStopover = () => {
     console.log("stopover clicked");
@@ -310,6 +179,13 @@ export default function Home() {
     setFormData((prev) => ({
       ...prev,
       stopovers: prev.stopovers.map((s, i) => (i === index ? value : s)),
+    }));
+  };
+
+  const handleRemoveStopover = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      stopovers: prev.stopovers.filter((_, i) => i !== index),
     }));
   };
 
@@ -377,7 +253,10 @@ export default function Home() {
       let uploadedFileUrl: string | null = null;
       let uploadedFileName: string | null = null;
 
-      if (attachmentFile) {
+      const needsAttachment =
+        formData.applicationType === APPLICATION_TYPE_REQUIRES_ATTACHMENT;
+
+      if (needsAttachment && attachmentFile) {
         const objectKey = makeUploadObjectKey(attachmentFile.name);
 
         const { error: uploadError } = await supabase.storage
@@ -421,8 +300,8 @@ export default function Home() {
             ? null
             : formData.organizationType.trim(),
         request_message: formData.requestMessage.trim(),
-        file_url: uploadedFileUrl,
-        file_name: uploadedFileName,
+        file_url: needsAttachment ? uploadedFileUrl : null,
+        file_name: needsAttachment ? uploadedFileName : null,
         status: "pending",
       };
 
@@ -501,6 +380,12 @@ export default function Home() {
                         ...prev,
                         applicationType,
                       }));
+                      if (applicationType !== APPLICATION_TYPE_REQUIRES_ATTACHMENT) {
+                        setAttachmentFile(null);
+                        if (attachmentInputRef.current) {
+                          attachmentInputRef.current.value = "";
+                        }
+                      }
                     }}
                     className={`touch-manipulation min-h-14 cursor-pointer rounded-2xl border px-4 text-left text-base font-extrabold tracking-[-0.035em] transition ${
                       isSelected
@@ -574,16 +459,13 @@ export default function Home() {
 
               <div className="space-y-5">
                 <div className="space-y-2">
-                  <span className="block text-sm font-black tracking-[-0.03em] text-slate-900">
-                    출발지
-                  </span>
                   <input
                     className={`min-h-[3.75rem] w-full rounded-2xl border bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
                       departureError
                         ? "border-red-400 focus:border-red-500"
                         : "border-slate-200 focus:border-blue-500"
                     }`}
-                    placeholder="예: 서울 강남구 역삼동"
+                    placeholder="출발지 예: 서울 강남구 역삼동"
                     value={formData.departure}
                     onChange={(event) => {
                       setDepartureError(null);
@@ -604,16 +486,13 @@ export default function Home() {
                 </div>
 
                 <div className="space-y-2">
-                  <span className="block text-sm font-black tracking-[-0.03em] text-slate-900">
-                    도착지
-                  </span>
                   <input
                     className={`min-h-[3.75rem] w-full rounded-2xl border bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
                       destinationError
                         ? "border-red-400 focus:border-red-500"
                         : "border-slate-200 focus:border-blue-500"
                     }`}
-                    placeholder="예: 부산 해운대구 우동"
+                    placeholder="도착지 예: 부산 해운대구 우동"
                     value={formData.destination}
                     onChange={(event) => {
                       setDestinationError(null);
@@ -634,15 +513,27 @@ export default function Home() {
                 </div>
 
                 {formData.stopovers.map((stopover, index) => (
-                  <input
-                    key={`stopover-${index + 1}`}
-                    className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
-                    placeholder={`경유지 ${index + 1} 입력`}
-                    value={stopover}
-                    onChange={(event) =>
-                      handleUpdateStopover(index, event.target.value)
-                    }
-                  />
+                  <div
+                    key={`stopover-row-${index}`}
+                    className="flex gap-2 sm:items-stretch"
+                  >
+                    <input
+                      className="min-h-14 min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                      placeholder={`경유지 ${index + 1} 입력`}
+                      value={stopover}
+                      onChange={(event) =>
+                        handleUpdateStopover(index, event.target.value)
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveStopover(index)}
+                      className="touch-manipulation shrink-0 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black tracking-[-0.03em] text-red-700 transition hover:bg-red-100 active:scale-[0.98]"
+                      style={tapStyle}
+                    >
+                      삭제
+                    </button>
+                  </div>
                 ))}
 
                 <button
@@ -691,7 +582,7 @@ export default function Home() {
                 <p className="mb-2 mt-4 text-xs font-bold tracking-[-0.03em] text-slate-500">
                   시간대
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {TIME_SLOT_OPTIONS.map((opt) => {
                     const selected = formData.departureTimeSlot === opt.value;
                     return (
@@ -705,7 +596,7 @@ export default function Home() {
                             departureTimeSlot: opt.value,
                           }));
                         }}
-                        className={`touch-manipulation min-h-11 min-w-[4.25rem] flex-1 rounded-full border px-3 py-2.5 text-sm font-black tracking-[-0.03em] transition sm:flex-none ${
+                        className={`touch-manipulation min-h-12 w-full rounded-full border px-2 py-2.5 text-sm font-black tracking-[-0.03em] transition ${
                           selected
                             ? "border-emerald-500 bg-emerald-500 text-white shadow-md shadow-emerald-600/15"
                             : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
@@ -878,45 +769,47 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-9 border-t border-slate-100 pt-8">
-            <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
-              증빙자료 첨부
-            </h2>
-            <p className="mt-3 text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
-              전세버스 견적서 또는 결제 영수증을 첨부해주세요.
-            </p>
+          {formData.applicationType === APPLICATION_TYPE_REQUIRES_ATTACHMENT ? (
+            <div className="mt-9 border-t border-slate-100 pt-8">
+              <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+                증빙자료 첨부
+              </h2>
+              <p className="mt-3 text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
+                전세버스 견적서 또는 결제 영수증을 첨부해주세요.
+              </p>
 
-            <div className="mt-5 space-y-3">
-              <input
-                ref={attachmentInputRef}
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.hwp"
-                className="sr-only"
-                onChange={(event) =>
-                  setAttachmentFile(event.target.files?.[0] ?? null)
-                }
-              />
-              <div className="flex min-h-[4.25rem] items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <button
-                  type="button"
-                  onClick={() => attachmentInputRef.current?.click()}
-                  className="shrink-0 rounded-full bg-blue-50 px-4 py-2.5 text-sm font-bold tracking-[-0.03em] text-blue-700 ring-1 ring-blue-100 transition hover:bg-blue-100"
-                >
-                  파일 선택
-                </button>
-                <p className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[-0.02em] text-slate-700">
-                  {attachmentFile ? attachmentFile.name : "선택된 파일 없음"}
+              <div className="mt-5 space-y-3">
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.hwp"
+                  className="sr-only"
+                  onChange={(event) =>
+                    setAttachmentFile(event.target.files?.[0] ?? null)
+                  }
+                />
+                <div className="flex min-h-[4.25rem] items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => attachmentInputRef.current?.click()}
+                    className="shrink-0 rounded-full bg-blue-50 px-4 py-2.5 text-sm font-bold tracking-[-0.03em] text-blue-700 ring-1 ring-blue-100 transition hover:bg-blue-100"
+                  >
+                    파일 선택
+                  </button>
+                  <p className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[-0.02em] text-slate-700">
+                    {attachmentFile ? attachmentFile.name : "선택된 파일 없음"}
+                  </p>
+                </div>
+
+                <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+                  PDF, JPG, PNG, DOC, HWP 파일 지원
+                </p>
+                <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+                  ※ 허위 자료 제출 시 지원이 제한될 수 있습니다.
                 </p>
               </div>
-
-              <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
-                PDF, JPG, PNG, DOC, HWP 파일 지원
-              </p>
-              <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
-                ※ 허위 자료 제출 시 지원이 제한될 수 있습니다.
-              </p>
             </div>
-          </div>
+          ) : null}
 
           <div className="mt-9 border-t border-slate-100 pt-8">
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">

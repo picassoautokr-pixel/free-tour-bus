@@ -130,6 +130,19 @@ function safeText(value: unknown, emptyLabel = "—"): string {
   return s === "" ? emptyLabel : s;
 }
 
+/** DB 예전 신청유형 문자열을 현재 화면 명칭으로 표시 */
+const LEGACY_APPLICATION_TYPE_LABELS: Record<string, string> = {
+  "기계약 전세버스 지원금 신청": "기예약된 전세버스 지원금 신청",
+  "전세버스 신규 신청": "지원금 확정된 제휴버스 신청",
+  "파트너 소개 신청": "지원금 확정 버스로 제휴신청(업체등록용)",
+};
+
+function displayApplicationTypeLabel(raw: string): string {
+  const t = raw.trim();
+  if (t === "" || t === "—") return "—";
+  return LEGACY_APPLICATION_TYPE_LABELS[t] ?? t;
+}
+
 function parseStopovers(raw: unknown): string[] {
   if (raw == null) return [];
   if (Array.isArray(raw)) {
@@ -793,7 +806,9 @@ function DetailSlidePanel({
             문자 발송
           </button>
           <dl>
-            <DetailField label="신청 유형">{row.application_type}</DetailField>
+            <DetailField label="신청 유형">
+              {displayApplicationTypeLabel(row.application_type)}
+            </DetailField>
             <DetailField label="왕복 / 편도">{row.trip_type}</DetailField>
             <DetailField label="버스 등급">{row.bus_grade}</DetailField>
             <DetailField label="출발지">{row.departure}</DetailField>
@@ -1163,6 +1178,8 @@ export default function AdminApplicationsPage() {
         row.departure_detail,
         row.destination,
         row.destination_detail,
+        row.application_type,
+        displayApplicationTypeLabel(row.application_type),
         row.status,
         statusLabelForSearch(row.status),
       ]
@@ -1240,7 +1257,7 @@ export default function AdminApplicationsPage() {
     try {
       const exportRows = filteredAndSortedRows.map((r) => ({
         신청일: formatCreatedAt(r.created_at),
-        신청유형: r.application_type,
+        신청유형: displayApplicationTypeLabel(r.application_type),
         상태: statusLabelForExport(r.status),
         신청자명: r.applicant_name,
         연락처: r.phone,
@@ -1467,7 +1484,7 @@ export default function AdminApplicationsPage() {
                       {row.applicant_name}
                     </p>
                     <p className="mt-1 text-sm text-slate-600">
-                      {row.application_type}
+                      {displayApplicationTypeLabel(row.application_type)}
                     </p>
                     <p className="mt-2 max-w-full truncate text-xs font-semibold text-slate-600">
                       <span className="mr-1 text-slate-400" aria-hidden>
@@ -1625,7 +1642,7 @@ export default function AdminApplicationsPage() {
                       </td>
                       <td className="max-w-[200px] px-4 py-3 text-slate-800">
                         <span className="line-clamp-2">
-                          {row.application_type}
+                          {displayApplicationTypeLabel(row.application_type)}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
