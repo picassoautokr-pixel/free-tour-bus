@@ -200,7 +200,6 @@ export default function Home() {
       </header>
 
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">
-        <div className="pointer-events-none absolute left-1/2 top-8 h-44 w-44 -translate-x-1/2 rounded-full bg-white/70 blur-3xl" />
         <p className="relative text-[2.12rem] font-black leading-[1.18] tracking-[-0.06em] text-slate-950">
           관광버스도 무료!
           <br />
@@ -214,7 +213,7 @@ export default function Home() {
       </section>
 
       <section className="relative z-10 -mt-10 overflow-visible px-5">
-        <div className="overflow-visible rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
+        <div className="relative z-10 overflow-visible rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div>
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
               신청 유형
@@ -228,14 +227,15 @@ export default function Home() {
                     key={applicationType}
                     type="button"
                     onClick={() => {
-                      console.log("[apply] application_type:", applicationType);
+                      console.log("application type clicked");
                       setSelectedApplicationType(applicationType);
                     }}
-                    className={`min-h-14 rounded-2xl border px-4 text-left text-base font-extrabold tracking-[-0.035em] transition ${
+                    className={`touch-manipulation min-h-14 cursor-pointer rounded-2xl border px-4 text-left text-base font-extrabold tracking-[-0.035em] transition ${
                       isSelected
                         ? "border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-950/20"
                         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                     }`}
+                    style={{ WebkitTapHighlightColor: "transparent" }}
                   >
                     {applicationType}
                   </button>
@@ -259,14 +259,15 @@ export default function Home() {
                       key={tripType}
                       type="button"
                       onClick={() => {
-                        console.log("[apply] trip_type:", tripType);
+                        console.log("trip type clicked");
                         setSelectedTripType(tripType);
                       }}
-                      className={`h-12 rounded-full border text-base font-black tracking-[-0.035em] transition ${
+                      className={`touch-manipulation min-h-12 cursor-pointer rounded-full border text-base font-black tracking-[-0.035em] transition ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
                           : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                       }`}
+                      style={{ WebkitTapHighlightColor: "transparent" }}
                     >
                       {tripType}
                     </button>
@@ -283,14 +284,15 @@ export default function Home() {
                       key={busGrade}
                       type="button"
                       onClick={() => {
-                        console.log("[apply] bus_grade:", busGrade);
+                        console.log("bus grade clicked");
                         setSelectedBusGrade(busGrade);
                       }}
-                      className={`h-12 rounded-full border text-base font-black tracking-[-0.035em] transition ${
+                      className={`touch-manipulation min-h-12 cursor-pointer rounded-full border text-base font-black tracking-[-0.035em] transition ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
                           : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                       }`}
+                      style={{ WebkitTapHighlightColor: "transparent" }}
                     >
                       {busGrade}
                     </button>
@@ -325,11 +327,12 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => {
-                    console.log("[apply] add stopover");
+                    console.log("stopover clicked");
                     addStopover();
                   }}
                   disabled={stopovers.length >= 3}
-                  className="flex min-h-12 w-full items-center rounded-2xl px-1 text-left text-base font-black tracking-[-0.035em] text-blue-500 transition hover:text-blue-600 disabled:text-slate-300"
+                  className="touch-manipulation flex min-h-12 w-full cursor-pointer items-center rounded-2xl px-1 text-left text-base font-black tracking-[-0.035em] text-blue-500 transition hover:text-blue-600 disabled:text-slate-300"
+                  style={{ WebkitTapHighlightColor: "transparent" }}
                 >
                   + 경유지 추가
                 </button>
@@ -625,7 +628,8 @@ export default function Home() {
                   setIsSubmitting(false);
                 }
               }}
-              className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-slate-950"
+              className="touch-manipulation relative z-10 flex min-h-[3.75rem] w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-slate-950"
+              style={{ WebkitTapHighlightColor: "transparent" }}
             >
               {isSubmitting ? "신청 접수 중..." : "무료버스 신청하기"}
             </button>
@@ -760,6 +764,7 @@ export default function Home() {
         type="button"
         className="fixed bottom-24 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-40 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(161,98,7,0.35)] ring-1 ring-yellow-200 transition hover:-translate-y-1 hover:bg-yellow-200 active:translate-y-0"
         onClick={() => console.log("[click] 고객센터")}
+        style={{ WebkitTapHighlightColor: "transparent" }}
       >
         <svg
           aria-hidden="true"
