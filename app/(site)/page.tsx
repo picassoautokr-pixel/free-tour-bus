@@ -40,6 +40,7 @@ const organizationTypes = [
 
 /** Supabase `applications`에 넣는 컬럼만 (id·created_at 등 자동값 제외) */
 type ApplicationInsertPayload = {
+  receipt_number: string;
   application_type: string;
   trip_type: string;
   bus_grade: string;
@@ -71,6 +72,24 @@ const formatPhoneNumber = (value: string) => {
   return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
 };
 
+/** FB-YYYYMMDD-#### (고객 로컬 날짜 기준) */
+function generateReceiptNumber(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  let n = 0;
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    n = (buf[0] ?? 0) % 10000;
+  } else {
+    n = Math.floor(Math.random() * 10000);
+  }
+  const suffix = String(n).padStart(4, "0");
+  return `FB-${y}${m}${d}-${suffix}`;
+}
+
 function makeUploadObjectKey(fileName: string) {
   // Storage path에는 영문/숫자/하이픈/언더스코어만 사용 (확장자 유지)
   const extRaw = fileName.split(".").pop() ?? "";
@@ -101,6 +120,7 @@ function resolveDepartureTimeForDb(
 
 /** 완료 모달 접수 요약 */
 type SubmitSuccessSummary = {
+  receiptNumber: string;
   applicationType: string;
   applicantName: string;
   phone: string;
@@ -326,7 +346,10 @@ export default function Home() {
         uploadedFileName = attachmentFile.name;
       }
 
+      const receiptNumber = generateReceiptNumber();
+
       const insertPayload: ApplicationInsertPayload = {
+        receipt_number: receiptNumber,
         application_type: formData.applicationType,
         trip_type: formData.tripType,
         bus_grade: formData.busGrade,
@@ -370,6 +393,7 @@ export default function Home() {
       }
 
       setSuccessSummary({
+        receiptNumber,
         applicationType: formData.applicationType,
         applicantName: formData.applicantName.trim(),
         phone: formatPhoneNumber(phoneDigits),
@@ -1032,6 +1056,10 @@ export default function Home() {
               </p>
               <p className="mt-2 text-center text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
                 영업일 기준 3~5일 이내 순차적으로 연락드릴 수 있습니다.
+              </p>
+
+              <p className="mt-5 text-center text-[1.05rem] font-black tracking-tight text-slate-900">
+                접수번호: {successSummary.receiptNumber}
               </p>
 
               <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 ring-1 ring-slate-100/80">

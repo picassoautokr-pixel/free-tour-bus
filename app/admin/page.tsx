@@ -17,6 +17,7 @@ import { createSupabaseClient } from "@/lib/supabase";
 type ApplicationDetail = {
   id: string;
   created_at: string | null;
+  receipt_number: string;
   application_type: string;
   trip_type: string;
   bus_grade: string;
@@ -54,6 +55,7 @@ type StatusFilterValue = "all" | ApplicationStatusValue;
 
 type SortKey =
   | "created_at"
+  | "receipt_number"
   | "application_type"
   | "applicant_name"
   | "phone"
@@ -359,9 +361,16 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
     const attachmentDisplay =
       attachmentUrl !== "" ? attachmentUrl : safeText(r.attachment_url);
 
+    const receiptRaw = r.receipt_number;
+    const receiptNumber =
+      receiptRaw != null && String(receiptRaw).trim() !== ""
+        ? String(receiptRaw).trim()
+        : "-";
+
     return {
       id,
       created_at: created,
+      receipt_number: receiptNumber,
       application_type: safeText(r.application_type),
       trip_type: safeText(r.trip_type),
       bus_grade: safeText(r.bus_grade),
@@ -508,21 +517,30 @@ function statusLabelForSms(rawStatus: string): string {
   return trimmed === "" || trimmed === "—" ? "—" : trimmed;
 }
 
+function hasPersistedReceiptNumber(row: ApplicationDetail): boolean {
+  const rn = row.receipt_number.trim();
+  return rn !== "" && rn !== "-" && rn !== "—";
+}
+
 function buildDefaultSmsText(row: ApplicationDetail): string {
   const status = coerceApplicationStatus(row.status);
   const memo = row.admin_memo.trim();
+  const rn = row.receipt_number.trim();
+  const receiptBlock = hasPersistedReceiptNumber(row)
+    ? `\n\n접수번호: ${rn}`
+    : "";
 
   if (status === "pending") {
-    return `[무료관광버스]\n신청이 정상 접수되었습니다.\n\n담당자 검토 후 순차적으로 안내드리겠습니다.\n감사합니다.\n`;
+    return `[무료관광버스]\n신청이 정상 접수되었습니다.${receiptBlock}\n\n관리자 심사 후 문자로 결과를 안내드립니다.\n감사합니다.\n`;
   }
   if (status === "reviewing") {
-    return `[무료관광버스]\n신청 내용 검토 중입니다.\n\n추가 확인 후 안내드리겠습니다.\n감사합니다.\n`;
+    return `[무료관광버스]\n신청 내용 검토 중입니다.${receiptBlock}\n\n추가 확인 후 안내드리겠습니다.\n감사합니다.\n`;
   }
   if (status === "approved") {
-    return `[무료관광버스]\n신청이 승인되었습니다.\n\n담당자가 순차 연락드릴 예정입니다.\n감사합니다.\n`;
+    return `[무료관광버스]\n신청이 승인되었습니다.${receiptBlock}\n\n담당자가 순차 연락드릴 예정입니다.\n감사합니다.\n`;
   }
 
-  return `[무료관광버스]\n신청이 반려되었습니다.\n\n사유:\n${memo || "사유 미기재"}\n\n문의사항은 고객센터로 연락 부탁드립니다.\n`;
+  return `[무료관광버스]\n신청이 반려되었습니다.${receiptBlock}\n\n사유:\n${memo || "사유 미기재"}\n\n문의사항은 고객센터로 연락 부탁드립니다.\n`;
 }
 
 function SmsModal({
@@ -919,6 +937,11 @@ function DetailSlidePanel({
             문자 발송
           </button>
           <dl>
+            <DetailField label="접수번호">
+              <span className="font-mono font-semibold tracking-tight">
+                {row.receipt_number}
+              </span>
+            </DetailField>
             <DetailField label="신청 유형">
               {displayApplicationTypeLabel(row.application_type)}
             </DetailField>
@@ -1464,6 +1487,7 @@ export default function AdminApplicationsPage() {
       if (!hasTerm) return true;
 
       const haystack = [
+        row.receipt_number,
         row.applicant_name,
         row.phone,
         row.organization_name,
@@ -1555,6 +1579,7 @@ export default function AdminApplicationsPage() {
     try {
       const exportRows = filteredAndSortedRows.map((r) => ({
         신청일: formatCreatedAt(r.created_at),
+        접수번호: r.receipt_number,
         신청유형: displayApplicationTypeLabel(r.application_type),
         상태: statusLabelForExport(r.status),
         신청자명: r.applicant_name,
@@ -1850,7 +1875,7 @@ export default function AdminApplicationsPage() {
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="신청자명, 연락처, 단체명, 출발지, 도착지 검색"
+                placeholder="접수번호, 신청자명, 연락처, 단체명, 출발지, 도착지 검색"
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               />
             </label>
@@ -1942,6 +1967,12 @@ export default function AdminApplicationsPage() {
                       </p>
                       <StatusBadge status={row.status} />
                     </div>
+                    <p className="mt-2 text-xs font-semibold text-slate-700">
+                      접수번호{" "}
+                      <span className="font-mono text-[0.8125rem] font-bold text-slate-900">
+                        {row.receipt_number}
+                      </span>
+                    </p>
                     <p className="mt-3 text-base font-bold text-slate-900">
                       {row.applicant_name}
                     </p>
@@ -1999,6 +2030,15 @@ export default function AdminApplicationsPage() {
                         className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
                       >
                         신청일{sortIndicator("created_at")}
+                      </button>
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick("receipt_number")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        접수번호{sortIndicator("receipt_number")}
                       </button>
                     </th>
                     <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
@@ -2102,6 +2142,9 @@ export default function AdminApplicationsPage() {
                     >
                       <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                         {formatCreatedAt(row.created_at)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-[13px] font-semibold text-slate-800">
+                        {row.receipt_number}
                       </td>
                       <td className="max-w-[200px] px-4 py-3 text-slate-800">
                         <span className="line-clamp-2">
