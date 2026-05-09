@@ -47,6 +47,7 @@ export default function Home() {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [additionalNotes, setAdditionalNotes] = useState("");
+  const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
 
   const addStopover = () => {
     setStopovers((currentStopovers) =>
@@ -392,7 +393,7 @@ export default function Home() {
 
                 setPhoneError(false);
                 setPartyCountError(false);
-                console.log("validation success");
+                setShowSubmitSuccess(true);
               }}
               className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950"
             >
@@ -475,6 +476,55 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      {showSubmitSuccess ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/45 px-5 py-10 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="submit-success-title"
+        >
+          <div className="w-full max-w-[340px] rounded-[1.75rem] bg-white p-8 shadow-2xl shadow-slate-900/25 ring-1 ring-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-emerald-50 ring-[10px] ring-emerald-50/70">
+                <svg
+                  aria-hidden="true"
+                  className="h-11 w-11 text-emerald-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+              <h3
+                id="submit-success-title"
+                className="mt-6 text-xl font-black tracking-[-0.045em] text-slate-950"
+              >
+                신청이 정상적으로 접수되었습니다.
+              </h3>
+              <p className="mt-3 text-[0.9375rem] font-medium leading-7 tracking-[-0.02em] text-slate-500">
+                관리자 심사 후 문자로 결과를 안내드립니다.
+              </p>
+              <button
+                type="button"
+                className="mt-8 flex h-12 w-full items-center justify-center rounded-2xl bg-slate-950 text-base font-bold tracking-[-0.03em] text-white shadow-lg shadow-slate-950/15 transition hover:bg-slate-900 active:scale-[0.99]"
+                onClick={() => {
+                  setShowSubmitSuccess(false);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <button
         type="button"
