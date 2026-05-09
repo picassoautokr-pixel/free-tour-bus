@@ -39,6 +39,9 @@ export default function Home() {
   /** 휴대폰 번호는 숫자만 저장 (최대 11자리) */
   const [phoneDigits, setPhoneDigits] = useState("");
   const [phoneError, setPhoneError] = useState(false);
+  /** 인원수 (숫자 입력, 최소 10명 검증에 사용) */
+  const [partyCount, setPartyCount] = useState("");
+  const [partyCountError, setPartyCountError] = useState(false);
   const [organizationName, setOrganizationName] = useState("");
   const [organizationType, setOrganizationType] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -214,12 +217,29 @@ export default function Home() {
                 </label>
               </div>
 
-              <input
-                type="number"
-                inputMode="numeric"
-                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
-                placeholder="인원수 입력"
-              />
+              <div className="space-y-1.5">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
+                    partyCountError
+                      ? "border-red-400 focus:border-red-500"
+                      : "border-slate-200 focus:border-blue-500"
+                  }`}
+                  placeholder="인원수 입력"
+                  value={partyCount}
+                  onChange={(event) => {
+                    setPartyCount(event.target.value);
+                    setPartyCountError(false);
+                  }}
+                />
+                {partyCountError ? (
+                  <p className="px-1 text-xs font-medium leading-5 text-red-500">
+                    10인 이상 단체만 신청 가능합니다.
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -286,6 +306,11 @@ export default function Home() {
               <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
                 ※ 일부 업종 및 일반 동호회는 지원 대상에서 제외될 수 있습니다.
               </p>
+              {organizationType === "기타 소속단체" ? (
+                <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
+                  소속 확인이 가능한 단체만 심사 대상에 포함됩니다.
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -354,12 +379,20 @@ export default function Home() {
               onClick={() => {
                 const phoneOk =
                   phoneDigits.length === 11 && phoneDigits.startsWith("010");
-                if (!phoneOk) {
-                  setPhoneError(true);
+                const parsedCount = Number.parseInt(partyCount, 10);
+                const headcountOk =
+                  Number.isFinite(parsedCount) && parsedCount >= 10;
+
+                setPhoneError(!phoneOk);
+                setPartyCountError(!headcountOk);
+
+                if (!phoneOk || !headcountOk) {
                   return;
                 }
+
                 setPhoneError(false);
-                console.log("submit");
+                setPartyCountError(false);
+                console.log("validation success");
               }}
               className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950"
             >
