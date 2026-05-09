@@ -106,6 +106,13 @@ function parseAttachmentUrl(r: Record<string, unknown>): string {
   return "";
 }
 
+function memoPreview(memo: string, maxChars = 28): string {
+  const trimmed = memo.trim();
+  if (trimmed === "") return "-";
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars)}…`;
+}
+
 function normalizeRows(data: unknown): ApplicationDetail[] {
   if (data == null) return [];
   if (!Array.isArray(data)) return [];
@@ -746,11 +753,12 @@ export default function AdminApplicationsPage() {
                     <p className="mt-1 text-sm text-slate-600">
                       {row.application_type}
                     </p>
-                    {row.admin_memo.trim() !== "" ? (
-                      <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                        <span aria-hidden>📝</span> 메모 있음
-                      </p>
-                    ) : null}
+                    <p className="mt-2 max-w-full truncate text-xs font-semibold text-slate-600">
+                      <span className="mr-1 text-slate-400" aria-hidden>
+                        📝
+                      </span>
+                      {memoPreview(row.admin_memo, 28)}
+                    </p>
                     <dl className="mt-4 space-y-2 text-sm">
                       <div className="flex justify-between gap-2">
                         <dt className="text-slate-500">연락처</dt>
@@ -867,8 +875,15 @@ export default function AdminApplicationsPage() {
                       <td className="whitespace-nowrap px-4 py-3">
                         <StatusBadge status={row.status} />
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {row.admin_memo.trim() !== "" ? "📝" : ""}
+                      <td className="px-4 py-3 text-slate-700">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="text-slate-400" aria-hidden>
+                            📝
+                          </span>
+                          <span className="min-w-0 max-w-[260px] truncate text-sm">
+                            {memoPreview(row.admin_memo, 28)}
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   ))}
