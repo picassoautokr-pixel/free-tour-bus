@@ -145,39 +145,30 @@ function displayApplicationTypeLabel(raw: string): string {
   return LEGACY_APPLICATION_TYPE_LABELS[t] ?? t;
 }
 
-/** 실시간 알림용 짧은 비프음 (외부 파일 없음) */
-function playSoftNotificationSound() {
-  try {
-    const AudioCtx =
-      typeof window !== "undefined"
-        ? window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-        : null;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    gain.gain.setValueAtTime(0.07, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.18);
-    osc.onended = () => void ctx.close();
-  } catch {
-    /* autoplay/환경 제한 시 무시 */
-  }
+const NOTIFICATION_SOUND_PREF_KEY = "admin-notification-sound-enabled";
+
+/** 공유 AudioContext로 비프 재생 (호출부에서 try/catch 권장) */
+function playNotificationBeep(ctx: AudioContext) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(880, ctx.currentTime);
+  gain.gain.setValueAtTime(0.07, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.18);
 }
 
-type AdminToast =
-  | { kind: "simple"; message: string }
-  | {
-      kind: "new_application";
-      applicantName: string;
-      applicationTypeLabel: string;
-      passengerLine: string;
-    };
+type AdminToast = { message: string };
+
+/** 실시간 INSERT 전용 토스트 (우측 상단) */
+type RealtimeToastPayload = {
+  applicantName: string;
+  applicationTypeLabel: string;
+  passengerLine: string;
+};
 
 type RecentNotificationItem = {
   id: string;
@@ -1084,6 +1075,18 @@ export default function AdminApplicationsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<ApplicationDetail | null>(null);
   const [toast, setToast] = useState<AdminToast | null>(null);
+  const [realtimeToast, setRealtimeToast] =
+    useState<RealtimeToastPayload | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(() =>
+    typeof window !== "undefined" &&
+    window.localStorage.getItem(NOTIFICATION_SOUND_PREF_KEY) === "1",
+  );
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const soundEnabledRef = useRef(false);
+  const realtimeToastTimerRef = useRef<number | null>(null);
+
+  soundEnabledRef.current = soundEnabled;
+
   const [unseenRealtimeCount, setUnseenRealtimeCount] = useState(0);
   const [recentNotifications, setRecentNotifications] = useState<
     RecentNotificationItem[]
@@ -1100,10 +1103,45 @@ export default function AdminApplicationsPage() {
 
   useEffect(() => {
     if (toast == null) return;
-    const ms = toast.kind === "new_application" ? 5200 : 3200;
-    const timerId = window.setTimeout(() => setToast(null), ms);
+    const timerId = window.setTimeout(() => setToast(null), 3200);
     return () => window.clearTimeout(timerId);
   }, [toast]);
+
+  useEffect(() => {
+    return () => {
+      if (realtimeToastTimerRef.current != null) {
+        window.clearTimeout(realtimeToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleEnableNotificationSound = useCallback(async () => {
+    try {
+      const AC =
+        typeof window !== "undefined"
+          ? window.AudioContext ??
+            (
+              window as Window & {
+                webkitAudioContext?: typeof AudioContext;
+              }
+            ).webkitAudioContext
+          : undefined;
+      if (!AC) {
+        console.warn("[notification sound] AudioContext를 사용할 수 없습니다.");
+        return;
+      }
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AC();
+      }
+      const ctx = audioContextRef.current;
+      await ctx.resume();
+      playNotificationBeep(ctx);
+      setSoundEnabled(true);
+      window.localStorage.setItem(NOTIFICATION_SOUND_PREF_KEY, "1");
+    } catch (e) {
+      console.warn("[notification sound] 알림음 활성화 실패", e);
+    }
+  }, []);
 
   useEffect(() => {
     if (!notificationPanelOpen) return;
@@ -1131,10 +1169,10 @@ export default function AdminApplicationsPage() {
   const handleCopySms = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(smsText);
-      setToast({ kind: "simple", message: "복사 완료" });
+      setToast({ message: "복사 완료" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setToast({ kind: "simple", message: `복사 실패: ${message}` });
+      setToast({ message: `복사 실패: ${message}` });
     }
   }, [smsText]);
 
@@ -1180,7 +1218,7 @@ export default function AdminApplicationsPage() {
           ? { ...prev, status: nextStatus, admin_memo: nextMemo }
           : prev,
       );
-      setToast({ kind: "simple", message: "저장되었습니다." });
+      setToast({ message: "저장되었습니다." });
     },
     [],
   );
@@ -1261,13 +1299,39 @@ export default function AdminApplicationsPage() {
               ? "(이름 없음)"
               : row.applicant_name;
 
-          setToast({
-            kind: "new_application",
+          setRealtimeToast({
             applicantName: applicant,
             applicationTypeLabel: typeLabel,
             passengerLine,
           });
-          playSoftNotificationSound();
+          if (realtimeToastTimerRef.current != null) {
+            window.clearTimeout(realtimeToastTimerRef.current);
+          }
+          realtimeToastTimerRef.current = window.setTimeout(() => {
+            setRealtimeToast(null);
+            realtimeToastTimerRef.current = null;
+          }, 5000);
+
+          if (soundEnabledRef.current) {
+            try {
+              const ctx = audioContextRef.current;
+              if (!ctx) {
+                console.warn(
+                  "[notification sound] AudioContext가 없습니다. 상단에서 「알림음 켜기」를 눌러 주세요.",
+                );
+              } else {
+                void ctx.resume().then(() => {
+                  try {
+                    playNotificationBeep(ctx);
+                  } catch (e) {
+                    console.warn("[notification sound] 비프 재생 실패", e);
+                  }
+                });
+              }
+            } catch (e) {
+              console.warn("[notification sound] 재생 처리 실패", e);
+            }
+          }
         },
       )
       .subscribe();
@@ -1462,7 +1526,7 @@ export default function AdminApplicationsPage() {
       XLSX.writeFile(wb, filename, { bookType: "xlsx" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setToast({ kind: "simple", message: `엑셀 다운로드 실패: ${message}` });
+      setToast({ message: `엑셀 다운로드 실패: ${message}` });
     }
   }, [filteredAndSortedRows]);
 
@@ -1493,6 +1557,17 @@ export default function AdminApplicationsPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => void handleEnableNotificationSound()}
+              className={`rounded-lg border px-3 py-2 text-xs font-bold shadow-sm transition sm:text-sm ${
+                soundEnabled
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-100 hover:bg-emerald-100"
+                  : "border-slate-200 bg-white text-[#1e3a5f] hover:bg-slate-50"
+              }`}
+            >
+              {soundEnabled ? "알림음 켜짐" : "알림음 켜기"}
+            </button>
             <div className="relative" ref={notificationWrapRef}>
               <button
                 type="button"
@@ -1941,79 +2016,77 @@ export default function AdminApplicationsPage() {
         />
       ) : null}
 
+      {realtimeToast ? (
+        <div
+          className="fixed right-4 top-4 z-[300] w-[min(calc(100vw-2rem),22rem)] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl shadow-slate-900/20 ring-1 ring-slate-100"
+          role="status"
+          aria-live="assertive"
+        >
+          <div className="flex gap-3">
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1e3a5f]/10 text-[#1e3a5f]"
+              aria-hidden
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+                />
+              </svg>
+            </span>
+            <div className="min-w-0 flex-1 py-0.5">
+              <p className="text-sm font-black leading-snug text-slate-900">
+                새 신청이 접수되었습니다.
+              </p>
+              <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
+                <span className="text-slate-500">신청자명</span>{" "}
+                {realtimeToast.applicantName}
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                <span className="text-slate-500">신청유형</span>{" "}
+                {realtimeToast.applicationTypeLabel}
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                <span className="text-slate-500">인원수</span>{" "}
+                {realtimeToast.passengerLine}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {toast ? (
         <div
-          className={`fixed bottom-6 left-1/2 z-[60] flex max-w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-2xl px-4 py-3 shadow-lg ring-1 ${
-            toast.kind === "new_application"
-              ? "items-start border border-slate-200 bg-white text-slate-900 shadow-slate-900/15 ring-slate-100"
-              : "items-center border border-emerald-200 bg-emerald-50 text-emerald-900 shadow-emerald-900/10 ring-emerald-100"
-          }`}
+          className="fixed bottom-6 left-1/2 z-[60] flex max-w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-lg shadow-emerald-900/10 ring-1 ring-emerald-100"
           role="status"
           aria-live="polite"
         >
-          {toast.kind === "simple" ? (
-            <>
-              <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
-                aria-hidden
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              </span>
-              <span className="text-sm font-semibold leading-snug">
-                {toast.message}
-              </span>
-            </>
-          ) : (
-            <>
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1e3a5f]/10 text-[#1e3a5f]"
-                aria-hidden
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
-                  />
-                </svg>
-              </span>
-              <div className="min-w-0 flex-1 py-0.5">
-                <p className="text-sm font-black leading-snug text-slate-900">
-                  새 신청이 접수되었습니다.
-                </p>
-                <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
-                  <span className="text-slate-500">신청자명</span>{" "}
-                  {toast.applicantName}
-                </p>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
-                  <span className="text-slate-500">신청유형</span>{" "}
-                  {toast.applicationTypeLabel}
-                </p>
-                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
-                  <span className="text-slate-500">인원수</span>{" "}
-                  {toast.passengerLine}
-                </p>
-              </div>
-            </>
-          )}
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+            aria-hidden
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          </span>
+          <span className="leading-snug">{toast.message}</span>
         </div>
       ) : null}
     </div>
