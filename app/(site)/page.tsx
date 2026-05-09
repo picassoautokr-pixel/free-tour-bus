@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { CustomerSupportSheet } from "@/components/CustomerSupportSheet";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 고객 폼에 노출되는 유형만 (업체용 등은 렌더링하지 않음 — 기존 DB 값은 관리자에서 표시) */
@@ -212,6 +213,7 @@ export default function Home() {
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(
     null,
   );
+  const [supportSheetOpen, setSupportSheetOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -1149,10 +1151,18 @@ export default function Home() {
         </div>
       ) : null}
 
+      <CustomerSupportSheet
+        open={supportSheetOpen}
+        onClose={() => setSupportSheetOpen(false)}
+      />
+
       <button
         type="button"
         className="fixed bottom-24 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-40 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(161,98,7,0.35)] ring-1 ring-yellow-200 transition hover:-translate-y-1 hover:bg-yellow-200 active:translate-y-0"
-        onClick={() => console.log("[click] 고객센터")}
+        onClick={() => setSupportSheetOpen(true)}
+        aria-expanded={supportSheetOpen}
+        aria-haspopup="dialog"
+        aria-controls="customer-support-sheet"
         style={{ WebkitTapHighlightColor: "transparent" }}
       >
         <svg
