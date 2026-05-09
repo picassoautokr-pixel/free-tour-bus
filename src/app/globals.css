@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+:root {
+  --font-pretendard:
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, sans-serif;
+}
+
+@theme inline {
+  --font-sans: var(--font-pretendard);
+}
+
+body {
+  font-family: var(--font-pretendard);
+}
