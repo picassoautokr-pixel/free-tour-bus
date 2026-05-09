@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 
+import { createSupabaseClient } from "@/lib/supabase";
+
 const applicationTypes = [
   "기계약 전세버스 지원금 신청",
   "전세버스 신규 신청",
@@ -35,6 +37,10 @@ export default function Home() {
   const [selectedTripType, setSelectedTripType] = useState(tripTypes[0]);
   const [selectedBusGrade, setSelectedBusGrade] = useState(busGrades[0]);
   const [stopovers, setStopovers] = useState<string[]>([]);
+  const [departure, setDeparture] = useState("");
+  const [destination, setDestination] = useState("");
+  const [departureDate, setDepartureDate] = useState("");
+  const [returnDate, setReturnDate] = useState("");
   const [applicantName, setApplicantName] = useState("");
   /** 휴대폰 번호는 숫자만 저장 (최대 11자리) */
   const [phoneDigits, setPhoneDigits] = useState("");
@@ -48,6 +54,12 @@ export default function Home() {
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
+  /** 저장 실패 시 Supabase/예외 message (임시 디버깅용) */
+  const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(
+    null,
+  );
 
   const addStopover = () => {
     setStopovers((currentStopovers) =>
@@ -171,10 +183,14 @@ export default function Home() {
                 <input
                   className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
                   placeholder="출발지 입력"
+                  value={departure}
+                  onChange={(event) => setDeparture(event.target.value)}
                 />
                 <input
                   className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
                   placeholder="도착지 입력"
+                  value={destination}
+                  onChange={(event) => setDestination(event.target.value)}
                 />
 
                 {stopovers.map((stopover, index) => (
@@ -205,6 +221,8 @@ export default function Home() {
                   <input
                     type="date"
                     className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500"
+                    value={departureDate}
+                    onChange={(event) => setDepartureDate(event.target.value)}
                   />
                 </label>
                 <label className="block">
@@ -214,6 +232,8 @@ export default function Home() {
                   <input
                     type="date"
                     className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500"
+                    value={returnDate}
+                    onChange={(event) => setReturnDate(event.target.value)}
                   />
                 </label>
               </div>
@@ -375,9 +395,22 @@ export default function Home() {
             <p className="mb-5 text-center text-xs font-medium leading-6 tracking-[-0.02em] text-slate-400">
               신청 후 관리자 심사를 통해 지원 여부가 안내됩니다.
             </p>
+            {submitError ? (
+              <div className="mb-4 space-y-2 text-center">
+                <p className="text-sm font-medium leading-6 text-red-500">
+                  신청 저장 중 오류가 발생했습니다.
+                </p>
+                {submitErrorMessage ? (
+                  <p className="break-words px-1 font-mono text-xs leading-5 text-red-600/90">
+                    {submitErrorMessage}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <button
               type="button"
-              onClick={() => {
+              disabled={isSubmitting}
+              onClick={async () => {
                 const phoneOk =
                   phoneDigits.length === 11 && phoneDigits.startsWith("010");
                 const parsedCount = Number.parseInt(partyCount, 10);
@@ -393,11 +426,78 @@ export default function Home() {
 
                 setPhoneError(false);
                 setPartyCountError(false);
-                setShowSubmitSuccess(true);
+                setSubmitError(false);
+                setSubmitErrorMessage(null);
+                setIsSubmitting(true);
+
+                const departureDateValue = departureDate.trim();
+                const returnDateValue = returnDate.trim();
+                const passengerCountNum = Number(parsedCount);
+
+                try {
+                  const supabase = createSupabaseClient();
+
+                  const insertPayload = {
+                    application_type: selectedApplicationType,
+                    trip_type: selectedTripType,
+                    bus_grade: selectedBusGrade,
+                    departure: departure.trim(),
+                    destination: destination.trim(),
+                    departure_date:
+                      departureDateValue === "" ? null : departureDateValue,
+                    return_date:
+                      returnDateValue === "" ? null : returnDateValue,
+                    passenger_count: passengerCountNum,
+                    applicant_name: applicantName.trim(),
+                    phone: formatPhoneDisplay(phoneDigits),
+                    organization_name: organizationName.trim(),
+                    organization_type:
+                      organizationType.trim() === ""
+                        ? null
+                        : organizationType.trim(),
+                    request_message: additionalNotes.trim(),
+                    status: "pending",
+                  };
+
+                  const { error } = await supabase
+                    .from("applications")
+                    .insert(insertPayload);
+
+                  if (error) {
+                    console.error("[applications insert] Supabase error:", {
+                      message: error.message,
+                      details: error.details,
+                      hint: error.hint,
+                      code: error.code,
+                    });
+                    console.error(
+                      "[applications insert] full error object:",
+                      error,
+                    );
+                    setSubmitErrorMessage(error.message);
+                    setSubmitError(true);
+                    return;
+                  }
+
+                  setShowSubmitSuccess(true);
+                } catch (unknownError) {
+                  console.error(
+                    "[applications insert] unexpected:",
+                    unknownError,
+                  );
+                  const message =
+                    unknownError instanceof Error
+                      ? unknownError.message
+                      : String(unknownError);
+                  setSubmitErrorMessage(message);
+                  setSubmitError(true);
+                } finally {
+                  setIsSubmitting(false);
+                }
               }}
-              className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950"
+              className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-slate-950"
             >
-              무료버스 신청하기
+              {isSubmitting ? "신청 접수 중..." : "무료버스 신청하기"}
             </button>
           </div>
         </div>
