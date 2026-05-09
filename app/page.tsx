@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { createSupabaseClient } from "@/lib/supabase";
 
@@ -39,38 +39,91 @@ type ApplicationInsertPayload = {
   status: string;
 };
 
-/** 숫자만 담긴 문자열을 010-1234-5678 형태로 보여줍니다. */
-function formatPhoneDisplay(digits: string) {
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 7) {
-    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  }
-  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
-}
+const DRAFT_STORAGE_KEY = "freeTourBusFormDraft";
+
+// 모바일 입력 UX용: 숫자만 남기고 010-1234-5678 형태로 포맷
+const formatPhoneNumber = (value: string) => {
+  const numbers = value.replace(/[^0-9]/g, "").slice(0, 11);
+  if (numbers.length <= 3) return numbers;
+  if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
+  return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
+};
 
 export default function Home() {
-  const [selectedApplicationType, setSelectedApplicationType] = useState(
-    applicationTypes[0],
-  );
-  const [selectedTripType, setSelectedTripType] = useState(tripTypes[0]);
-  const [selectedBusGrade, setSelectedBusGrade] = useState(busGrades[0]);
-  const [stopovers, setStopovers] = useState<string[]>([]);
-  const [departure, setDeparture] = useState("");
-  const [destination, setDestination] = useState("");
-  const [departureDate, setDepartureDate] = useState("");
-  const [returnDate, setReturnDate] = useState("");
-  const [applicantName, setApplicantName] = useState("");
-  /** 휴대폰 번호는 숫자만 저장 (최대 11자리) */
-  const [phoneDigits, setPhoneDigits] = useState("");
+  const draft = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
+      return saved ? (JSON.parse(saved) as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [selectedApplicationType, setSelectedApplicationType] = useState(() => {
+    const value = draft?.selectedApplicationType;
+    return typeof value === "string" ? value : applicationTypes[0];
+  });
+  const [selectedTripType, setSelectedTripType] = useState(() => {
+    const value = draft?.selectedTripType;
+    return typeof value === "string" ? value : tripTypes[0];
+  });
+  const [selectedBusGrade, setSelectedBusGrade] = useState(() => {
+    const value = draft?.selectedBusGrade;
+    return typeof value === "string" ? value : busGrades[0];
+  });
+  const [stopovers, setStopovers] = useState<string[]>(() => {
+    const value = draft?.stopovers;
+    return Array.isArray(value) && value.every((v) => typeof v === "string")
+      ? (value as string[])
+      : [];
+  });
+  const [departure, setDeparture] = useState(() => {
+    const value = draft?.departure;
+    return typeof value === "string" ? value : "";
+  });
+  const [destination, setDestination] = useState(() => {
+    const value = draft?.destination;
+    return typeof value === "string" ? value : "";
+  });
+  const [departureDate, setDepartureDate] = useState(() => {
+    const value = draft?.departureDate;
+    return typeof value === "string" ? value : "";
+  });
+  const [returnDate, setReturnDate] = useState(() => {
+    const value = draft?.returnDate;
+    return typeof value === "string" ? value : "";
+  });
+  const [partyCount, setPartyCount] = useState(() => {
+    const value = draft?.partyCount;
+    return typeof value === "string" ? value : "";
+  });
+  const [applicantName, setApplicantName] = useState(() => {
+    const value = draft?.applicantName;
+    return typeof value === "string" ? value : "";
+  });
+  /** 휴대폰 번호(표시용 포맷 포함) */
+  const [phone, setPhone] = useState(() => {
+    const value = draft?.phone;
+    return typeof value === "string" ? value : "";
+  });
+  const [organizationName, setOrganizationName] = useState(() => {
+    const value = draft?.organizationName;
+    return typeof value === "string" ? value : "";
+  });
+  const [organizationType, setOrganizationType] = useState(() => {
+    const value = draft?.organizationType;
+    return typeof value === "string" ? value : "";
+  });
+  const [additionalNotes, setAdditionalNotes] = useState(() => {
+    const value = draft?.additionalNotes;
+    return typeof value === "string" ? value : "";
+  });
+
   const [phoneError, setPhoneError] = useState(false);
-  /** 인원수 (숫자 입력, 최소 10명 검증에 사용) */
-  const [partyCount, setPartyCount] = useState("");
   const [partyCountError, setPartyCountError] = useState(false);
-  const [organizationName, setOrganizationName] = useState("");
-  const [organizationType, setOrganizationType] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const [additionalNotes, setAdditionalNotes] = useState("");
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(false);
@@ -78,6 +131,45 @@ export default function Home() {
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(
     null,
   );
+
+  useEffect(() => {
+    try {
+      const draft = {
+        selectedApplicationType,
+        selectedTripType,
+        selectedBusGrade,
+        stopovers,
+        departure,
+        destination,
+        departureDate,
+        returnDate,
+        partyCount,
+        applicantName,
+        phone,
+        organizationName,
+        organizationType,
+        additionalNotes,
+      };
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch (e) {
+      console.warn("[draft save] failed:", e);
+    }
+  }, [
+    additionalNotes,
+    applicantName,
+    departure,
+    departureDate,
+    destination,
+    organizationName,
+    organizationType,
+    partyCount,
+    phone,
+    returnDate,
+    selectedApplicationType,
+    selectedBusGrade,
+    selectedTripType,
+    stopovers,
+  ]);
 
   const addStopover = () => {
     setStopovers((currentStopovers) =>
@@ -135,7 +227,10 @@ export default function Home() {
                   <button
                     key={applicationType}
                     type="button"
-                    onClick={() => setSelectedApplicationType(applicationType)}
+                    onClick={() => {
+                      console.log("[apply] application_type:", applicationType);
+                      setSelectedApplicationType(applicationType);
+                    }}
                     className={`min-h-14 rounded-2xl border px-4 text-left text-base font-extrabold tracking-[-0.035em] transition ${
                       isSelected
                         ? "border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-950/20"
@@ -163,7 +258,10 @@ export default function Home() {
                     <button
                       key={tripType}
                       type="button"
-                      onClick={() => setSelectedTripType(tripType)}
+                      onClick={() => {
+                        console.log("[apply] trip_type:", tripType);
+                        setSelectedTripType(tripType);
+                      }}
                       className={`h-12 rounded-full border text-base font-black tracking-[-0.035em] transition ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
@@ -184,7 +282,10 @@ export default function Home() {
                     <button
                       key={busGrade}
                       type="button"
-                      onClick={() => setSelectedBusGrade(busGrade)}
+                      onClick={() => {
+                        console.log("[apply] bus_grade:", busGrade);
+                        setSelectedBusGrade(busGrade);
+                      }}
                       className={`h-12 rounded-full border text-base font-black tracking-[-0.035em] transition ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
@@ -223,9 +324,12 @@ export default function Home() {
 
                 <button
                   type="button"
-                  onClick={addStopover}
+                  onClick={() => {
+                    console.log("[apply] add stopover");
+                    addStopover();
+                  }}
                   disabled={stopovers.length >= 3}
-                  className="h-11 rounded-full px-1 text-left text-base font-black tracking-[-0.035em] text-blue-500 transition hover:text-blue-600 disabled:text-slate-300"
+                  className="flex min-h-12 w-full items-center rounded-2xl px-1 text-left text-base font-black tracking-[-0.035em] text-blue-500 transition hover:text-blue-600 disabled:text-slate-300"
                 >
                   + 경유지 추가
                 </button>
@@ -305,12 +409,9 @@ export default function Home() {
                       : "border-slate-200 focus:border-blue-500"
                   }`}
                   placeholder="010-1234-5678"
-                  value={formatPhoneDisplay(phoneDigits)}
+                  value={phone}
                   onChange={(event) => {
-                    const digitsOnly = event.target.value
-                      .replace(/\D/g, "")
-                      .slice(0, 11);
-                    setPhoneDigits(digitsOnly);
+                    setPhone(formatPhoneNumber(event.target.value));
                     setPhoneError(false);
                   }}
                 />
@@ -429,8 +530,10 @@ export default function Home() {
               type="button"
               disabled={isSubmitting}
               onClick={async () => {
-                const phoneOk =
-                  phoneDigits.length === 11 && phoneDigits.startsWith("010");
+                console.log("submit clicked");
+
+                const phoneDigits = phone.replace(/[^0-9]/g, "");
+                const phoneOk = phoneDigits.length === 11 && phoneDigits.startsWith("010");
                 const parsedCount = Number.parseInt(partyCount, 10);
                 const headcountOk =
                   Number.isFinite(parsedCount) && parsedCount >= 10;
@@ -467,7 +570,7 @@ export default function Home() {
                       returnDateValue === "" ? null : returnDateValue,
                     passenger_count: passengerCountNum,
                     applicant_name: applicantName.trim(),
-                    phone: formatPhoneDisplay(phoneDigits),
+                    phone: formatPhoneNumber(phoneDigits),
                     organization_name: organizationName.trim(),
                     organization_type:
                       organizationType.trim() === ""
@@ -655,7 +758,8 @@ export default function Home() {
 
       <button
         type="button"
-        className="fixed bottom-6 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-50 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(161,98,7,0.35)] ring-1 ring-yellow-200 transition hover:-translate-y-1 hover:bg-yellow-200 active:translate-y-0"
+        className="fixed bottom-24 right-[max(1.25rem,calc((100vw-480px)/2+1.25rem))] z-40 flex h-14 items-center gap-2 rounded-full bg-yellow-300 px-5 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(161,98,7,0.35)] ring-1 ring-yellow-200 transition hover:-translate-y-1 hover:bg-yellow-200 active:translate-y-0"
+        onClick={() => console.log("[click] 고객센터")}
       >
         <svg
           aria-hidden="true"
