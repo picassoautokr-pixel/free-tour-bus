@@ -19,6 +19,15 @@ const organizationTypes = [
   "기타 소속단체",
 ];
 
+/** 숫자만 담긴 문자열을 010-1234-5678 형태로 보여줍니다. */
+function formatPhoneDisplay(digits: string) {
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
+}
+
 export default function Home() {
   const [selectedApplicationType, setSelectedApplicationType] = useState(
     applicationTypes[0],
@@ -27,7 +36,9 @@ export default function Home() {
   const [selectedBusGrade, setSelectedBusGrade] = useState(busGrades[0]);
   const [stopovers, setStopovers] = useState<string[]>([]);
   const [applicantName, setApplicantName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  /** 휴대폰 번호는 숫자만 저장 (최대 11자리) */
+  const [phoneDigits, setPhoneDigits] = useState("");
+  const [phoneError, setPhoneError] = useState(false);
   const [organizationName, setOrganizationName] = useState("");
   const [organizationType, setOrganizationType] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -224,14 +235,32 @@ export default function Home() {
                 value={applicantName}
                 onChange={(event) => setApplicantName(event.target.value)}
               />
-              <input
-                type="tel"
-                inputMode="numeric"
-                className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
-                placeholder="010-1234-5678"
-                value={phoneNumber}
-                onChange={(event) => setPhoneNumber(event.target.value)}
-              />
+              <div className="space-y-1.5">
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
+                    phoneError
+                      ? "border-red-400 focus:border-red-500"
+                      : "border-slate-200 focus:border-blue-500"
+                  }`}
+                  placeholder="010-1234-5678"
+                  value={formatPhoneDisplay(phoneDigits)}
+                  onChange={(event) => {
+                    const digitsOnly = event.target.value
+                      .replace(/\D/g, "")
+                      .slice(0, 11);
+                    setPhoneDigits(digitsOnly);
+                    setPhoneError(false);
+                  }}
+                />
+                {phoneError ? (
+                  <p className="px-1 text-xs font-medium leading-5 text-red-500">
+                    올바른 휴대폰 번호를 입력해주세요.
+                  </p>
+                ) : null}
+              </div>
               <input
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
                 placeholder="단체명 입력"
@@ -322,7 +351,16 @@ export default function Home() {
             </p>
             <button
               type="button"
-              onClick={() => console.log("submit")}
+              onClick={() => {
+                const phoneOk =
+                  phoneDigits.length === 11 && phoneDigits.startsWith("010");
+                if (!phoneOk) {
+                  setPhoneError(true);
+                  return;
+                }
+                setPhoneError(false);
+                console.log("submit");
+              }}
               className="flex min-h-[3.75rem] w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950"
             >
               무료버스 신청하기
