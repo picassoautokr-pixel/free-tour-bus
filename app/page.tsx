@@ -199,6 +199,10 @@ export default function Home() {
         </button>
       </header>
 
+      <p className="px-6 pt-3 text-center text-xs font-semibold text-red-500">
+        모바일 수정 테스트 v20260509
+      </p>
+
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">
         <p className="relative text-[2.12rem] font-black leading-[1.18] tracking-[-0.06em] text-slate-950">
           관광버스도 무료!
