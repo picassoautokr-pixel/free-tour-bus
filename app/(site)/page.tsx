@@ -12,6 +12,17 @@ const applicationTypes = [
 
 const tripTypes = ["왕복", "편도"];
 const busGrades = ["일반", "프리미엄"];
+
+const TIME_SLOT_OPTIONS = [
+  { value: "dawn", label: "새벽", db: "새벽" },
+  { value: "morning", label: "오전", db: "오전" },
+  { value: "afternoon", label: "오후", db: "오후" },
+  { value: "evening", label: "저녁", db: "저녁" },
+  { value: "custom", label: "직접입력", db: "" },
+] as const;
+
+type DepartureTimeSlot = (typeof TIME_SLOT_OPTIONS)[number]["value"];
+
 const organizationTypes = [
   "회사/직장",
   "학교",
@@ -70,17 +81,38 @@ function makeUploadObjectKey(fileName: string) {
   return `applications/${safeFileName}`;
 }
 
+function isDepartureTimeSlot(v: string): v is DepartureTimeSlot {
+  return (
+    v === "dawn" ||
+    v === "morning" ||
+    v === "afternoon" ||
+    v === "evening" ||
+    v === "custom"
+  );
+}
+
+/** DB `departure_time` 컬럼에 저장할 문자열 */
+function resolveDepartureTimeForDb(
+  slot: DepartureTimeSlot,
+  customHhMm: string,
+): string {
+  if (slot === "custom") {
+    return customHhMm.trim();
+  }
+  const found = TIME_SLOT_OPTIONS.find((o) => o.value === slot);
+  return found?.db ?? "오전";
+}
+
 type FormData = {
   applicationType: string;
   tripType: string;
   busGrade: string;
   departure: string;
-  departureDetail: string;
   destination: string;
-  destinationDetail: string;
   stopovers: string[];
   departureDate: string;
-  departureTime: string;
+  departureTimeSlot: DepartureTimeSlot;
+  departureTimeCustom: string;
   returnDate: string;
   passengerCount: string;
   applicantName: string;
@@ -95,12 +127,11 @@ const INITIAL_FORM_DATA: FormData = {
   tripType: "왕복",
   busGrade: "일반",
   departure: "",
-  departureDetail: "",
   destination: "",
-  destinationDetail: "",
   stopovers: [],
   departureDate: "",
-  departureTime: "",
+  departureTimeSlot: "morning",
+  departureTimeCustom: "",
   returnDate: "",
   passengerCount: "",
   applicantName: "",
@@ -133,20 +164,57 @@ function normalizeDraftRaw(saved: string): Partial<FormData> | null {
     if (typeof parsed.destination === "string")
       partial.destination = parsed.destination;
 
-    if (typeof parsed.departureDetail === "string")
-      partial.departureDetail = parsed.departureDetail;
-    if (typeof parsed.departure_detail === "string")
-      partial.departureDetail = parsed.departure_detail;
+    /* 레거시: 상세주소 필드가 있으면 출발/도착 한 줄로 병합 */
+    const legacyDepDetail =
+      typeof parsed.departureDetail === "string"
+        ? parsed.departureDetail
+        : typeof parsed.departure_detail === "string"
+          ? parsed.departure_detail
+          : "";
+    const legacyDestDetail =
+      typeof parsed.destinationDetail === "string"
+        ? parsed.destinationDetail
+        : typeof parsed.destination_detail === "string"
+          ? parsed.destination_detail
+          : "";
+    if (legacyDepDetail.trim() !== "" && typeof parsed.departure === "string") {
+      partial.departure = `${parsed.departure} ${legacyDepDetail}`.trim();
+    }
+    if (
+      legacyDestDetail.trim() !== "" &&
+      typeof parsed.destination === "string"
+    ) {
+      partial.destination = `${parsed.destination} ${legacyDestDetail}`.trim();
+    }
 
-    if (typeof parsed.destinationDetail === "string")
-      partial.destinationDetail = parsed.destinationDetail;
-    if (typeof parsed.destination_detail === "string")
-      partial.destinationDetail = parsed.destination_detail;
+    if (
+      typeof parsed.departureTimeSlot === "string" &&
+      isDepartureTimeSlot(parsed.departureTimeSlot)
+    ) {
+      partial.departureTimeSlot = parsed.departureTimeSlot;
+    }
+    if (typeof parsed.departureTimeCustom === "string") {
+      partial.departureTimeCustom = parsed.departureTimeCustom;
+    }
 
-    if (typeof parsed.departureTime === "string")
-      partial.departureTime = parsed.departureTime;
-    if (typeof parsed.departure_time === "string")
-      partial.departureTime = parsed.departure_time;
+    /* 레거시: 시간 문자열만 있는 경우 */
+    if (partial.departureTimeSlot == null) {
+      const raw =
+        typeof parsed.departureTime === "string"
+          ? parsed.departureTime
+          : typeof parsed.departure_time === "string"
+            ? parsed.departure_time
+            : "";
+      const t = raw.trim();
+      if (t === "새벽") partial.departureTimeSlot = "dawn";
+      else if (t === "오전") partial.departureTimeSlot = "morning";
+      else if (t === "오후") partial.departureTimeSlot = "afternoon";
+      else if (t === "저녁") partial.departureTimeSlot = "evening";
+      else if (/^\d{1,2}:\d{2}/.test(t)) {
+        partial.departureTimeSlot = "custom";
+        partial.departureTimeCustom = t.slice(0, 5);
+      }
+    }
 
     if (Array.isArray(parsed.stopovers))
       partial.stopovers = parsed.stopovers.filter((v) => typeof v === "string");
@@ -189,11 +257,9 @@ export default function Home() {
 
   const [phoneError, setPhoneError] = useState(false);
   const [passengerCountError, setPassengerCountError] = useState(false);
-  const [travelInfoError, setTravelInfoError] = useState(false);
-
-  const travelFieldBorder = travelInfoError
-    ? "border-red-400 focus:border-red-500"
-    : "border-slate-200 focus:border-blue-500";
+  const [departureError, setDepartureError] = useState<string | null>(null);
+  const [destinationError, setDestinationError] = useState<string | null>(null);
+  const [dateTimeError, setDateTimeError] = useState<string | null>(null);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
@@ -250,7 +316,9 @@ export default function Home() {
   const handleSubmit = async () => {
     console.log("submit clicked");
 
-    setTravelInfoError(false);
+    setDepartureError(null);
+    setDestinationError(null);
+    setDateTimeError(null);
 
     const phoneDigits = formData.phone.replace(/[^0-9]/g, "");
     const phoneOk = phoneDigits.length === 11 && phoneDigits.startsWith("010");
@@ -262,23 +330,45 @@ export default function Home() {
 
     if (!phoneOk || !headcountOk) return;
 
-    const travelOk =
-      formData.departure.trim() !== "" &&
-      formData.departureDetail.trim() !== "" &&
-      formData.destination.trim() !== "" &&
-      formData.destinationDetail.trim() !== "" &&
-      formData.departureDate.trim() !== "" &&
-      formData.departureTime.trim() !== "";
+    const depTrim = formData.departure.trim();
+    const destTrim = formData.destination.trim();
+    const minPlaceLen = 5;
 
-    setTravelInfoError(!travelOk);
-    if (!travelOk) return;
+    let depErr: string | null = null;
+    if (depTrim.length < minPlaceLen) {
+      depErr = "출발지를 시/군/구와 동까지 입력해주세요.";
+    }
+    let destErr: string | null = null;
+    if (destTrim.length < minPlaceLen) {
+      destErr = "도착지를 시/군/구와 동까지 입력해주세요.";
+    }
+
+    const dateOk = formData.departureDate.trim() !== "";
+    const customOk =
+      formData.departureTimeSlot !== "custom" ||
+      formData.departureTimeCustom.trim() !== "";
+    const dtErr =
+      !dateOk || !customOk
+        ? "출발일과 시간대를 모두 선택해 주세요."
+        : null;
+
+    if (depErr || destErr || dtErr) {
+      setDepartureError(depErr);
+      setDestinationError(destErr);
+      setDateTimeError(dtErr);
+      return;
+    }
+
+    const departureTimeValue = resolveDepartureTimeForDb(
+      formData.departureTimeSlot,
+      formData.departureTimeCustom,
+    );
 
     setSubmitError(false);
     setSubmitErrorMessage(null);
     setIsSubmitting(true);
 
     const departureDateValue = formData.departureDate.trim();
-    const departureTimeValue = formData.departureTime.trim();
     const returnDateValue = formData.returnDate.trim();
 
     try {
@@ -315,10 +405,10 @@ export default function Home() {
         application_type: formData.applicationType,
         trip_type: formData.tripType,
         bus_grade: formData.busGrade,
-        departure: formData.departure.trim(),
-        departure_detail: formData.departureDetail.trim(),
-        destination: formData.destination.trim(),
-        destination_detail: formData.destinationDetail.trim(),
+        departure: depTrim,
+        departure_detail: "",
+        destination: destTrim,
+        destination_detail: "",
         departure_date: departureDateValue === "" ? null : departureDateValue,
         departure_time: departureTimeValue,
         return_date: returnDateValue === "" ? null : returnDateValue,
@@ -482,51 +572,66 @@ export default function Home() {
                 })}
               </div>
 
-              <div className="space-y-3.5">
-                <input
-                  className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${travelFieldBorder}`}
-                  placeholder="출발지 입력"
-                  value={formData.departure}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      departure: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${travelFieldBorder}`}
-                  placeholder="출발지 상세주소"
-                  value={formData.departureDetail}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      departureDetail: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${travelFieldBorder}`}
-                  placeholder="도착지 입력"
-                  value={formData.destination}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      destination: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${travelFieldBorder}`}
-                  placeholder="도착지 상세주소"
-                  value={formData.destinationDetail}
-                  onChange={(event) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      destinationDetail: event.target.value,
-                    }))
-                  }
-                />
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <span className="block text-sm font-black tracking-[-0.03em] text-slate-900">
+                    출발지
+                  </span>
+                  <input
+                    className={`min-h-[3.75rem] w-full rounded-2xl border bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
+                      departureError
+                        ? "border-red-400 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-500"
+                    }`}
+                    placeholder="예: 서울 강남구 역삼동"
+                    value={formData.departure}
+                    onChange={(event) => {
+                      setDepartureError(null);
+                      setFormData((prev) => ({
+                        ...prev,
+                        departure: event.target.value,
+                      }));
+                    }}
+                  />
+                  <p className="px-1 text-xs font-medium leading-5 text-slate-500">
+                    시/군/구와 동까지 입력해주세요.
+                  </p>
+                  {departureError ? (
+                    <p className="px-1 text-xs font-semibold text-red-500">
+                      {departureError}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <span className="block text-sm font-black tracking-[-0.03em] text-slate-900">
+                    도착지
+                  </span>
+                  <input
+                    className={`min-h-[3.75rem] w-full rounded-2xl border bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
+                      destinationError
+                        ? "border-red-400 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-500"
+                    }`}
+                    placeholder="예: 부산 해운대구 우동"
+                    value={formData.destination}
+                    onChange={(event) => {
+                      setDestinationError(null);
+                      setFormData((prev) => ({
+                        ...prev,
+                        destination: event.target.value,
+                      }));
+                    }}
+                  />
+                  <p className="px-1 text-xs font-medium leading-5 text-slate-500">
+                    시/군/구와 동까지 입력해주세요.
+                  </p>
+                  {destinationError ? (
+                    <p className="px-1 text-xs font-semibold text-red-500">
+                      {destinationError}
+                    </p>
+                  ) : null}
+                </div>
 
                 {formData.stopovers.map((stopover, index) => (
                   <input
@@ -551,39 +656,93 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-bold tracking-[-0.03em] text-slate-500">
+              <div
+                className={`rounded-2xl border bg-gradient-to-b from-slate-50 to-white p-4 shadow-sm ring-1 ${
+                  dateTimeError
+                    ? "border-red-400 ring-red-200"
+                    : "border-slate-200 ring-slate-100"
+                }`}
+              >
+                <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
+                  출발일시
+                </p>
+                <label className="mt-3 block">
+                  <span className="mb-2 block text-xs font-bold tracking-[-0.03em] text-slate-500">
                     출발일
                   </span>
                   <input
                     type="date"
-                    className={`h-14 w-full rounded-2xl border bg-white px-3 text-sm font-semibold text-slate-700 outline-none ${travelFieldBorder}`}
+                    className={`h-14 w-full rounded-2xl border bg-white px-3 text-sm font-semibold text-slate-700 outline-none ${
+                      dateTimeError
+                        ? "border-red-400 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-500"
+                    }`}
                     value={formData.departureDate}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      setDateTimeError(null);
                       setFormData((prev) => ({
                         ...prev,
                         departureDate: event.target.value,
-                      }))
-                    }
+                      }));
+                    }}
                   />
                 </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-bold tracking-[-0.03em] text-slate-500">
-                    출발시간
-                  </span>
-                  <input
-                    type="time"
-                    className={`h-14 w-full rounded-2xl border bg-white px-3 text-sm font-semibold text-slate-700 outline-none ${travelFieldBorder}`}
-                    value={formData.departureTime}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        departureTime: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
+
+                <p className="mb-2 mt-4 text-xs font-bold tracking-[-0.03em] text-slate-500">
+                  시간대
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {TIME_SLOT_OPTIONS.map((opt) => {
+                    const selected = formData.departureTimeSlot === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setDateTimeError(null);
+                          setFormData((prev) => ({
+                            ...prev,
+                            departureTimeSlot: opt.value,
+                          }));
+                        }}
+                        className={`touch-manipulation min-h-11 min-w-[4.25rem] flex-1 rounded-full border px-3 py-2.5 text-sm font-black tracking-[-0.03em] transition sm:flex-none ${
+                          selected
+                            ? "border-emerald-500 bg-emerald-500 text-white shadow-md shadow-emerald-600/15"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                        style={tapStyle}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {formData.departureTimeSlot === "custom" ? (
+                  <label className="mt-3 block">
+                    <span className="mb-2 block text-xs font-bold tracking-[-0.03em] text-slate-500">
+                      시간 직접 입력
+                    </span>
+                    <input
+                      type="time"
+                      className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500"
+                      value={formData.departureTimeCustom}
+                      onChange={(event) => {
+                        setDateTimeError(null);
+                        setFormData((prev) => ({
+                          ...prev,
+                          departureTimeCustom: event.target.value,
+                        }));
+                      }}
+                    />
+                  </label>
+                ) : null}
+
+                {dateTimeError ? (
+                  <p className="mt-3 px-1 text-xs font-semibold text-red-500">
+                    {dateTimeError}
+                  </p>
+                ) : null}
               </div>
 
               <label className="block">
@@ -602,12 +761,6 @@ export default function Home() {
                   }
                 />
               </label>
-
-              {travelInfoError ? (
-                <p className="px-1 text-center text-sm font-semibold text-red-500">
-                  출발지·도착지·상세주소·출발일·출발시간을 모두 입력해 주세요.
-                </p>
-              ) : null}
 
               <div className="space-y-1.5">
                 <input

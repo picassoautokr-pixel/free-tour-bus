@@ -797,13 +797,7 @@ function DetailSlidePanel({
             <DetailField label="왕복 / 편도">{row.trip_type}</DetailField>
             <DetailField label="버스 등급">{row.bus_grade}</DetailField>
             <DetailField label="출발지">{row.departure}</DetailField>
-            <DetailField label="출발지 상세주소">
-              {row.departure_detail}
-            </DetailField>
             <DetailField label="도착지">{row.destination}</DetailField>
-            <DetailField label="도착지 상세주소">
-              {row.destination_detail}
-            </DetailField>
             <div className="border-b border-slate-100 py-3 last:border-b-0">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 경유지
@@ -1253,12 +1247,8 @@ export default function AdminApplicationsPage() {
         단체명: r.organization_name,
         단체유형: r.organization_type,
         출발지: r.departure,
-        "출발지 상세주소":
-          r.departure_detail === "—" ? "" : r.departure_detail,
         도착지: r.destination,
-        "도착지 상세주소":
-          r.destination_detail === "—" ? "" : r.destination_detail,
-        가는날짜: formatIsoDate(r.departure_date),
+        출발일: formatIsoDate(r.departure_date),
         출발시간:
           r.departure_time === "—"
             ? ""
