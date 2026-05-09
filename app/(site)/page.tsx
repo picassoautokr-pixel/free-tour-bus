@@ -36,6 +36,8 @@ type ApplicationInsertPayload = {
   organization_name: string;
   organization_type: string | null;
   request_message: string;
+  file_url?: string | null;
+  file_name?: string | null;
   status: string;
 };
 
@@ -48,6 +50,18 @@ const formatPhoneNumber = (value: string) => {
   if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
   return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
 };
+
+function makeUploadObjectKey(originalName: string) {
+  const safeName = originalName.replace(/[^\w.\-()가-힣\s]/g, "_").trim();
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const rand =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Math.random().toString(16).slice(2)}${Date.now()}`;
+
+  // 폴더를 한 번 더 나눠서 관리
+  return `applications/${ts}_${rand}_${safeName || "file"}`;
+}
 
 type FormData = {
   applicationType: string;
@@ -223,6 +237,33 @@ export default function Home() {
     try {
       const supabase = createSupabaseClient();
 
+      let uploadedFileUrl: string | null = null;
+      let uploadedFileName: string | null = null;
+
+      if (attachmentFile) {
+        const objectKey = makeUploadObjectKey(attachmentFile.name);
+
+        const { error: uploadError } = await supabase.storage
+          .from("application-files")
+          .upload(objectKey, attachmentFile, {
+            upsert: false,
+            contentType: attachmentFile.type || undefined,
+          });
+
+        if (uploadError) {
+          setSubmitErrorMessage(`파일 업로드 실패: ${uploadError.message}`);
+          setSubmitError(true);
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("application-files")
+          .getPublicUrl(objectKey);
+
+        uploadedFileUrl = publicUrlData.publicUrl ?? null;
+        uploadedFileName = attachmentFile.name;
+      }
+
       const insertPayload: ApplicationInsertPayload = {
         application_type: formData.applicationType,
         trip_type: formData.tripType,
@@ -240,6 +281,8 @@ export default function Home() {
             ? null
             : formData.organizationType.trim(),
         request_message: formData.requestMessage.trim(),
+        file_url: uploadedFileUrl,
+        file_name: uploadedFileName,
         status: "pending",
       };
 
@@ -256,7 +299,7 @@ export default function Home() {
           hint: error.hint,
           code: error.code,
         });
-        setSubmitErrorMessage(error.message);
+        setSubmitErrorMessage(`DB 저장 실패: ${error.message}`);
         setSubmitError(true);
         return;
       }

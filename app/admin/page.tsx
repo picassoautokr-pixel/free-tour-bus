@@ -31,6 +31,8 @@ type ApplicationDetail = {
   organization_type: string;
   request_message: string;
   attachment_url: string;
+  file_url: string;
+  file_name: string;
   admin_memo: string;
   status: string;
 };
@@ -228,6 +230,8 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
       organization_type: safeText(r.organization_type),
       request_message: safeText(r.request_message),
       attachment_url: attachmentDisplay === "—" ? "" : attachmentDisplay,
+      file_url: safeText(r.file_url, ""),
+      file_name: safeText(r.file_name, ""),
       admin_memo: safeText(r.admin_memo, ""),
       status: safeText(r.status, ""),
     };
@@ -485,9 +489,15 @@ function DetailSlidePanel({
 
   if (!open || row == null) return null;
 
-  const attachment = row.attachment_url.trim();
-  const isHttpUrl =
-    attachment.startsWith("http://") || attachment.startsWith("https://");
+  const fileUrl = row.file_url.trim();
+  const fileName = row.file_name.trim();
+  const fileHttpUrl =
+    fileUrl.startsWith("http://") || fileUrl.startsWith("https://");
+
+  // 이전 데이터 호환 (attachment_url)
+  const legacyUrl = row.attachment_url.trim();
+  const legacyHttpUrl =
+    legacyUrl.startsWith("http://") || legacyUrl.startsWith("https://");
 
   return (
     <>
@@ -589,22 +599,44 @@ function DetailSlidePanel({
             </div>
             <div className="border-b border-slate-100 py-3 last:border-b-0">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                첨부파일 URL
+                첨부파일
               </dt>
               <dd className="mt-1 break-all text-sm font-medium">
-                {attachment === "" ? (
-                  <span className="text-slate-400">—</span>
-                ) : isHttpUrl ? (
-                  <a
-                    href={attachment}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 underline hover:text-blue-800"
-                  >
-                    {attachment}
-                  </a>
+                {fileUrl !== "" ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="text-sm font-semibold text-slate-900">
+                      {fileName !== "" ? fileName : "첨부파일"}
+                    </div>
+                    {fileHttpUrl ? (
+                      <a
+                        href={fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-10 w-fit items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+                      >
+                        첨부파일 보기
+                      </a>
+                    ) : (
+                      <div className="text-xs font-medium text-slate-500">
+                        {fileUrl}
+                      </div>
+                    )}
+                  </div>
+                ) : legacyUrl !== "" ? (
+                  legacyHttpUrl ? (
+                    <a
+                      href={legacyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 underline hover:text-blue-800"
+                    >
+                      {legacyUrl}
+                    </a>
+                  ) : (
+                    legacyUrl
+                  )
                 ) : (
-                  attachment
+                  <span className="text-slate-400">첨부파일 없음</span>
                 )}
               </dd>
             </div>
