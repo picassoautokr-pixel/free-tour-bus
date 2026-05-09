@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -143,6 +144,47 @@ function displayApplicationTypeLabel(raw: string): string {
   if (t === "" || t === "—") return "—";
   return LEGACY_APPLICATION_TYPE_LABELS[t] ?? t;
 }
+
+/** 실시간 알림용 짧은 비프음 (외부 파일 없음) */
+function playSoftNotificationSound() {
+  try {
+    const AudioCtx =
+      typeof window !== "undefined"
+        ? window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        : null;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.07, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.18);
+    osc.onended = () => void ctx.close();
+  } catch {
+    /* autoplay/환경 제한 시 무시 */
+  }
+}
+
+type AdminToast =
+  | { kind: "simple"; message: string }
+  | {
+      kind: "new_application";
+      applicantName: string;
+      applicationTypeLabel: string;
+      passengerLine: string;
+    };
+
+type RecentNotificationItem = {
+  id: string;
+  applicant_name: string;
+  application_type: string;
+  created_at: string | null;
+};
 
 function parseStopovers(raw: unknown): string[] {
   if (raw == null) return [];
@@ -1041,7 +1083,13 @@ export default function AdminApplicationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<ApplicationDetail | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<AdminToast | null>(null);
+  const [unseenRealtimeCount, setUnseenRealtimeCount] = useState(0);
+  const [recentNotifications, setRecentNotifications] = useState<
+    RecentNotificationItem[]
+  >([]);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const notificationWrapRef = useRef<HTMLDivElement | null>(null);
   const [smsOpen, setSmsOpen] = useState(false);
   const [smsRow, setSmsRow] = useState<ApplicationDetail | null>(null);
   const [smsText, setSmsText] = useState("");
@@ -1051,10 +1099,23 @@ export default function AdminApplicationsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
-    if (toastMessage == null) return;
-    const timerId = window.setTimeout(() => setToastMessage(null), 3200);
+    if (toast == null) return;
+    const ms = toast.kind === "new_application" ? 5200 : 3200;
+    const timerId = window.setTimeout(() => setToast(null), ms);
     return () => window.clearTimeout(timerId);
-  }, [toastMessage]);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!notificationPanelOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const el = notificationWrapRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setNotificationPanelOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [notificationPanelOpen]);
 
   const openSms = useCallback((row: ApplicationDetail) => {
     setSmsRow(row);
@@ -1070,10 +1131,10 @@ export default function AdminApplicationsPage() {
   const handleCopySms = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(smsText);
-      setToastMessage("복사 완료");
+      setToast({ kind: "simple", message: "복사 완료" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setToastMessage(`복사 실패: ${message}`);
+      setToast({ kind: "simple", message: `복사 실패: ${message}` });
     }
   }, [smsText]);
 
@@ -1119,7 +1180,7 @@ export default function AdminApplicationsPage() {
           ? { ...prev, status: nextStatus, admin_memo: nextMemo }
           : prev,
       );
-      setToastMessage("저장되었습니다.");
+      setToast({ kind: "simple", message: "저장되었습니다." });
     },
     [],
   );
@@ -1157,10 +1218,90 @@ export default function AdminApplicationsPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [load]);
 
+  useEffect(() => {
+    const supabase = createSupabaseClient();
+    const channel = supabase
+      .channel("realtime-applications-inserts")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "applications",
+        },
+        (payload) => {
+          const raw = payload.new as Record<string, unknown>;
+          const normalized = normalizeRows([raw]);
+          const row = normalized[0];
+          if (!row.id || row.id.startsWith("idx-")) return;
+
+          setRows((prev) => {
+            if (prev.some((r) => r.id === row.id)) return prev;
+            return [row, ...prev];
+          });
+
+          setUnseenRealtimeCount((c) => c + 1);
+          setRecentNotifications((prev) => {
+            const item: RecentNotificationItem = {
+              id: row.id,
+              applicant_name: row.applicant_name,
+              application_type: row.application_type,
+              created_at: row.created_at,
+            };
+            return [item, ...prev.filter((x) => x.id !== item.id)].slice(0, 25);
+          });
+
+          const typeLabel = displayApplicationTypeLabel(row.application_type);
+          const passengerLine =
+            row.passenger_count != null && Number.isFinite(row.passenger_count)
+              ? `${row.passenger_count}명`
+              : "—";
+          const applicant =
+            row.applicant_name === "—" || row.applicant_name.trim() === ""
+              ? "(이름 없음)"
+              : row.applicant_name;
+
+          setToast({
+            kind: "new_application",
+            applicantName: applicant,
+            applicationTypeLabel: typeLabel,
+            passengerLine,
+          });
+          playSoftNotificationSound();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
   const openDetail = (row: ApplicationDetail) => {
     setSelected(row);
     setDetailOpen(true);
   };
+
+  const focusApplicationRow = useCallback((applicationId: string) => {
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`admin-application-row-${applicationId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, []);
+
+  const handleSelectNotification = useCallback(
+    (applicationId: string) => {
+      setNotificationPanelOpen(false);
+      const row = rows.find((r) => r.id === applicationId);
+      if (row) {
+        setSelected(row);
+        setDetailOpen(true);
+        focusApplicationRow(applicationId);
+      }
+    },
+    [rows, focusApplicationRow],
+  );
 
   const closeDetail = () => {
     setDetailOpen(false);
@@ -1321,7 +1462,7 @@ export default function AdminApplicationsPage() {
       XLSX.writeFile(wb, filename, { bookType: "xlsx" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setToastMessage(`엑셀 다운로드 실패: ${message}`);
+      setToast({ kind: "simple", message: `엑셀 다운로드 실패: ${message}` });
     }
   }, [filteredAndSortedRows]);
 
@@ -1330,9 +1471,16 @@ export default function AdminApplicationsPage() {
       <header className="border-b border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-              신청 관리
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                신청 관리
+              </h1>
+              {unseenRealtimeCount > 0 ? (
+                <span className="rounded-full bg-[#1e3a5f] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm ring-1 ring-slate-900/15">
+                  새 신청
+                </span>
+              ) : null}
+            </div>
             <p className="mt-0.5 text-sm text-slate-500">
               무료관광버스 신청 목록 · 행을 눌러 상세 보기
             </p>
@@ -1344,7 +1492,80 @@ export default function AdminApplicationsPage() {
                   : "관리자: -"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="relative" ref={notificationWrapRef}>
+              <button
+                type="button"
+                aria-label="실시간 알림"
+                onClick={() => {
+                  setNotificationPanelOpen((prev) => {
+                    const next = !prev;
+                    if (next) setUnseenRealtimeCount(0);
+                    return next;
+                  });
+                }}
+                className="relative rounded-lg border border-slate-200 bg-white p-2 text-[#1e3a5f] shadow-sm transition hover:bg-slate-50"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+                  />
+                </svg>
+                {unseenRealtimeCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white ring-2 ring-white">
+                    {unseenRealtimeCount > 99 ? "99+" : unseenRealtimeCount}
+                  </span>
+                ) : null}
+              </button>
+              {notificationPanelOpen ? (
+                <div className="absolute right-0 top-full z-[80] mt-2 w-[min(calc(100vw-2rem),22rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/15 ring-1 ring-slate-100">
+                  <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                    <p className="text-sm font-black text-slate-900">
+                      최근 신청
+                    </p>
+                    <p className="mt-0.5 text-xs font-medium text-slate-500">
+                      실시간 접수 알림
+                    </p>
+                  </div>
+                  <ul className="max-h-[min(60vh,24rem)] overflow-y-auto py-1">
+                    {recentNotifications.length === 0 ? (
+                      <li className="px-4 py-8 text-center text-sm text-slate-500">
+                        아직 알림이 없습니다.
+                      </li>
+                    ) : (
+                      recentNotifications.map((n) => (
+                        <li key={n.id}>
+                          <button
+                            type="button"
+                            className="flex w-full flex-col gap-1 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-50 active:bg-slate-100"
+                            onClick={() => handleSelectNotification(n.id)}
+                          >
+                            <span className="text-sm font-bold text-slate-900">
+                              {n.applicant_name}
+                            </span>
+                            <span className="line-clamp-2 text-xs font-medium leading-snug text-slate-600">
+                              {displayApplicationTypeLabel(n.application_type)}
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-400">
+                              {formatCreatedAt(n.created_at)}
+                            </span>
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={handleExcelDownload}
@@ -1477,7 +1698,7 @@ export default function AdminApplicationsPage() {
           <>
             <ul className="space-y-4 md:hidden">
               {filteredAndSortedRows.map((row) => (
-                <li key={row.id}>
+                <li key={row.id} id={`admin-application-row-${row.id}`}>
                   <button
                     type="button"
                     onClick={() => openDetail(row)}
@@ -1635,6 +1856,7 @@ export default function AdminApplicationsPage() {
                   {filteredAndSortedRows.map((row) => (
                     <tr
                       key={row.id}
+                      id={`admin-application-row-${row.id}`}
                       className="cursor-pointer hover:bg-slate-50/80"
                       onClick={() => openDetail(row)}
                       onKeyDown={(e) => {
@@ -1719,31 +1941,79 @@ export default function AdminApplicationsPage() {
         />
       ) : null}
 
-      {toastMessage ? (
+      {toast ? (
         <div
-          className="fixed bottom-6 left-1/2 z-[60] flex max-w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-lg shadow-emerald-900/10 ring-1 ring-emerald-100"
+          className={`fixed bottom-6 left-1/2 z-[60] flex max-w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-2xl px-4 py-3 shadow-lg ring-1 ${
+            toast.kind === "new_application"
+              ? "items-start border border-slate-200 bg-white text-slate-900 shadow-slate-900/15 ring-slate-100"
+              : "items-center border border-emerald-200 bg-emerald-50 text-emerald-900 shadow-emerald-900/10 ring-emerald-100"
+          }`}
           role="status"
           aria-live="polite"
         >
-          <span
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
-            aria-hidden
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          </span>
-          <span className="leading-snug">{toastMessage}</span>
+          {toast.kind === "simple" ? (
+            <>
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+                aria-hidden
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </span>
+              <span className="text-sm font-semibold leading-snug">
+                {toast.message}
+              </span>
+            </>
+          ) : (
+            <>
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1e3a5f]/10 text-[#1e3a5f]"
+                aria-hidden
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+                  />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1 py-0.5">
+                <p className="text-sm font-black leading-snug text-slate-900">
+                  새 신청이 접수되었습니다.
+                </p>
+                <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
+                  <span className="text-slate-500">신청자명</span>{" "}
+                  {toast.applicantName}
+                </p>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                  <span className="text-slate-500">신청유형</span>{" "}
+                  {toast.applicationTypeLabel}
+                </p>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                  <span className="text-slate-500">인원수</span>{" "}
+                  {toast.passengerLine}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </div>
