@@ -1,9 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 /**
  * Supabase 브라우저/서버 공용 클라이언트를 만듭니다.
  *
- * - App Router의 Client Component, Server Component, Route Handler 어디서든 호출 가능합니다.
+ * - Client Component에서 Supabase Auth(session)까지 함께 쓰는 용도입니다.
  * - `NEXT_PUBLIC_` 접두사로 브라우저에 노출되므로, 반드시 Supabase RLS(행 수준 보안)를 설정하세요.
  * - 실제 비밀키(service_role)는 절대 넣지 마세요.
  */
@@ -17,5 +17,5 @@ export function createSupabaseClient() {
     );
   }
 
-  return createClient(url, anonKey);
+  return createBrowserClient(url, anonKey);
 }

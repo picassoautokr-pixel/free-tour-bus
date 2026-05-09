@@ -646,6 +646,9 @@ function DetailSlidePanel({
 }
 
 export default function AdminApplicationsPage() {
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [rows, setRows] = useState<ApplicationDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -662,6 +665,30 @@ export default function AdminApplicationsPage() {
     const timerId = window.setTimeout(() => setToastMessage(null), 3200);
     return () => window.clearTimeout(timerId);
   }, [toastMessage]);
+
+  useEffect(() => {
+    // 로그인된 관리자 이메일 표시용
+    (async () => {
+      try {
+        const supabase = createSupabaseClient();
+        const { data } = await supabase.auth.getUser();
+        setAdminEmail(data.user?.email ?? null);
+      } catch {
+        setAdminEmail(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      const supabase = createSupabaseClient();
+      await supabase.auth.signOut();
+    } finally {
+      window.location.href = "/admin/login";
+    }
+  }, []);
 
   const handleStatusSaved = useCallback(
     (
@@ -890,6 +917,13 @@ export default function AdminApplicationsPage() {
             <p className="mt-0.5 text-sm text-slate-500">
               무료관광버스 신청 목록 · 행을 눌러 상세 보기
             </p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              {authLoading
+                ? "관리자 확인 중…"
+                : adminEmail
+                  ? `관리자: ${adminEmail}`
+                  : "관리자: -"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -924,6 +958,13 @@ export default function AdminApplicationsPage() {
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
             >
               새로고침
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              로그아웃
             </button>
           </div>
         </div>
