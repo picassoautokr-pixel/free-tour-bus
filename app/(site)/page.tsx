@@ -4,15 +4,17 @@ import { useEffect, useRef, useState } from "react";
 
 import { createSupabaseClient } from "@/lib/supabase";
 
-const applicationTypes = [
-  "기예약된 전세버스 지원금 신청",
-  "지원금이 확정된 제휴버스 추천 비교",
-  "지원금 대상 버스로 등록신청(업체신청용)",
-];
+/** 고객 폼에 노출되는 유형만 (업체용 등은 렌더링하지 않음 — 기존 DB 값은 관리자에서 표시) */
+const APPLICATION_TYPE_RESERVATION_DONE = "이미 예약을 완료하신 경우";
+const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
+
+const customerApplicationTypes = [
+  APPLICATION_TYPE_RESERVATION_DONE,
+  APPLICATION_TYPE_NEW_BOOKING,
+] as const;
 
 /** 증빙자료 첨부 영역을 표시하는 신청 유형만 */
-const APPLICATION_TYPE_REQUIRES_ATTACHMENT =
-  "기예약된 전세버스 지원금 신청";
+const APPLICATION_TYPE_REQUIRES_ATTACHMENT = APPLICATION_TYPE_RESERVATION_DONE;
 
 const tripTypes = ["왕복", "편도"];
 const busGrades = ["일반", "프리미엄"];
@@ -176,7 +178,7 @@ const INITIAL_FORM_DATA: FormData = {
   destination: "",
   stopovers: [],
   departureDate: "",
-  departureTimeSlot: "morning",
+  departureTimeSlot: "custom",
   departureTimeCustom: "",
   returnDate: "",
   passengerCount: "",
@@ -445,10 +447,10 @@ export default function Home() {
         <div className="relative z-10 overflow-visible rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div>
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
-              신청 유형
+              신청유형 (한가지를 선택해주세요)
             </h2>
             <div className="mt-5 grid gap-3">
-              {applicationTypes.map((applicationType) => {
+              {customerApplicationTypes.map((applicationType) => {
                 const isSelected = formData.applicationType === applicationType;
 
                 return (
