@@ -20,9 +20,12 @@ type ApplicationDetail = {
   trip_type: string;
   bus_grade: string;
   departure: string;
+  departure_detail: string;
   destination: string;
+  destination_detail: string;
   stopovers: string[];
   departure_date: string | null;
+  departure_time: string;
   return_date: string | null;
   passenger_count: number | null;
   applicant_name: string;
@@ -245,9 +248,12 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
       trip_type: safeText(r.trip_type),
       bus_grade: safeText(r.bus_grade),
       departure: safeText(r.departure),
+      departure_detail: safeText(r.departure_detail),
       destination: safeText(r.destination),
+      destination_detail: safeText(r.destination_detail),
       stopovers: parseStopovers(r.stopovers),
       departure_date: depDate,
+      departure_time: safeText(r.departure_time),
       return_date: retDate,
       passenger_count: passengerCount,
       applicant_name: safeText(r.applicant_name),
@@ -293,6 +299,40 @@ function formatDateOnly(value: string | null): string {
     /* fallthrough */
   }
   return value;
+}
+
+function formatDepartureTimeLabel(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "" || trimmed === "—") return "—";
+  const timeMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(trimmed);
+  if (timeMatch) {
+    return `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
+  }
+  try {
+    const d = new Date(trimmed);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    }
+  } catch {
+    /* fallthrough */
+  }
+  return trimmed;
+}
+
+function formatDepartureDateTimeLine(
+  departureDate: string | null,
+  departureTimeRaw: string,
+): string {
+  const dateStr = formatDateOnly(departureDate);
+  const timeStr = formatDepartureTimeLabel(departureTimeRaw);
+  if (dateStr === "—" && timeStr === "—") return "—";
+  if (dateStr === "—") return timeStr;
+  if (timeStr === "—") return dateStr;
+  return `${dateStr} ${timeStr}`;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -757,7 +797,13 @@ function DetailSlidePanel({
             <DetailField label="왕복 / 편도">{row.trip_type}</DetailField>
             <DetailField label="버스 등급">{row.bus_grade}</DetailField>
             <DetailField label="출발지">{row.departure}</DetailField>
+            <DetailField label="출발지 상세주소">
+              {row.departure_detail}
+            </DetailField>
             <DetailField label="도착지">{row.destination}</DetailField>
+            <DetailField label="도착지 상세주소">
+              {row.destination_detail}
+            </DetailField>
             <div className="border-b border-slate-100 py-3 last:border-b-0">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 경유지
@@ -774,8 +820,11 @@ function DetailSlidePanel({
                 )}
               </dd>
             </div>
-            <DetailField label="가는 날짜">
-              {formatDateOnly(row.departure_date)}
+            <DetailField label="출발일시">
+              {formatDepartureDateTimeLine(
+                row.departure_date,
+                row.departure_time,
+              )}
             </DetailField>
             <DetailField label="오는 날짜">
               {formatDateOnly(row.return_date)}
@@ -1117,7 +1166,9 @@ export default function AdminApplicationsPage() {
         row.phone,
         row.organization_name,
         row.departure,
+        row.departure_detail,
         row.destination,
+        row.destination_detail,
         row.status,
         statusLabelForSearch(row.status),
       ]
@@ -1202,8 +1253,16 @@ export default function AdminApplicationsPage() {
         단체명: r.organization_name,
         단체유형: r.organization_type,
         출발지: r.departure,
+        "출발지 상세주소":
+          r.departure_detail === "—" ? "" : r.departure_detail,
         도착지: r.destination,
+        "도착지 상세주소":
+          r.destination_detail === "—" ? "" : r.destination_detail,
         가는날짜: formatIsoDate(r.departure_date),
+        출발시간:
+          r.departure_time === "—"
+            ? ""
+            : formatDepartureTimeLabel(r.departure_time),
         오는날짜: formatIsoDate(r.return_date),
         인원수: r.passenger_count ?? "",
         "왕복/편도": r.trip_type,
