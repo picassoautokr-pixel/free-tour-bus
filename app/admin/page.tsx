@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
+import * as XLSX from "xlsx";
+
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 목록·상세 공통 — Supabase row 정규화 */
@@ -77,6 +79,35 @@ function statusLabelForSearch(rawStatus: string): string {
   if (known === "approved") return "승인완료";
   if (known === "rejected") return "반려";
   return trimmed;
+}
+
+function statusLabelForExport(rawStatus: string): string {
+  const trimmed = rawStatus.trim();
+  if (trimmed === "" || trimmed === "—") return "";
+  const known = parseKnownApplicationStatus(trimmed);
+  if (known === "pending") return "접수완료";
+  if (known === "reviewing") return "검토중";
+  if (known === "approved") return "승인완료";
+  if (known === "rejected") return "반려";
+  return trimmed;
+}
+
+function formatIsoDate(value: string | null): string {
+  if (value == null || value.trim() === "") return "";
+  // Supabase가 yyyy-mm-dd 또는 ISO를 줄 수 있어 그대로 유지하되, ISO는 날짜만 잘라 표시
+  const v = value.trim();
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toISOString().slice(0, 10);
+}
+
+function ymdTodayLocal(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 /** 선택 UI 초기값용 — 미매핑이면 pending 으로 둡니다. */
@@ -726,7 +757,7 @@ export default function AdminApplicationsPage() {
     });
   }, [rows, searchTerm, statusFilter]);
 
-  const filteredAndSortedRows = useMemo(() => {
+  const filteredAndSortedRows = (() => {
     const copy = [...filteredRows];
 
     const directionFactor = sortDirection === "asc" ? 1 : -1;
@@ -769,7 +800,7 @@ export default function AdminApplicationsPage() {
     });
 
     return copy;
-  }, [filteredRows, sortKey, sortDirection]);
+  })();
 
   const handleSortClick = (key: SortKey) => {
     if (key === sortKey) {
@@ -789,6 +820,65 @@ export default function AdminApplicationsPage() {
     );
   };
 
+  const handleExcelDownload = useCallback(() => {
+    try {
+      const exportRows = filteredAndSortedRows.map((r) => ({
+        신청일: formatCreatedAt(r.created_at),
+        신청유형: r.application_type,
+        상태: statusLabelForExport(r.status),
+        신청자명: r.applicant_name,
+        연락처: r.phone,
+        단체명: r.organization_name,
+        단체유형: r.organization_type,
+        출발지: r.departure,
+        도착지: r.destination,
+        가는날짜: formatIsoDate(r.departure_date),
+        오는날짜: formatIsoDate(r.return_date),
+        인원수: r.passenger_count ?? "",
+        "왕복/편도": r.trip_type,
+        "일반/프리미엄": r.bus_grade,
+        요청사항: r.request_message === "—" ? "" : r.request_message,
+        관리자메모: r.admin_memo,
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(exportRows, { skipHeader: false });
+
+      // 컬럼 너비 자동 조절 (간단 추정)
+      const headers = Object.keys(exportRows[0] ?? {});
+      const colWidths = headers.map((h) => {
+        let max = h.length;
+        for (const row of exportRows) {
+          const v = (row as Record<string, unknown>)[h];
+          const s = v == null ? "" : String(v);
+          if (s.length > max) max = s.length;
+        }
+        // 너무 넓어지는 것 방지
+        return { wch: Math.min(Math.max(max + 2, 10), 60) };
+      });
+      (ws as XLSX.WorkSheet)["!cols"] = colWidths;
+
+      // 헤더 bold (xlsx에서 지원되는 경우 적용)
+      for (let c = 0; c < headers.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r: 0, c });
+        const cell = (ws as XLSX.WorkSheet)[addr] as XLSX.CellObject | undefined;
+        if (cell) {
+          (cell as XLSX.CellObject & { s?: unknown }).s = {
+            font: { bold: true },
+          };
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "신청목록");
+
+      const filename = `무료관광버스_신청목록_${ymdTodayLocal()}.xlsx`;
+      XLSX.writeFile(wb, filename, { bookType: "xlsx" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setToastMessage(`엑셀 다운로드 실패: ${message}`);
+    }
+  }, [filteredAndSortedRows]);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="border-b border-slate-200 bg-white shadow-sm">
@@ -801,14 +891,41 @@ export default function AdminApplicationsPage() {
               무료관광버스 신청 목록 · 행을 눌러 상세 보기
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loading}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
-          >
-            새로고침
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExcelDownload}
+              disabled={loading || filteredAndSortedRows.length === 0}
+              className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <span className="hidden items-center gap-2 sm:inline-flex">
+                <svg
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+                  />
+                </svg>
+                엑셀 다운로드
+              </span>
+              <span className="sm:hidden">엑셀 다운로드</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              새로고침
+            </button>
+          </div>
         </div>
       </header>
 
