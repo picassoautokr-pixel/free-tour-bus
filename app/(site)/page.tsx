@@ -7,7 +7,7 @@ import { createSupabaseClient } from "@/lib/supabase";
 const applicationTypes = [
   "기예약된 전세버스 지원금 신청",
   "지원금이 확정된 제휴버스 추천 비교",
-  "지원금 확정 버스로 제휴신청(업체등록용)",
+  "지원금 대상 버스로 등록신청(업체신청용)",
 ];
 
 /** 증빙자료 첨부 영역을 표시하는 신청 유형만 */
