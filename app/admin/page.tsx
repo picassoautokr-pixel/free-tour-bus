@@ -553,6 +553,9 @@ function SmsModal({
   open,
   message,
   onChangeMessage,
+  onSend,
+  sendLoading,
+  sendError,
   onCopy,
   onClose,
 }: {
@@ -560,6 +563,9 @@ function SmsModal({
   open: boolean;
   message: string;
   onChangeMessage: (next: string) => void;
+  onSend: () => void | Promise<void>;
+  sendLoading: boolean;
+  sendError: string | null;
   onCopy: () => void;
   onClose: () => void;
 }) {
@@ -585,10 +591,10 @@ function SmsModal({
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
           <div>
             <h3 id="sms-modal-title" className="text-lg font-black tracking-tight">
-              문자 발송 준비
+              문자 발송
             </h3>
             <p className="mt-1 text-xs font-semibold text-white/70">
-              복사 후 문자 앱/발송 시스템에 붙여넣기 하세요.
+              솔라피로 발송하거나, 복사하여 다른 채널로 보낼 수 있습니다.
             </p>
           </div>
           <button
@@ -658,22 +664,44 @@ function SmsModal({
             <textarea
               value={message}
               onChange={(e) => onChangeMessage(e.target.value)}
-              className="mt-2 min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              disabled={sendLoading}
+              className="mt-2 min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500"
             />
           </label>
+
+          {sendError ? (
+            <div
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"
+              role="alert"
+            >
+              {sendError}
+            </div>
+          ) : null}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
+              onClick={() => void onSend()}
+              disabled={
+                sendLoading || message.trim() === "" || row.phone.trim() === ""
+              }
+              className="h-11 rounded-2xl bg-slate-950 px-5 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sendLoading ? "발송 중…" : "솔라피로 발송"}
+            </button>
+            <button
+              type="button"
               onClick={onCopy}
-              className="h-11 rounded-2xl bg-blue-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+              disabled={sendLoading}
+              className="h-11 rounded-2xl bg-blue-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               복사하기
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="h-11 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              disabled={sendLoading}
+              className="h-11 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               닫기
             </button>
@@ -1203,6 +1231,8 @@ export default function AdminApplicationsPage() {
   const [smsOpen, setSmsOpen] = useState(false);
   const [smsRow, setSmsRow] = useState<ApplicationDetail | null>(null);
   const [smsText, setSmsText] = useState("");
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsSendError, setSmsSendError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
@@ -1265,13 +1295,46 @@ export default function AdminApplicationsPage() {
   const openSms = useCallback((row: ApplicationDetail) => {
     setSmsRow(row);
     setSmsText(buildDefaultSmsText(row));
+    setSmsSendError(null);
     setSmsOpen(true);
   }, []);
 
   const closeSms = useCallback(() => {
     setSmsOpen(false);
     setSmsRow(null);
+    setSmsSendError(null);
+    setSmsSending(false);
   }, []);
+
+  const handleSendSms = useCallback(async () => {
+    if (!smsRow) return;
+    setSmsSending(true);
+    setSmsSendError(null);
+    try {
+      const res = await fetch("/api/admin/sms/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          to: smsRow.phone,
+          text: smsText,
+        }),
+      });
+      const data = (await res.json()) as { error?: string; ok?: boolean };
+      if (!res.ok) {
+        setSmsSendError(data.error ?? "발송에 실패했습니다.");
+        return;
+      }
+      setToast({ message: "문자가 발송되었습니다." });
+      closeSms();
+    } catch (e) {
+      setSmsSendError(
+        e instanceof Error ? e.message : "발송 요청 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setSmsSending(false);
+    }
+  }, [smsRow, smsText, closeSms]);
 
   const handleCopySms = useCallback(async () => {
     try {
@@ -2216,6 +2279,9 @@ export default function AdminApplicationsPage() {
           open={smsOpen}
           message={smsText}
           onChangeMessage={setSmsText}
+          onSend={() => void handleSendSms()}
+          sendLoading={smsSending}
+          sendError={smsSendError}
           onCopy={() => void handleCopySms()}
           onClose={closeSms}
         />
