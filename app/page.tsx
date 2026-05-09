@@ -156,14 +156,6 @@ export default function Home() {
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(
     null,
   );
-  const [isHydrated, setIsHydrated] = useState(false);
-
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- 클라이언트 hydration 확인용 */
-    setIsHydrated(true);
-    console.log("hydrated on client");
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -292,17 +284,6 @@ export default function Home() {
           로그인
         </button>
       </header>
-
-      <p className="px-6 pt-3 text-center text-xs font-semibold text-red-500">
-        모바일 수정 테스트 v20260509
-      </p>
-      <p
-        className={`px-6 pt-1 text-center text-xs font-semibold ${
-          isHydrated ? "text-green-600" : "text-red-500"
-        }`}
-      >
-        {isHydrated ? "JS 실행중" : "JS 실행 안됨"}
-      </p>
 
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">
         <p className="relative text-[2.12rem] font-black leading-[1.18] tracking-[-0.06em] text-slate-950">
@@ -841,22 +822,6 @@ export default function Home() {
         </svg>
         고객센터
       </button>
-
-      {/* mobile click debug box (temporary) */}
-      <div className="fixed bottom-4 left-1/2 z-20 w-[min(460px,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 p-4 text-xs text-slate-800 shadow-lg backdrop-blur">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          <div className="font-semibold text-slate-500">applicationType</div>
-          <div className="truncate">{formData.applicationType}</div>
-          <div className="font-semibold text-slate-500">tripType</div>
-          <div className="truncate">{formData.tripType}</div>
-          <div className="font-semibold text-slate-500">busGrade</div>
-          <div className="truncate">{formData.busGrade}</div>
-          <div className="font-semibold text-slate-500">phone</div>
-          <div className="truncate">{formData.phone}</div>
-          <div className="font-semibold text-slate-500">stopover count</div>
-          <div>{formData.stopovers.length}</div>
-        </div>
-      </div>
     </main>
   );
 }
