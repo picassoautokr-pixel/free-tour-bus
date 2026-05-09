@@ -99,6 +99,36 @@ function resolveDepartureTimeForDb(
   return found?.db ?? "오전";
 }
 
+/** 완료 모달 접수 요약 */
+type SubmitSuccessSummary = {
+  applicationType: string;
+  applicantName: string;
+  phone: string;
+  departure: string;
+  destination: string;
+  departureDateTime: string;
+};
+
+function formatDateLabelYmd(ymd: string): string {
+  const t = ymd.trim();
+  if (t === "") return "—";
+  const d = new Date(`${t}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return t;
+  return d.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+}
+
+function buildDepartureDateTimeSummary(ymd: string, timeStored: string): string {
+  const datePart = formatDateLabelYmd(ymd);
+  const timePart = timeStored.trim() === "" ? "—" : timeStored.trim();
+  if (datePart === "—" && timePart === "—") return "—";
+  return `${datePart} · ${timePart}`;
+}
+
 type FormData = {
   applicationType: string;
   tripType: string;
@@ -152,6 +182,8 @@ export default function Home() {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
+  const [successSummary, setSuccessSummary] =
+    useState<SubmitSuccessSummary | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(false);
   /** 저장 실패 시 Supabase/예외 message (임시 디버깅용) */
@@ -187,6 +219,20 @@ export default function Home() {
       ...prev,
       stopovers: prev.stopovers.filter((_, i) => i !== index),
     }));
+  };
+
+  const resetFormToInitial = () => {
+    setFormData({ ...INITIAL_FORM_DATA });
+    setAttachmentFile(null);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
+    setPhoneError(false);
+    setPassengerCountError(false);
+    setDepartureError(null);
+    setDestinationError(null);
+    setDateTimeError(null);
+    setSuccessSummary(null);
   };
 
   const handleSubmit = async () => {
@@ -323,6 +369,17 @@ export default function Home() {
         return;
       }
 
+      setSuccessSummary({
+        applicationType: formData.applicationType,
+        applicantName: formData.applicantName.trim(),
+        phone: formatPhoneNumber(phoneDigits),
+        departure: depTrim,
+        destination: destTrim,
+        departureDateTime: buildDepartureDateTimeSummary(
+          departureDateValue,
+          departureTimeValue,
+        ),
+      });
       setShowSubmitSuccess(true);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -935,50 +992,128 @@ export default function Home() {
         </div>
       </section>
 
-      {showSubmitSuccess ? (
+      {showSubmitSuccess && successSummary ? (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/45 px-5 py-10 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 px-4 py-8 backdrop-blur-[3px] sm:px-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="submit-success-title"
         >
-          <div className="w-full max-w-[340px] rounded-[1.75rem] bg-white p-8 shadow-2xl shadow-slate-900/25 ring-1 ring-slate-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-emerald-50 ring-[10px] ring-emerald-50/70">
-                <svg
-                  aria-hidden="true"
-                  className="h-11 w-11 text-emerald-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                  />
-                </svg>
+          <div className="max-h-[min(92vh,calc(100dvh-2rem))] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl shadow-slate-900/30 ring-1 ring-slate-200/80 sm:p-8">
+            <div className="flex flex-col">
+              <div className="flex justify-center">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-emerald-50 ring-[10px] ring-emerald-100/80">
+                  <svg
+                    aria-hidden="true"
+                    className="h-9 w-9 text-emerald-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </div>
               </div>
+
               <h3
                 id="submit-success-title"
-                className="mt-6 text-xl font-black tracking-[-0.045em] text-slate-950"
+                className="mt-5 text-center text-[1.35rem] font-black leading-snug tracking-[-0.04em] text-slate-950"
               >
-                신청이 정상적으로 접수되었습니다.
+                신청이 접수되었습니다.
               </h3>
-              <p className="mt-3 text-[0.9375rem] font-medium leading-7 tracking-[-0.02em] text-slate-500">
+
+              <p className="mt-3 text-center text-[0.9375rem] font-semibold leading-7 tracking-[-0.02em] text-slate-600">
                 관리자 심사 후 문자로 결과를 안내드립니다.
               </p>
-              <button
-                type="button"
-                className="mt-8 flex h-12 w-full items-center justify-center rounded-2xl bg-slate-950 text-base font-bold tracking-[-0.03em] text-white shadow-lg shadow-slate-950/15 transition hover:bg-slate-900 active:scale-[0.99]"
-                onClick={() => {
-                  setShowSubmitSuccess(false);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              >
-                확인
-              </button>
+              <p className="mt-2 text-center text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
+                영업일 기준 3~5일 이내 순차적으로 연락드릴 수 있습니다.
+              </p>
+
+              <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 ring-1 ring-slate-100/80">
+                <p className="text-center text-xs font-bold uppercase tracking-wide text-slate-500">
+                  접수 정보
+                </p>
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div className="flex gap-3 border-b border-slate-200/60 pb-3 last:border-b-0 last:pb-0">
+                    <dt className="w-[4.5rem] shrink-0 font-semibold text-slate-500">
+                      신청유형
+                    </dt>
+                    <dd className="min-w-0 flex-1 font-bold leading-snug text-slate-900">
+                      {successSummary.applicationType}
+                    </dd>
+                  </div>
+                  <div className="flex gap-3 border-b border-slate-200/60 pb-3 last:border-b-0 last:pb-0">
+                    <dt className="w-[4.5rem] shrink-0 font-semibold text-slate-500">
+                      신청자명
+                    </dt>
+                    <dd className="min-w-0 flex-1 font-bold text-slate-900">
+                      {successSummary.applicantName}
+                    </dd>
+                  </div>
+                  <div className="flex gap-3 border-b border-slate-200/60 pb-3 last:border-b-0 last:pb-0">
+                    <dt className="w-[4.5rem] shrink-0 font-semibold text-slate-500">
+                      연락처
+                    </dt>
+                    <dd className="min-w-0 flex-1 font-bold tracking-tight text-slate-900">
+                      {successSummary.phone}
+                    </dd>
+                  </div>
+                  <div className="flex gap-3 border-b border-slate-200/60 pb-3 last:border-b-0 last:pb-0">
+                    <dt className="w-[4.5rem] shrink-0 font-semibold text-slate-500">
+                      출발지
+                    </dt>
+                    <dd className="min-w-0 flex-1 font-semibold leading-snug text-slate-900">
+                      {successSummary.departure}
+                    </dd>
+                  </div>
+                  <div className="flex gap-3 border-b border-slate-200/60 pb-3 last:border-b-0 last:pb-0">
+                    <dt className="w-[4.5rem] shrink-0 font-semibold text-slate-500">
+                      도착지
+                    </dt>
+                    <dd className="min-w-0 flex-1 font-semibold leading-snug text-slate-900">
+                      {successSummary.destination}
+                    </dd>
+                  </div>
+                  <div className="flex gap-3">
+                    <dt className="w-[4.5rem] shrink-0 font-semibold text-slate-500">
+                      출발일시
+                    </dt>
+                    <dd className="min-w-0 flex-1 font-semibold leading-snug text-slate-900">
+                      {successSummary.departureDateTime}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  type="button"
+                  className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-slate-200 bg-white px-4 text-base font-bold tracking-[-0.03em] text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.99]"
+                  style={tapStyle}
+                  onClick={() => {
+                    setShowSubmitSuccess(false);
+                  }}
+                >
+                  확인
+                </button>
+                <button
+                  type="button"
+                  className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] px-4 text-base font-black tracking-[-0.03em] text-white shadow-lg shadow-blue-900/25 transition hover:brightness-105 active:scale-[0.99]"
+                  style={tapStyle}
+                  onClick={() => {
+                    resetFormToInitial();
+                    setShowSubmitSuccess(false);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  처음으로 돌아가기
+                </button>
+              </div>
             </div>
           </div>
         </div>
