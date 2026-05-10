@@ -245,23 +245,26 @@ export default function PartnerRegisterPage() {
               <div className="mt-5 space-y-4">
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold text-slate-500">
-                    업체명 또는 기사명 <span className="text-red-500">*</span>
+                    업체명(사업자등록증상 업체명){" "}
+                    <span className="text-red-500">*</span>
                   </span>
                   <input
                     className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold outline-none focus:border-blue-500"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="예: ○○여행 / 홍길동"
+                    placeholder="예: ○○관광 / ○○여행사"
                   />
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold text-slate-500">
-                    담당자명 <span className="text-red-500">*</span>
+                    실무 담당자님 또는 기사님{" "}
+                    <span className="text-red-500">*</span>
                   </span>
                   <input
                     className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold outline-none focus:border-blue-500"
                     value={managerName}
                     onChange={(e) => setManagerName(e.target.value)}
+                    placeholder="예: 홍길동"
                   />
                 </label>
                 <label className="block">
@@ -307,13 +310,13 @@ export default function PartnerRegisterPage() {
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold text-slate-500">
-                    지역 <span className="text-red-500">*</span>
+                    차고지 <span className="text-red-500">*</span>
                   </span>
                   <input
                     className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold outline-none focus:border-blue-500"
                     value={region}
                     onChange={(e) => setRegion(e.target.value)}
-                    placeholder="예: 경기 성남시"
+                    placeholder="예: 서울 강남구 / 경기 수원시"
                   />
                 </label>
                 <div>
