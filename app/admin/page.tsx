@@ -11,6 +11,11 @@ import {
 
 import * as XLSX from "xlsx";
 
+import {
+  fetchProfileForAuthUser,
+  resolveAdminRoleAccess,
+  type Profile,
+} from "@/lib/profile";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 목록·상세 공통 — Supabase row 정규화 */
@@ -1195,6 +1200,12 @@ function DetailSlidePanel({
 export default function AdminApplicationsPage() {
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [sessionProfile, setSessionProfile] = useState<Profile | null>(null);
+
+  const adminRoleAccess = useMemo(
+    () => resolveAdminRoleAccess(sessionProfile),
+    [sessionProfile],
+  );
 
   const [rows, setRows] = useState<ApplicationDetail[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1347,14 +1358,22 @@ export default function AdminApplicationsPage() {
   }, [smsText]);
 
   useEffect(() => {
-    // 로그인된 관리자 이메일 표시용
+    // 로그인된 관리자 이메일 + profiles 역할(STEP 1: 조회만, 미확인 시에도 접근 유지)
     (async () => {
       try {
         const supabase = createSupabaseClient();
         const { data } = await supabase.auth.getUser();
-        setAdminEmail(data.user?.email ?? null);
+        const user = data.user;
+        setAdminEmail(user?.email ?? null);
+        if (user?.id) {
+          const p = await fetchProfileForAuthUser(supabase, user.id);
+          setSessionProfile(p);
+        } else {
+          setSessionProfile(null);
+        }
       } catch {
         setAdminEmail(null);
+        setSessionProfile(null);
       } finally {
         setAuthLoading(false);
       }
@@ -1732,6 +1751,11 @@ export default function AdminApplicationsPage() {
                   ? `관리자: ${adminEmail}`
                   : "관리자: -"}
             </p>
+            <span className="sr-only">
+              {adminRoleAccess.isVerifiedAdmin
+                ? "프로필 기준 관리자 역할이 확인되었습니다."
+                : "프로필이 없거나 관리자 역할이 확인되지 않아 기존 방식으로 접근합니다."}
+            </span>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button

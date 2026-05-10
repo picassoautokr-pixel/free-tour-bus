@@ -3,6 +3,8 @@ import { SolapiMessageService } from "solapi";
 
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
+/** STEP 2+: `resolveAdminRoleAccess` / `fetchProfileForAuthUser` 로 admin 검증 강화 가능. 현재는 세션만 검증. */
+
 export const runtime = "nodejs";
 
 /** 솔라피에 넘길 국내 휴대폰 번호 (하이픈 없이 010xxxxxxxx) */
