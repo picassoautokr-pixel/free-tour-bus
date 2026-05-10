@@ -5,7 +5,11 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 로그인 화면은 인증 없이 접근
-  if (pathname === "/admin/login" || pathname === "/partner/login") {
+  if (
+    pathname === "/admin/login" ||
+    pathname === "/partner/login" ||
+    pathname === "/partner/set-password"
+  ) {
     return NextResponse.next();
   }
 

@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendDriverApprovalSms } from "@/lib/driver-approval-sms";
-import { getPartnerLoginRedirectTo } from "@/lib/partner-login-redirect";
+import { getPartnerSetPasswordRedirectTo } from "@/lib/partner-login-redirect";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
@@ -195,9 +195,9 @@ async function resolveOrCreateAuthUserId(
   const email = String(row.email).trim();
   const emailLower = email.toLowerCase();
 
-  let redirectTo = getPartnerLoginRedirectTo();
+  let redirectTo = getPartnerSetPasswordRedirectTo();
   if (!redirectTo) {
-    redirectTo = `${fallbackOrigin.replace(/\/$/, "")}/partner/login`;
+    redirectTo = `${fallbackOrigin.replace(/\/$/, "")}/partner/set-password`;
   }
   console.log(
     "[partner-drivers/status] inviteUserByEmail redirectTo:",

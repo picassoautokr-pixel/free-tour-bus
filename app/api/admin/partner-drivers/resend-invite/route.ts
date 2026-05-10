@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getPartnerLoginRedirectTo } from "@/lib/partner-login-redirect";
+import { getPartnerSetPasswordRedirectTo } from "@/lib/partner-login-redirect";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
@@ -80,9 +80,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "이메일이 없습니다." }, { status: 400 });
   }
 
-  let redirectTo = getPartnerLoginRedirectTo();
+  let redirectTo = getPartnerSetPasswordRedirectTo();
   if (!redirectTo) {
-    redirectTo = `${new URL(request.url).origin.replace(/\/$/, "")}/partner/login`;
+    redirectTo = `${new URL(request.url).origin.replace(/\/$/, "")}/partner/set-password`;
   }
 
   console.log("[resend-invite] inviteUserByEmail redirectTo:", redirectTo, "email:", email);
