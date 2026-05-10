@@ -1242,6 +1242,16 @@ export default function AdminApplicationsPage() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const soundEnabledRef = useRef(false);
   const realtimeToastTimerRef = useRef<number | null>(null);
+  const supabaseRef = useRef<ReturnType<typeof createSupabaseClient> | null>(
+    null,
+  );
+  const realtimeSubscribedRef = useRef(false);
+  const seenRealtimeIdsRef = useRef<{ bus: Set<string>; partner: Set<string> }>(
+    {
+      bus: new Set(),
+      partner: new Set(),
+    },
+  );
 
   soundEnabledRef.current = soundEnabled;
 
@@ -1480,7 +1490,13 @@ export default function AdminApplicationsPage() {
 
   useEffect(() => {
     // /admin 이 mount 된 상태에서만 realtime 연결
-    const supabase = createSupabaseClient();
+    if (realtimeSubscribedRef.current) return;
+    realtimeSubscribedRef.current = true;
+
+    if (!supabaseRef.current) {
+      supabaseRef.current = createSupabaseClient();
+    }
+    const supabase = supabaseRef.current;
 
     const handleBeep = () => {
       if (!soundEnabledRef.current) return;
@@ -1519,6 +1535,8 @@ export default function AdminApplicationsPage() {
           const normalized = normalizeRows([raw]);
           const row = normalized[0];
           if (!row?.id || row.id.startsWith("idx-")) return;
+          if (seenRealtimeIdsRef.current.bus.has(row.id)) return;
+          seenRealtimeIdsRef.current.bus.add(row.id);
 
           setRows((prev) => {
             if (prev.some((r) => r.id === row.id)) return prev;
@@ -1576,11 +1594,13 @@ export default function AdminApplicationsPage() {
           table: "partner_drivers",
         },
         (payload) => {
-          console.log("[realtime] partner_drivers INSERT payload:", payload);
+          console.log("partner_drivers realtime payload", payload);
           const raw = payload.new as Record<string, unknown>;
           const normalized = normalizePartnerDrivers([raw]);
           const row = normalized[0];
           if (!row?.id || row.id.startsWith("idx-")) return;
+          if (seenRealtimeIdsRef.current.partner.has(row.id)) return;
+          seenRealtimeIdsRef.current.partner.add(row.id);
 
           // 요구사항: insert 후 즉시 목록 reload + 통계 반영
           window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
@@ -1627,6 +1647,7 @@ export default function AdminApplicationsPage() {
 
     return () => {
       void supabase.removeChannel(channel);
+      realtimeSubscribedRef.current = false;
     };
   }, []);
 
