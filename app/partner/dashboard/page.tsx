@@ -14,6 +14,7 @@ const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 export default function PartnerDashboardPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const [showPasswordChangeHint, setShowPasswordChangeHint] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +50,33 @@ export default function PartnerDashboardPage() {
           return;
         }
 
-        if (!cancelled) setChecking(false);
+        let pwHint = false;
+        const pid = profile?.partner_driver_id?.trim();
+        if (pid) {
+          const { data: pwRow, error: pwErr } = await supabase
+            .from("partner_drivers")
+            .select("temporary_password_issued_at")
+            .eq("id", pid)
+            .maybeSingle();
+          if (!pwErr && pwRow && typeof pwRow === "object") {
+            const ts = (pwRow as { temporary_password_issued_at?: unknown })
+              .temporary_password_issued_at;
+            if (typeof ts === "string" && ts.trim() !== "") {
+              const ms = new Date(ts).getTime();
+              if (
+                !Number.isNaN(ms) &&
+                Date.now() - ms < 14 * 24 * 60 * 60 * 1000
+              ) {
+                pwHint = true;
+              }
+            }
+          }
+        }
+
+        if (!cancelled) {
+          setShowPasswordChangeHint(pwHint);
+          setChecking(false);
+        }
       } catch {
         router.replace("/partner/login");
       }
@@ -79,6 +106,16 @@ export default function PartnerDashboardPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-5 pb-16 pt-12">
       <div className="mx-auto max-w-lg">
+        {showPasswordChangeHint ? (
+          <div
+            className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-left text-sm font-semibold leading-relaxed text-amber-950 shadow-sm"
+            role="status"
+          >
+            임시 비밀번호로 접속 중이시면, 보안을 위해{" "}
+            <span className="font-black">비밀번호 변경</span>을 권장합니다.
+            (계정 메뉴가 준비되면 이 화면에서 변경할 수 있습니다.)
+          </div>
+        ) : null}
         <div className="rounded-[2rem] border border-slate-200/90 bg-white px-6 py-10 text-center shadow-[0_18px_45px_rgba(15,23,42,0.1)]">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-600">
             제휴 기사

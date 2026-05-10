@@ -7,6 +7,10 @@ import {
   isPartnerDriverLoginAllowed,
   type PartnerDriverRecordStatus,
 } from "@/lib/partner-driver-access";
+import {
+  digitsOnlyKoreanMobile,
+  resolvePartnerLoginEmail,
+} from "@/lib/partner-phone-login";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import { createSupabaseClient } from "@/lib/supabase";
@@ -66,7 +70,7 @@ export default function PartnerLoginPage() {
     }
   }, []);
 
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -79,20 +83,42 @@ export default function PartnerLoginPage() {
 
   const debounceRef = useRef<number | null>(null);
 
-  const refreshRegistrationStatus = useCallback(async (emailInput: string) => {
-    const t = emailInput.trim().toLowerCase();
-    if (!isEmailLike(t)) {
+  const refreshRegistrationStatus = useCallback(async (rawInput: string) => {
+    const trimmed = rawInput.trim();
+    const phoneDigits = digitsOnlyKoreanMobile(trimmed);
+
+    if (phoneDigits) {
+      setStatusLoading(true);
+      try {
+        const res = await fetch(
+          `/api/partner/registration-status?phone=${encodeURIComponent(phoneDigits)}`,
+        );
+        const json = (await res.json()) as {
+          status?: PartnerDriverRecordStatus | null;
+        };
+        setRegistrationStatus(json.status ?? null);
+      } catch {
+        setRegistrationStatus(null);
+      } finally {
+        setStatusLoading(false);
+      }
+      return;
+    }
+
+    const asEmail = trimmed.toLowerCase();
+    if (!isEmailLike(asEmail)) {
       setRegistrationStatus(null);
       return;
     }
     setStatusLoading(true);
     try {
       const res = await fetch(
-        `/api/partner/registration-status?email=${encodeURIComponent(t)}`,
+        `/api/partner/registration-status?email=${encodeURIComponent(asEmail)}`,
       );
-      const json = (await res.json()) as { status?: PartnerDriverRecordStatus | null };
-      const st = json.status ?? null;
-      setRegistrationStatus(st);
+      const json = (await res.json()) as {
+        status?: PartnerDriverRecordStatus | null;
+      };
+      setRegistrationStatus(json.status ?? null);
     } catch {
       setRegistrationStatus(null);
     } finally {
@@ -103,12 +129,12 @@ export default function PartnerLoginPage() {
   useEffect(() => {
     if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      void refreshRegistrationStatus(email);
+      void refreshRegistrationStatus(loginId);
     }, 450);
     return () => {
       if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
     };
-  }, [email, refreshRegistrationStatus]);
+  }, [loginId, refreshRegistrationStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,8 +198,14 @@ export default function PartnerLoginPage() {
     setErrorMessage(null);
     try {
       const supabase = createSupabaseClient();
+      const authEmail = resolvePartnerLoginEmail(loginId);
+      if (authEmail === "") {
+        setErrorMessage("이메일 또는 휴대폰 번호를 입력해 주세요.");
+        return;
+      }
+
       const { error: signError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: authEmail,
         password,
       });
 
@@ -261,16 +293,16 @@ export default function PartnerLoginPage() {
           <div className="mt-8 space-y-4">
             <label className="block">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                이메일
+                이메일 또는 휴대폰번호
               </span>
               <input
-                type="email"
+                type="text"
                 inputMode="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
                 className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                placeholder="이메일 주소"
+                placeholder="예: name@example.com 또는 01012345678"
               />
             </label>
 
@@ -310,7 +342,7 @@ export default function PartnerLoginPage() {
               onClick={() => void onSubmit()}
               disabled={
                 isSubmitting ||
-                email.trim() === "" ||
+                loginId.trim() === "" ||
                 password === "" ||
                 otherRoleSession ||
                 loginBlockedByStatus

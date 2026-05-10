@@ -252,6 +252,102 @@ function PartnerPasswordResetButton({
   );
 }
 
+function PartnerSmsTempAccountSection({
+  row,
+  onPartnerRowUpdated,
+  setToast,
+}: {
+  row: PartnerDriverDetail;
+  onPartnerRowUpdated: (next: PartnerDriverDetail) => void;
+  setToast: (t: { message: string }) => void;
+}) {
+  const [busyIssue, setBusyIssue] = useState(false);
+  const [busyReset, setBusyReset] = useState(false);
+
+  const phoneDigits = row.phone.replace(/\D/g, "");
+  const canPhone = /^010\d{8}$/.test(phoneDigits);
+
+  const run = async (mode: "issue" | "reset") => {
+    if (mode === "issue") setBusyIssue(true);
+    else setBusyReset(true);
+    try {
+      const res = await fetch("/api/admin/partner-drivers/issue-temp-account", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, mode }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        ok?: boolean;
+        message?: string;
+        sms_sent?: boolean;
+        sms_error?: string | null;
+        warnings?: string[];
+        partner_driver?: PartnerDriverDetail | null;
+      };
+      if (!res.ok) {
+        setToast({ message: json.error ?? "처리에 실패했습니다." });
+        return;
+      }
+      if (json.partner_driver) {
+        onPartnerRowUpdated(json.partner_driver);
+      }
+      window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+      const parts: string[] = [];
+      if (json.message) parts.push(json.message);
+      if (json.sms_sent === false && json.sms_error) {
+        parts.push(`문자 오류: ${json.sms_error}`);
+      }
+      if (json.warnings?.length) parts.push(...json.warnings);
+      setToast({
+        message: parts.join(" ").trim() || "처리되었습니다.",
+      });
+    } catch (e) {
+      setToast({
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setBusyIssue(false);
+      setBusyReset(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50/40 p-4 ring-1 ring-teal-100">
+      <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
+        전화번호 로그인 (임시 비밀번호)
+      </p>
+      {!canPhone ? (
+        <p className="mt-2 text-xs font-medium text-amber-900">
+          010으로 시작하는 휴대폰 번호가 있어야 문자로 계정을 발급할 수 있습니다.
+        </p>
+      ) : null}
+      <div className="mt-3 grid grid-cols-1 gap-2">
+        <button
+          type="button"
+          disabled={busyIssue || busyReset || !canPhone}
+          onClick={() => void run("issue")}
+          className="min-h-11 rounded-xl bg-teal-700 px-3 text-sm font-black text-white shadow-sm transition hover:bg-teal-800 disabled:opacity-50"
+        >
+          {busyIssue ? "처리 중…" : "임시 계정 발급 및 문자발송"}
+        </button>
+        <button
+          type="button"
+          disabled={busyIssue || busyReset || !canPhone}
+          onClick={() => void run("reset")}
+          className="min-h-11 rounded-xl border border-teal-400 bg-white px-3 text-sm font-black text-teal-950 shadow-sm transition hover:bg-teal-50 disabled:opacity-50"
+        >
+          {busyReset ? "처리 중…" : "비밀번호 재설정 문자발송"}
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] font-medium leading-snug text-teal-950/80">
+        임시 비밀번호는 문자로만 안내합니다. DB에는 평문으로 저장하지 않습니다.
+      </p>
+    </div>
+  );
+}
+
 function PartnerWorkflowButtons({
   row,
   getAdminMemo,
@@ -1328,6 +1424,12 @@ function PartnerDriverSlidePanel({
                 {formatCreatedAt(row.approved_at)}
               </DetailField>
             ) : null}
+            {row.temporary_password_issued_at != null &&
+            row.temporary_password_issued_at !== "" ? (
+              <DetailField label="임시 비밀번호 문자 발송">
+                {formatCreatedAt(row.temporary_password_issued_at)}
+              </DetailField>
+            ) : null}
           </dl>
 
           <PartnerStatusSection
@@ -1363,6 +1465,12 @@ function PartnerDriverSlidePanel({
             email={row.email}
             status={row.status}
             authUserId={row.auth_user_id}
+            setToast={setToast}
+          />
+
+          <PartnerSmsTempAccountSection
+            row={row}
+            onPartnerRowUpdated={onPartnerRowUpdated}
             setToast={setToast}
           />
         </div>

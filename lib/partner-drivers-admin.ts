@@ -30,6 +30,8 @@ export type PartnerDriverDetail = {
   auth_user_id: string;
   /** 컬럼 없으면 null */
   approved_at: string | null;
+  /** 컬럼 없으면 null — 평문 비밀번호는 저장하지 않음 */
+  temporary_password_issued_at: string | null;
 };
 
 function parseBusTypes(raw: unknown): string[] {
@@ -91,6 +93,15 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       approvedAt = s === "" ? null : s;
     }
 
+    let temporaryPasswordIssuedAt: string | null = null;
+    if (
+      "temporary_password_issued_at" in r &&
+      r.temporary_password_issued_at != null
+    ) {
+      const s = String(r.temporary_password_issued_at).trim();
+      temporaryPasswordIssuedAt = s === "" ? null : s;
+    }
+
     return {
       id,
       created_at: created,
@@ -111,6 +122,7 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       admin_memo: adminMemo,
       auth_user_id: authUserId,
       approved_at: approvedAt,
+      temporary_password_issued_at: temporaryPasswordIssuedAt,
     };
   });
 }
