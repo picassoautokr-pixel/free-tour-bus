@@ -1479,9 +1479,33 @@ export default function AdminApplicationsPage() {
   }, [load]);
 
   useEffect(() => {
+    // /admin 이 mount 된 상태에서만 realtime 연결
     const supabase = createSupabaseClient();
+
+    const handleBeep = () => {
+      if (!soundEnabledRef.current) return;
+      try {
+        const ctx = audioContextRef.current;
+        if (!ctx) {
+          console.warn(
+            "[notification sound] AudioContext가 없습니다. 상단에서 「알림음 켜기」를 눌러 주세요.",
+          );
+          return;
+        }
+        void ctx.resume().then(() => {
+          try {
+            playNotificationBeep(ctx);
+          } catch (e) {
+            console.warn("[notification sound] 비프 재생 실패", e);
+          }
+        });
+      } catch (e) {
+        console.warn("[notification sound] 재생 처리 실패", e);
+      }
+    };
+
     const channel = supabase
-      .channel("realtime-applications-inserts")
+      .channel("realtime-admin-inserts")
       .on(
         "postgres_changes",
         {
@@ -1490,10 +1514,11 @@ export default function AdminApplicationsPage() {
           table: "applications",
         },
         (payload) => {
+          console.log("[realtime] applications INSERT payload:", payload);
           const raw = payload.new as Record<string, unknown>;
           const normalized = normalizeRows([raw]);
           const row = normalized[0];
-          if (!row.id || row.id.startsWith("idx-")) return;
+          if (!row?.id || row.id.startsWith("idx-")) return;
 
           setRows((prev) => {
             if (prev.some((r) => r.id === row.id)) return prev;
@@ -1540,39 +1565,9 @@ export default function AdminApplicationsPage() {
             realtimeToastTimerRef.current = null;
           }, 5000);
 
-          if (soundEnabledRef.current) {
-            try {
-              const ctx = audioContextRef.current;
-              if (!ctx) {
-                console.warn(
-                  "[notification sound] AudioContext가 없습니다. 상단에서 「알림음 켜기」를 눌러 주세요.",
-                );
-              } else {
-                void ctx.resume().then(() => {
-                  try {
-                    playNotificationBeep(ctx);
-                  } catch (e) {
-                    console.warn("[notification sound] 비프 재생 실패", e);
-                  }
-                });
-              }
-            } catch (e) {
-              console.warn("[notification sound] 재생 처리 실패", e);
-            }
-          }
+          handleBeep();
         },
       )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, []);
-
-  useEffect(() => {
-    const supabase = createSupabaseClient();
-    const channel = supabase
-      .channel("realtime-partner-drivers-inserts")
       .on(
         "postgres_changes",
         {
@@ -1581,12 +1576,14 @@ export default function AdminApplicationsPage() {
           table: "partner_drivers",
         },
         (payload) => {
+          console.log("[realtime] partner_drivers INSERT payload:", payload);
           const raw = payload.new as Record<string, unknown>;
           const normalized = normalizePartnerDrivers([raw]);
           const row = normalized[0];
           if (!row?.id || row.id.startsWith("idx-")) return;
 
-          // partner 목록/통계 즉시 반영(중복은 컴포넌트 내부에서도 한 번 더 방지)
+          // 요구사항: insert 후 즉시 목록 reload + 통계 반영
+          window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
           window.dispatchEvent(
             new CustomEvent("partner-admin-insert", { detail: { row } }),
           );
@@ -1621,29 +1618,12 @@ export default function AdminApplicationsPage() {
             realtimeToastTimerRef.current = null;
           }, 5000);
 
-          if (soundEnabledRef.current) {
-            try {
-              const ctx = audioContextRef.current;
-              if (!ctx) {
-                console.warn(
-                  "[notification sound] AudioContext가 없습니다. 상단에서 「알림음 켜기」를 눌러 주세요.",
-                );
-              } else {
-                void ctx.resume().then(() => {
-                  try {
-                    playNotificationBeep(ctx);
-                  } catch (e) {
-                    console.warn("[notification sound] 비프 재생 실패", e);
-                  }
-                });
-              }
-            } catch (e) {
-              console.warn("[notification sound] 재생 처리 실패", e);
-            }
-          }
+          handleBeep();
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("[realtime] realtime-admin-inserts status:", status);
+      });
 
     return () => {
       void supabase.removeChannel(channel);
