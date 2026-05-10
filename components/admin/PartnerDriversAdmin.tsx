@@ -578,6 +578,7 @@ export function PartnerDriversAdmin({ setToast }: Props) {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<PartnerDriverDetail | null>(null);
+  const pendingFocusIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -607,11 +608,63 @@ export function PartnerDriversAdmin({ setToast }: Props) {
     void load();
   }, [load]);
 
+  const focusPartnerRow = useCallback((partnerDriverId: string) => {
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`admin-partner-row-${partnerDriverId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, []);
+
   useEffect(() => {
     const onRefresh = () => void load();
     window.addEventListener("partner-admin-refresh", onRefresh);
     return () => window.removeEventListener("partner-admin-refresh", onRefresh);
   }, [load]);
+
+  useEffect(() => {
+    const onInsert = (ev: Event) => {
+      const e = ev as CustomEvent<{ row?: PartnerDriverDetail }>;
+      const row = e.detail?.row;
+      if (!row?.id) return;
+      setRows((prev) => {
+        if (prev.some((r) => r.id === row.id)) return prev;
+        return [row, ...prev];
+      });
+    };
+    window.addEventListener("partner-admin-insert", onInsert);
+    return () => window.removeEventListener("partner-admin-insert", onInsert);
+  }, []);
+
+  useEffect(() => {
+    const onFocus = (ev: Event) => {
+      const e = ev as CustomEvent<{ id?: string }>;
+      const id = e.detail?.id?.trim() ?? "";
+      if (!id) return;
+      const row = rows.find((r) => r.id === id);
+      if (row) {
+        setSelected(row);
+        setDetailOpen(true);
+        focusPartnerRow(id);
+        return;
+      }
+      pendingFocusIdRef.current = id;
+      void load();
+    };
+    window.addEventListener("partner-admin-focus", onFocus);
+    return () => window.removeEventListener("partner-admin-focus", onFocus);
+  }, [rows, load, focusPartnerRow]);
+
+  useEffect(() => {
+    const id = pendingFocusIdRef.current;
+    if (!id) return;
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    pendingFocusIdRef.current = null;
+    setSelected(row);
+    setDetailOpen(true);
+    focusPartnerRow(id);
+  }, [rows, focusPartnerRow]);
 
   const handlePartnerStatusSaved = useCallback(
     (id: string, nextStatus: PartnerStatusValue, nextMemo: string) => {
@@ -926,6 +979,7 @@ export function PartnerDriversAdmin({ setToast }: Props) {
               <li key={row.id}>
                 <button
                   type="button"
+                  id={`admin-partner-row-${row.id}`}
                   onClick={() => openDetail(row)}
                   className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80"
                 >
@@ -1059,6 +1113,7 @@ export function PartnerDriversAdmin({ setToast }: Props) {
                 {filteredAndSorted.map((row) => (
                   <tr
                     key={row.id}
+                    id={`admin-partner-row-${row.id}`}
                     className="cursor-pointer hover:bg-slate-50/80"
                     onClick={() => openDetail(row)}
                     onKeyDown={(e) => {

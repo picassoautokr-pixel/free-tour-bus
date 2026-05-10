@@ -17,6 +17,7 @@ import {
   type Profile,
 } from "@/lib/profile";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
+import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 목록·상세 공통 — Supabase row 정규화 */
@@ -248,18 +249,38 @@ function playNotificationBeep(ctx: AudioContext) {
 type AdminToast = { message: string };
 
 /** 실시간 INSERT 전용 토스트 (우측 상단) */
-type RealtimeToastPayload = {
-  applicantName: string;
-  applicationTypeLabel: string;
-  passengerLine: string;
-};
+type RealtimeToastPayload =
+  | {
+      kind: "bus";
+      applicantName: string;
+      applicationTypeLabel: string;
+      passengerLine: string;
+    }
+  | {
+      kind: "partner";
+      companyName: string;
+      managerName: string;
+      phone: string;
+    };
 
 type RecentNotificationItem = {
+  kind: "bus" | "partner";
   id: string;
-  applicant_name: string;
-  application_type: string;
   created_at: string | null;
-};
+} & (
+  | {
+      kind: "bus";
+      applicant_name: string;
+      application_type: string;
+      passenger_count: number | null;
+    }
+  | {
+      kind: "partner";
+      company_name: string;
+      manager_name: string;
+      phone: string;
+    }
+);
 
 function parseStopovers(raw: unknown): string[] {
   if (raw == null) return [];
@@ -1482,12 +1503,17 @@ export default function AdminApplicationsPage() {
           setUnseenRealtimeCount((c) => c + 1);
           setRecentNotifications((prev) => {
             const item: RecentNotificationItem = {
+              kind: "bus",
               id: row.id,
               applicant_name: row.applicant_name,
               application_type: row.application_type,
+              passenger_count: row.passenger_count ?? null,
               created_at: row.created_at,
             };
-            return [item, ...prev.filter((x) => x.id !== item.id)].slice(0, 25);
+            return [
+              item,
+              ...prev.filter((x) => !(x.kind === item.kind && x.id === item.id)),
+            ].slice(0, 25);
           });
 
           const typeLabel = displayApplicationTypeLabel(row.application_type);
@@ -1501,9 +1527,91 @@ export default function AdminApplicationsPage() {
               : row.applicant_name;
 
           setRealtimeToast({
+            kind: "bus",
             applicantName: applicant,
             applicationTypeLabel: typeLabel,
             passengerLine,
+          });
+          if (realtimeToastTimerRef.current != null) {
+            window.clearTimeout(realtimeToastTimerRef.current);
+          }
+          realtimeToastTimerRef.current = window.setTimeout(() => {
+            setRealtimeToast(null);
+            realtimeToastTimerRef.current = null;
+          }, 5000);
+
+          if (soundEnabledRef.current) {
+            try {
+              const ctx = audioContextRef.current;
+              if (!ctx) {
+                console.warn(
+                  "[notification sound] AudioContext가 없습니다. 상단에서 「알림음 켜기」를 눌러 주세요.",
+                );
+              } else {
+                void ctx.resume().then(() => {
+                  try {
+                    playNotificationBeep(ctx);
+                  } catch (e) {
+                    console.warn("[notification sound] 비프 재생 실패", e);
+                  }
+                });
+              }
+            } catch (e) {
+              console.warn("[notification sound] 재생 처리 실패", e);
+            }
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    const supabase = createSupabaseClient();
+    const channel = supabase
+      .channel("realtime-partner-drivers-inserts")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "partner_drivers",
+        },
+        (payload) => {
+          const raw = payload.new as Record<string, unknown>;
+          const normalized = normalizePartnerDrivers([raw]);
+          const row = normalized[0];
+          if (!row?.id || row.id.startsWith("idx-")) return;
+
+          // partner 목록/통계 즉시 반영(중복은 컴포넌트 내부에서도 한 번 더 방지)
+          window.dispatchEvent(
+            new CustomEvent("partner-admin-insert", { detail: { row } }),
+          );
+
+          setUnseenRealtimeCount((c) => c + 1);
+          setRecentNotifications((prev) => {
+            const item: RecentNotificationItem = {
+              kind: "partner",
+              id: row.id,
+              company_name: row.company_name,
+              manager_name: row.manager_name,
+              phone: row.phone,
+              created_at: row.created_at,
+            };
+            return [
+              item,
+              ...prev.filter((x) => !(x.kind === item.kind && x.id === item.id)),
+            ].slice(0, 25);
+          });
+
+          setRealtimeToast({
+            kind: "partner",
+            companyName: row.company_name,
+            managerName: row.manager_name,
+            phone: row.phone,
           });
           if (realtimeToastTimerRef.current != null) {
             window.clearTimeout(realtimeToastTimerRef.current);
@@ -1555,17 +1663,35 @@ export default function AdminApplicationsPage() {
     });
   }, []);
 
+  const focusPartnerRow = useCallback((partnerDriverId: string) => {
+    requestAnimationFrame(() => {
+      window.dispatchEvent(
+        new CustomEvent("partner-admin-focus", {
+          detail: { id: partnerDriverId },
+        }),
+      );
+    });
+  }, []);
+
   const handleSelectNotification = useCallback(
-    (applicationId: string) => {
+    (n: RecentNotificationItem) => {
       setNotificationPanelOpen(false);
-      const row = rows.find((r) => r.id === applicationId);
-      if (row) {
-        setSelected(row);
-        setDetailOpen(true);
-        focusApplicationRow(applicationId);
+      if (n.kind === "bus") {
+        setAdminSectionTab("bus");
+        const row = rows.find((r) => r.id === n.id);
+        if (row) {
+          setSelected(row);
+          setDetailOpen(true);
+          focusApplicationRow(n.id);
+        }
+        return;
       }
+
+      // partner
+      setAdminSectionTab("partner");
+      focusPartnerRow(n.id);
     },
-    [rows, focusApplicationRow],
+    [rows, focusApplicationRow, focusPartnerRow],
   );
 
   const closeDetail = () => {
@@ -1837,13 +1963,22 @@ export default function AdminApplicationsPage() {
                           <button
                             type="button"
                             className="flex w-full flex-col gap-1 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-50 active:bg-slate-100"
-                            onClick={() => handleSelectNotification(n.id)}
+                            onClick={() => handleSelectNotification(n)}
                           >
                             <span className="text-sm font-bold text-slate-900">
-                              {n.applicant_name}
+                              {n.kind === "bus"
+                                ? `[버스 신청] ${n.applicant_name} / ${
+                                    n.passenger_count != null &&
+                                    Number.isFinite(n.passenger_count)
+                                      ? `${n.passenger_count}명`
+                                      : "—"
+                                  }`
+                                : `[제휴기사] ${n.company_name} / ${n.manager_name}`}
                             </span>
                             <span className="line-clamp-2 text-xs font-medium leading-snug text-slate-600">
-                              {displayApplicationTypeLabel(n.application_type)}
+                              {n.kind === "bus"
+                                ? displayApplicationTypeLabel(n.application_type)
+                                : `연락처 ${n.phone}`}
                             </span>
                             <span className="text-[11px] font-semibold text-slate-400">
                               {formatCreatedAt(n.created_at)}
@@ -2406,20 +2541,41 @@ export default function AdminApplicationsPage() {
             </span>
             <div className="min-w-0 flex-1 py-0.5">
               <p className="text-sm font-black leading-snug text-slate-900">
-                새 신청이 접수되었습니다.
+                {realtimeToast.kind === "partner"
+                  ? "새 제휴기사 신청이 접수되었습니다."
+                  : "새 신청이 접수되었습니다."}
               </p>
-              <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
-                <span className="text-slate-500">신청자명</span>{" "}
-                {realtimeToast.applicantName}
-              </p>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
-                <span className="text-slate-500">신청유형</span>{" "}
-                {realtimeToast.applicationTypeLabel}
-              </p>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
-                <span className="text-slate-500">인원수</span>{" "}
-                {realtimeToast.passengerLine}
-              </p>
+              {realtimeToast.kind === "partner" ? (
+                <>
+                  <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
+                    <span className="text-slate-500">업체명</span>{" "}
+                    {realtimeToast.companyName}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                    <span className="text-slate-500">담당자명</span>{" "}
+                    {realtimeToast.managerName}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                    <span className="text-slate-500">연락처</span>{" "}
+                    {realtimeToast.phone}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
+                    <span className="text-slate-500">신청자명</span>{" "}
+                    {realtimeToast.applicantName}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                    <span className="text-slate-500">신청유형</span>{" "}
+                    {realtimeToast.applicationTypeLabel}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                    <span className="text-slate-500">인원수</span>{" "}
+                    {realtimeToast.passengerLine}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
