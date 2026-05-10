@@ -4,8 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // /admin/login 은 인증 없이 접근 허용
-  if (pathname === "/admin/login") {
+  // 로그인 화면은 인증 없이 접근
+  if (pathname === "/admin/login" || pathname === "/partner/login") {
     return NextResponse.next();
   }
 
@@ -15,7 +15,6 @@ export async function middleware(request: NextRequest) {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url?.trim() || !anonKey?.trim()) {
-    // 환경변수가 없으면 보호 로직을 수행할 수 없어 그대로 통과
     return response;
   }
 
@@ -38,8 +37,11 @@ export async function middleware(request: NextRequest) {
 
   if (!user) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/admin/login";
-    // 로그인 후 돌아올 경로 (선택)
+    if (pathname.startsWith("/partner/dashboard")) {
+      redirectUrl.pathname = "/partner/login";
+    } else {
+      redirectUrl.pathname = "/admin/login";
+    }
     redirectUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(redirectUrl);
   }
@@ -48,6 +50,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/partner/dashboard/:path*"],
 };
-
