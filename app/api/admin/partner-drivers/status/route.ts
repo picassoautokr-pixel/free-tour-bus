@@ -15,6 +15,8 @@ export const runtime = "nodejs";
 type Body = {
   partner_driver_id?: unknown;
   status?: unknown;
+  /** 승인 처리 시 함께 저장할 관리자 메모(선택) */
+  admin_memo?: unknown;
 };
 
 const ALLOWED = new Set(["pending", "reviewing", "approved", "rejected"]);
@@ -48,41 +50,93 @@ async function findAuthUserIdByEmail(
 }
 
 /**
- * optional 컬럼(approved_at, auth_user_id) 은 없으면 한 단계씩 제거하며 재시도
+ * 승인(approved) 전용 — status·auth_user_id·approved_at 을 반드시 함께 저장합니다.
+ * 컬럼 누락 시 조용히 생략하지 않고 실패로 처리합니다.
  */
+async function updatePartnerDriverApprovedStrict(
+  admin: SupabaseClient,
+  id: string,
+  fields: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  const { error, data } = await admin
+    .from("partner_drivers")
+    .update(fields)
+    .eq("id", id)
+    .select("id,status,approved_at,auth_user_id");
+
+  const rows = Array.isArray(data) ? data : data != null ? [data] : [];
+
+  if (error) {
+    console.error(
+      "[partner-drivers/status] APPROVED partner_drivers update failed:",
+      error.message,
+      "code:",
+      error.code,
+      "details:",
+      error.details,
+      "hint:",
+      error.hint,
+      "payload:",
+      JSON.stringify(fields),
+    );
+    const hint =
+      /approved_at|auth_user_id|column/i.test(error.message) &&
+      !/violates|foreign key/i.test(error.message)
+        ? " DB에 approved_at, auth_user_id 컬럼이 있는지 확인하고 sql/partner_drivers_step3.sql 을 적용했는지 확인해 주세요."
+        : "";
+    return { error: `${error.message}${hint}` };
+  }
+
+  if (rows.length === 0) {
+    console.error(
+      "[partner-drivers/status] update succeeded but select returned no rows for id",
+      id,
+    );
+    return {
+      error:
+        "partner_drivers 갱신 후 확인(select)에 실패했습니다. RLS 또는 id 일치 여부를 확인해 주세요.",
+    };
+  }
+
+  const row = rows[0];
+  console.log(
+    "[partner-drivers/status] approved row persisted:",
+    JSON.stringify(row),
+  );
+
+  const r = row as Record<string, unknown> | undefined;
+  if (
+    r &&
+    (String(r.auth_user_id ?? "").trim() === "" ||
+      r.approved_at == null ||
+      String(r.approved_at ?? "").trim() === "")
+  ) {
+    const msg =
+      "갱신 응답에 approved_at 또는 auth_user_id 가 비어 있습니다. DB 컬럼·RLS·트리거를 확인해 주세요.";
+    console.error("[partner-drivers/status]", msg, row);
+    return { error: msg };
+  }
+
+  return { error: null };
+}
+
+/** 승인이 아닌 상태 변경용 — status( 및 선택 필드)만 갱신 */
 async function updatePartnerDriverRow(
   admin: SupabaseClient,
   id: string,
   fields: Record<string, unknown>,
 ): Promise<{ error: string | null }> {
-  let payload: Record<string, unknown> = { ...fields };
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const { error } = await admin
-      .from("partner_drivers")
-      .update(payload)
-      .eq("id", id);
-    if (!error) return { error: null };
-    const msg = error.message.toLowerCase();
-    if (
-      msg.includes("column") ||
-      msg.includes("schema") ||
-      msg.includes("auth_user_id") ||
-      msg.includes("approved_at")
-    ) {
-      if ("approved_at" in payload) {
-        const { approved_at: _a, ...rest } = payload;
-        payload = rest;
-        continue;
-      }
-      if ("auth_user_id" in payload) {
-        const { auth_user_id: _u, ...rest } = payload;
-        payload = rest;
-        continue;
-      }
-    }
+  const { error } = await admin.from("partner_drivers").update(fields).eq("id", id);
+  if (error) {
+    console.error(
+      "[partner-drivers/status] status-only update failed:",
+      error.message,
+      error.code,
+      JSON.stringify(fields),
+    );
     return { error: error.message };
   }
-  return { error: "partner_drivers 업데이트에 실패했습니다." };
+  return { error: null };
 }
 
 async function upsertDriverProfile(
@@ -153,6 +207,20 @@ async function resolveOrCreateAuthUserId(
     };
   }
 
+  if (invited.error) {
+    console.error(
+      "[partner-drivers/status] inviteUserByEmail failed:",
+      invited.error.message,
+      "email:",
+      email,
+    );
+  } else if (!invited.data.user?.id) {
+    console.error(
+      "[partner-drivers/status] inviteUserByEmail returned no user id:",
+      JSON.stringify(invited.data),
+    );
+  }
+
   const inviteMsg = invited.error?.message?.toLowerCase() ?? "";
   const maybeExists =
     inviteMsg.includes("already") ||
@@ -162,8 +230,16 @@ async function resolveOrCreateAuthUserId(
   if (maybeExists) {
     const byList = await findAuthUserIdByEmail(admin, emailLower);
     if (byList) {
+      console.warn(
+        "[partner-drivers/status] using existing Auth user for email:",
+        emailLower,
+      );
       return { userId: byList, error: null, usedInvite: false };
     }
+    console.error(
+      "[partner-drivers/status] duplicate email but user id not found in listUsers:",
+      emailLower,
+    );
   }
 
   const created = await admin.auth.admin.createUser({
@@ -172,18 +248,39 @@ async function resolveOrCreateAuthUserId(
     email_confirm: true,
   });
   if (!created.error && created.data.user?.id) {
+    console.warn(
+      "[partner-drivers/status] createUser fallback succeeded for:",
+      emailLower,
+    );
     return { userId: created.data.user.id, error: null, usedInvite: false };
+  }
+
+  if (created.error) {
+    console.error(
+      "[partner-drivers/status] createUser failed:",
+      created.error.message,
+    );
   }
 
   const createMsg = created.error?.message ?? "";
   const byList2 = await findAuthUserIdByEmail(admin, emailLower);
   if (byList2) {
+    console.warn(
+      "[partner-drivers/status] resolved user id via listUsers after create failure:",
+      emailLower,
+    );
     return { userId: byList2, error: null, usedInvite: false };
   }
 
+  const combined =
+    createMsg ||
+    invited.error?.message ||
+    "Supabase Auth 에서 사용자를 생성·연결하지 못했습니다.";
+  console.error("[partner-drivers/status] resolveOrCreateAuthUserId exhausted:", combined);
+
   return {
     userId: "",
-    error: createMsg || invited.error?.message || "Auth 사용자를 만들 수 없습니다.",
+    error: combined,
     usedInvite: false,
   };
 }
@@ -206,6 +303,9 @@ export async function POST(request: Request) {
 
   const admin = createServiceRoleSupabase();
   if (!admin) {
+    console.error(
+      "[partner-drivers/status] SUPABASE_SERVICE_ROLE_KEY 가 비어 있어 승인·Auth 연결을 수행할 수 없습니다.",
+    );
     return NextResponse.json(
       {
         error:
@@ -259,6 +359,9 @@ export async function POST(request: Request) {
     new URL(request.url).origin ||
     "";
 
+  const adminMemoFromBody =
+    typeof body.admin_memo === "string" ? body.admin_memo.trim() : "";
+
   if (status === "approved") {
     const r = row as {
       id: string;
@@ -268,18 +371,31 @@ export async function POST(request: Request) {
       auth_user_id?: string | null;
     };
 
-    const authResult = await resolveOrCreateAuthUserId(admin, {
-      id: String(r.id),
-      email: String(r.email ?? ""),
-      auth_user_id:
-        "auth_user_id" in row && row.auth_user_id != null
-          ? String(row.auth_user_id)
-          : null,
-    }, siteUrl || "http://localhost:3000");
+    const authResult = await resolveOrCreateAuthUserId(
+      admin,
+      {
+        id: String(r.id),
+        email: String(r.email ?? ""),
+        auth_user_id:
+          "auth_user_id" in row && row.auth_user_id != null
+            ? String(row.auth_user_id)
+            : null,
+      },
+      siteUrl || "http://localhost:3000",
+    );
 
     if (authResult.error || !authResult.userId) {
+      console.error(
+        "[partner-drivers/status] 승인 중단: Auth 사용자 확보 실패 —",
+        authResult.error,
+      );
       return NextResponse.json(
-        { error: authResult.error ?? "Auth 연결 실패" },
+        {
+          error:
+            authResult.error ??
+            "Supabase Auth 사용자를 생성하거나 기존 계정과 연결하지 못했습니다.",
+          auth_error: authResult.error ?? true,
+        },
         { status: 502 },
       );
     }
@@ -292,19 +408,56 @@ export async function POST(request: Request) {
       partnerDriverId: String(r.id),
     });
     if (profErr.error) {
-      return NextResponse.json({ error: profErr.error }, { status: 502 });
+      console.error(
+        "[partner-drivers/status] 승인 중단: profiles upsert 실패 —",
+        profErr.error,
+      );
+      return NextResponse.json(
+        {
+          error: `profiles 저장 실패: ${profErr.error}`,
+          auth_user_id: authResult.userId,
+        },
+        { status: 502 },
+      );
     }
 
     const approvedAt = new Date().toISOString();
-    const updateFields: Record<string, unknown> = {
+    const coreUpdate: Record<string, unknown> = {
       status: "approved",
       auth_user_id: authResult.userId,
       approved_at: approvedAt,
     };
 
-    const up = await updatePartnerDriverRow(admin, partnerDriverId.trim(), updateFields);
+    const up = await updatePartnerDriverApprovedStrict(
+      admin,
+      partnerDriverId.trim(),
+      coreUpdate,
+    );
     if (up.error) {
-      return NextResponse.json({ error: up.error }, { status: 502 });
+      console.error(
+        "[partner-drivers/status] 승인 중단: partner_drivers 갱신 실패 —",
+        up.error,
+      );
+      return NextResponse.json(
+        {
+          error: up.error,
+          auth_user_id: authResult.userId,
+        },
+        { status: 502 },
+      );
+    }
+
+    if (adminMemoFromBody !== "") {
+      const { error: memoErr } = await admin
+        .from("partner_drivers")
+        .update({ admin_memo: adminMemoFromBody })
+        .eq("id", partnerDriverId.trim());
+      if (memoErr) {
+        console.error(
+          "[partner-drivers/status] admin_memo 저장 실패(승인·연결은 완료):",
+          memoErr.message,
+        );
+      }
     }
 
     void sendDriverApprovalSms({
@@ -324,7 +477,7 @@ export async function POST(request: Request) {
       ok: true,
       partner_driver: normalized[0] ?? null,
       auth_user_id: authResult.userId,
-      invited: authResult.usedInvite,
+      invite_email_sent: authResult.usedInvite,
     });
   }
 

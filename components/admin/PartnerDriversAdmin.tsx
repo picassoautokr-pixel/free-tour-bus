@@ -136,20 +136,28 @@ function PartnerWorkflowButtons({
       const json = (await res.json()) as {
         error?: string;
         partner_driver?: PartnerDriverDetail | null;
+        invite_email_sent?: boolean;
       };
       if (!res.ok) {
-        setToast({ message: json.error ?? "처리에 실패했습니다." });
+        setToast({
+          message:
+            json.error ??
+            "처리에 실패했습니다. 서버 로그와 SUPABASE_SERVICE_ROLE_KEY 설정을 확인해 주세요.",
+        });
         return;
       }
       if (json.partner_driver) {
         onPartnerRowUpdated(json.partner_driver);
       }
-      setToast({
-        message:
-          status === "approved"
-            ? "승인 처리되었습니다. 기사에게 안내 메일이 발송될 수 있습니다."
-            : "저장되었습니다.",
-      });
+      if (status === "approved") {
+        setToast({
+          message: json.invite_email_sent
+            ? "승인 완료. 초대 이메일이 발송되었습니다."
+            : "승인 완료. 계정이 연결되었습니다.",
+        });
+      } else {
+        setToast({ message: "저장되었습니다." });
+      }
       window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
     } catch (e) {
       setToast({
@@ -212,12 +220,14 @@ function PartnerStatusSection({
   statusFromServer,
   memoFromServer,
   onSaved,
+  onPartnerRowUpdated,
   setToast,
 }: {
   rowId: string;
   statusFromServer: string;
   memoFromServer: string;
   onSaved: (nextStatus: PartnerStatusValue, nextMemo: string) => void;
+  onPartnerRowUpdated?: (next: PartnerDriverDetail) => void;
   setToast: (t: { message: string }) => void;
 }) {
   const normalizedSaved = coercePartnerStatus(statusFromServer);
@@ -242,8 +252,51 @@ function PartnerStatusSection({
     setSaving(true);
     setError(null);
     try {
-      const supabase = createSupabaseClient();
       const memoTrim = memo.trim();
+      const becomesApproved =
+        selected === "approved" && normalizedSaved !== "approved";
+
+      if (becomesApproved) {
+        const res = await fetch("/api/admin/partner-drivers/status", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            partner_driver_id: rowId,
+            status: "approved",
+            admin_memo: memoTrim,
+          }),
+        });
+        const json = (await res.json()) as {
+          error?: string;
+          partner_driver?: PartnerDriverDetail | null;
+          invite_email_sent?: boolean;
+        };
+        if (!res.ok) {
+          const msg =
+            json.error ??
+            "승인 처리에 실패했습니다. 서버 로그를 확인해 주세요.";
+          setError(msg);
+          setToast({ message: msg });
+          return;
+        }
+        if (json.partner_driver) {
+          onPartnerRowUpdated?.(json.partner_driver);
+        }
+        onSaved(
+          coercePartnerStatus(json.partner_driver?.status ?? "approved"),
+          memoTrim,
+        );
+        setToast({
+          message: json.invite_email_sent
+            ? "승인 완료. 초대 이메일이 발송되었습니다."
+            : "승인 완료. 계정이 연결되었습니다.",
+        });
+        window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+        return;
+      }
+
+      const supabase = createSupabaseClient();
 
       let { error: updateError } = await supabase
         .from("partner_drivers")
@@ -1076,6 +1129,7 @@ function PartnerDriverSlidePanel({
             onSaved={(nextStatus, nextMemo) =>
               onStatusSaved(row.id, nextStatus, nextMemo)
             }
+            onPartnerRowUpdated={onPartnerRowUpdated}
             setToast={setToast}
           />
         </div>
