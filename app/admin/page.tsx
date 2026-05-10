@@ -16,6 +16,7 @@ import {
   resolveAdminRoleAccess,
   type Profile,
 } from "@/lib/profile";
+import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 목록·상세 공통 — Supabase row 정규화 */
@@ -1248,6 +1249,17 @@ export default function AdminApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [adminSectionTab, setAdminSectionTab] = useState<"bus" | "partner">(
+    "bus",
+  );
+
+  useEffect(() => {
+    if (adminSectionTab !== "partner") return;
+    setDetailOpen(false);
+    setSelected(null);
+    setSmsOpen(false);
+    setSmsRow(null);
+  }, [adminSectionTab]);
 
   useEffect(() => {
     if (toast == null) return;
@@ -1742,7 +1754,9 @@ export default function AdminApplicationsPage() {
               ) : null}
             </div>
             <p className="mt-0.5 text-sm text-slate-500">
-              무료관광버스 신청 목록 · 행을 눌러 상세 보기
+              {adminSectionTab === "bus"
+                ? "무료관광버스 신청 목록 · 행을 눌러 상세 보기"
+                : "제휴기사 등록 신청 목록 · 행을 눌러 상세 보기"}
             </p>
             <p className="mt-1 text-xs font-semibold text-slate-500">
               {authLoading
@@ -1845,7 +1859,16 @@ export default function AdminApplicationsPage() {
             <button
               type="button"
               onClick={handleExcelDownload}
-              disabled={loading || filteredAndSortedRows.length === 0}
+              disabled={
+                adminSectionTab !== "bus" ||
+                loading ||
+                filteredAndSortedRows.length === 0
+              }
+              title={
+                adminSectionTab !== "bus"
+                  ? "버스 신청 관리 탭에서 이용할 수 있습니다."
+                  : undefined
+              }
               className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
             >
               <span className="hidden items-center gap-2 sm:inline-flex">
@@ -1869,8 +1892,14 @@ export default function AdminApplicationsPage() {
             </button>
             <button
               type="button"
-              onClick={() => void load()}
-              disabled={loading}
+              onClick={() => {
+                if (adminSectionTab === "partner") {
+                  window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+                } else {
+                  void load();
+                }
+              }}
+              disabled={adminSectionTab === "bus" && loading}
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
             >
               새로고침
@@ -1887,6 +1916,43 @@ export default function AdminApplicationsPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <div
+          className="mb-6 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:flex-row sm:flex-wrap"
+          role="tablist"
+          aria-label="관리 메뉴"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminSectionTab === "bus"}
+            onClick={() => setAdminSectionTab("bus")}
+            className={`min-h-11 flex-1 rounded-xl px-4 py-2.5 text-sm font-black transition sm:flex-none ${
+              adminSectionTab === "bus"
+                ? "bg-[#1e3a5f] text-white shadow-sm"
+                : "bg-transparent text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            버스 신청 관리
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminSectionTab === "partner"}
+            onClick={() => setAdminSectionTab("partner")}
+            className={`min-h-11 flex-1 rounded-xl px-4 py-2.5 text-sm font-black transition sm:flex-none ${
+              adminSectionTab === "partner"
+                ? "bg-[#1e3a5f] text-white shadow-sm"
+                : "bg-transparent text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            제휴기사 신청 관리
+          </button>
+        </div>
+
+        {adminSectionTab === "partner" ? (
+          <PartnerDriversAdmin setToast={setToast} />
+        ) : (
+          <>
         <section
           className="mb-5"
           aria-labelledby="admin-dashboard-heading"
@@ -2285,6 +2351,8 @@ export default function AdminApplicationsPage() {
             <p className="mt-4 text-center text-xs text-slate-500">
               총 {rows.length}건 중 {filteredAndSortedRows.length}건 표시 · 행 클릭 시 상세
             </p>
+          </>
+        )}
           </>
         )}
       </main>
