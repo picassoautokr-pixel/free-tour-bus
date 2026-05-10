@@ -110,6 +110,86 @@ function PartnerStatusBadge({ status }: { status: string }) {
   );
 }
 
+function PartnerWorkflowButtons({
+  row,
+  onPartnerRowUpdated,
+  setToast,
+}: {
+  row: PartnerDriverDetail;
+  onPartnerRowUpdated: (next: PartnerDriverDetail) => void;
+  setToast: (t: { message: string }) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const post = async (status: PartnerStatusValue) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/partner-drivers/status", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partner_driver_id: row.id,
+          status,
+        }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        partner_driver?: PartnerDriverDetail | null;
+      };
+      if (!res.ok) {
+        setToast({ message: json.error ?? "처리에 실패했습니다." });
+        return;
+      }
+      if (json.partner_driver) {
+        onPartnerRowUpdated(json.partner_driver);
+      }
+      setToast({
+        message:
+          status === "approved"
+            ? "승인 처리되었습니다. 기사에게 안내 메일이 발송될 수 있습니다."
+            : "저장되었습니다.",
+      });
+      window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+    } catch (e) {
+      setToast({
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void post("approved")}
+        className="min-h-11 rounded-xl bg-emerald-600 px-3 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {busy ? "처리 중…" : "승인"}
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void post("reviewing")}
+        className="min-h-11 rounded-xl border border-amber-300 bg-amber-50 px-3 text-sm font-black text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:opacity-50"
+      >
+        검토중
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void post("rejected")}
+        className="min-h-11 rounded-xl border border-red-300 bg-red-50 px-3 text-sm font-black text-red-900 shadow-sm transition hover:bg-red-100 disabled:opacity-50"
+      >
+        반려
+      </button>
+    </div>
+  );
+}
+
 function DetailField({
   label,
   children,
@@ -347,6 +427,13 @@ export function PartnerDriversAdmin({ setToast }: Props) {
     [],
   );
 
+  const mergePartnerRowFromApi = useCallback((next: PartnerDriverDetail) => {
+    setRows((prev) => prev.map((r) => (r.id === next.id ? next : r)));
+    setSelected((prev) =>
+      prev && prev.id === next.id ? next : prev,
+    );
+  }, []);
+
   const filteredRows = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const hasTerm = term.length > 0;
@@ -450,6 +537,11 @@ export function PartnerDriversAdmin({ setToast }: Props) {
         기타메모: r.memo === "—" ? "" : r.memo,
         사업자등록증파일명: r.business_license_name,
         사업자등록증URL: r.business_license_url,
+        연결계정ID: r.auth_user_id.trim() === "" ? "" : r.auth_user_id,
+        승인시각:
+          r.approved_at == null || r.approved_at === ""
+            ? ""
+            : formatCreatedAt(r.approved_at),
       }));
 
       const ws = XLSX.utils.json_to_sheet(exportRows, { skipHeader: false });
@@ -828,6 +920,7 @@ export function PartnerDriversAdmin({ setToast }: Props) {
         open={detailOpen}
         onClose={closeDetail}
         onStatusSaved={handlePartnerStatusSaved}
+        onPartnerRowUpdated={mergePartnerRowFromApi}
         setToast={setToast}
       />
     </>
@@ -839,6 +932,7 @@ function PartnerDriverSlidePanel({
   open,
   onClose,
   onStatusSaved,
+  onPartnerRowUpdated,
   setToast,
 }: {
   row: PartnerDriverDetail | null;
@@ -849,6 +943,7 @@ function PartnerDriverSlidePanel({
     nextStatus: PartnerStatusValue,
     nextMemo: string,
   ) => void;
+  onPartnerRowUpdated: (next: PartnerDriverDetail) => void;
   setToast: (t: { message: string }) => void;
 }) {
   useEffect(() => {
@@ -954,7 +1049,25 @@ function PartnerDriverSlidePanel({
             <DetailField label="현재 상태">
               <PartnerStatusBadge status={row.status} />
             </DetailField>
+            {row.auth_user_id.trim() !== "" ? (
+              <DetailField label="연결된 계정 ID">
+                <span className="break-all font-mono text-xs text-slate-600">
+                  {row.auth_user_id}
+                </span>
+              </DetailField>
+            ) : null}
+            {row.approved_at != null && row.approved_at !== "" ? (
+              <DetailField label="승인 시각">
+                {formatCreatedAt(row.approved_at)}
+              </DetailField>
+            ) : null}
           </dl>
+
+          <PartnerWorkflowButtons
+            row={row}
+            onPartnerRowUpdated={onPartnerRowUpdated}
+            setToast={setToast}
+          />
 
           <PartnerStatusSection
             rowId={row.id}

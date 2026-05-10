@@ -1,14 +1,58 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  isPartnerDriverLoginAllowed,
+  type PartnerDriverRecordStatus,
+} from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import { createSupabaseClient } from "@/lib/supabase";
 
 const ACCESS_DENIED_MESSAGE =
   "제휴 기사(driver) 권한이 확인되지 않습니다. 등록·승인 여부를 확인하거나 담당자에게 문의해 주세요.";
+
+const APPROVAL_REQUIRED_MESSAGE = "관리자 승인 후 로그인 가능합니다.";
+
+function isEmailLike(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
+function RegistrationStatusBadge({
+  status,
+}: {
+  status: PartnerDriverRecordStatus | null;
+}) {
+  if (status == null) return null;
+  if (status === "pending") {
+    return (
+      <span className="inline-flex w-full items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-center text-xs font-black text-blue-900">
+        승인 대기중
+      </span>
+    );
+  }
+  if (status === "reviewing") {
+    return (
+      <span className="inline-flex w-full items-center justify-center rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-950">
+        검토중
+      </span>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <span className="inline-flex w-full items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-black text-red-900">
+        승인 반려
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex w-full items-center justify-center rounded-2xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-center text-xs font-black text-emerald-950">
+      로그인 가능
+    </span>
+  );
+}
 
 export default function PartnerLoginPage() {
   const router = useRouter();
@@ -29,6 +73,43 @@ export default function PartnerLoginPage() {
   /** 다른 역할(예: admin) 세션으로 접속한 경우 — 자동 로그아웃하지 않음 */
   const [otherRoleSession, setOtherRoleSession] = useState(false);
 
+  const [registrationStatus, setRegistrationStatus] =
+    useState<PartnerDriverRecordStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  const debounceRef = useRef<number | null>(null);
+
+  const refreshRegistrationStatus = useCallback(async (emailInput: string) => {
+    const t = emailInput.trim().toLowerCase();
+    if (!isEmailLike(t)) {
+      setRegistrationStatus(null);
+      return;
+    }
+    setStatusLoading(true);
+    try {
+      const res = await fetch(
+        `/api/partner/registration-status?email=${encodeURIComponent(t)}`,
+      );
+      const json = (await res.json()) as { status?: PartnerDriverRecordStatus | null };
+      const st = json.status ?? null;
+      setRegistrationStatus(st);
+    } catch {
+      setRegistrationStatus(null);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      void refreshRegistrationStatus(email);
+    }, 450);
+    return () => {
+      if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
+    };
+  }, [email, refreshRegistrationStatus]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -43,6 +124,16 @@ export default function PartnerLoginPage() {
         const role = parseUserRole(profile?.role ?? null);
 
         if (role === USER_ROLES.DRIVER) {
+          const ok = await isPartnerDriverLoginAllowed(
+            supabase,
+            profile,
+            user.email,
+          );
+          if (!ok) {
+            await supabase.auth.signOut();
+            setErrorMessage(APPROVAL_REQUIRED_MESSAGE);
+            return;
+          }
           router.replace("/partner/dashboard");
           return;
         }
@@ -110,6 +201,17 @@ export default function PartnerLoginPage() {
         return;
       }
 
+      const approvedOk = await isPartnerDriverLoginAllowed(
+        supabase,
+        profile,
+        user.email,
+      );
+      if (!approvedOk) {
+        setErrorMessage(APPROVAL_REQUIRED_MESSAGE);
+        await supabase.auth.signOut();
+        return;
+      }
+
       const dest =
         nextPath.startsWith("/partner/") && nextPath !== "/partner/login"
           ? nextPath
@@ -138,6 +240,9 @@ export default function PartnerLoginPage() {
       /* ignore */
     }
   };
+
+  const loginBlockedByStatus =
+    registrationStatus != null && registrationStatus !== "approved";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb]">
@@ -169,6 +274,14 @@ export default function PartnerLoginPage() {
               />
             </label>
 
+            {statusLoading ? (
+              <p className="text-center text-xs font-semibold text-slate-400">
+                신청 상태 확인 중…
+              </p>
+            ) : (
+              <RegistrationStatusBadge status={registrationStatus} />
+            )}
+
             <label className="block">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 비밀번호
@@ -199,12 +312,19 @@ export default function PartnerLoginPage() {
                 isSubmitting ||
                 email.trim() === "" ||
                 password === "" ||
-                otherRoleSession
+                otherRoleSession ||
+                loginBlockedByStatus
               }
               className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-base font-black tracking-[-0.02em] text-white shadow-lg shadow-blue-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? "로그인 중…" : "로그인"}
             </button>
+
+            {loginBlockedByStatus ? (
+              <p className="text-center text-xs font-semibold leading-relaxed text-slate-500">
+                {APPROVAL_REQUIRED_MESSAGE}
+              </p>
+            ) : null}
 
             {otherRoleSession ? (
               <button

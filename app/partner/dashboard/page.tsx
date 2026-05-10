@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import { createSupabaseClient } from "@/lib/supabase";
@@ -34,6 +35,17 @@ export default function PartnerDashboardPage() {
         if (role !== USER_ROLES.DRIVER) {
           await supabase.auth.signOut();
           router.replace("/partner/login?error=forbidden");
+          return;
+        }
+
+        const approvedOk = await isPartnerDriverLoginAllowed(
+          supabase,
+          profile,
+          user.email,
+        );
+        if (!approvedOk) {
+          await supabase.auth.signOut();
+          router.replace("/partner/login");
           return;
         }
 

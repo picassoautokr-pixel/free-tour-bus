@@ -27,6 +27,10 @@ export type PartnerDriverDetail = {
   memo: string;
   status: string;
   admin_memo: string;
+  /** 컬럼 없으면 빈 문자열 */
+  auth_user_id: string;
+  /** 컬럼 없으면 null */
+  approved_at: string | null;
 };
 
 function parseBusTypes(raw: unknown): string[] {
@@ -77,6 +81,18 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
     const adminMemo =
       "admin_memo" in r ? safeText(r.admin_memo, "") : "";
 
+    let authUserId = "";
+    if ("auth_user_id" in r && r.auth_user_id != null) {
+      const s = String(r.auth_user_id).trim();
+      if (s !== "") authUserId = s;
+    }
+
+    let approvedAt: string | null = null;
+    if ("approved_at" in r && r.approved_at != null) {
+      const s = String(r.approved_at).trim();
+      approvedAt = s === "" ? null : s;
+    }
+
     return {
       id,
       created_at: created,
@@ -95,6 +111,8 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       memo: safeText(r.memo, ""),
       status: safeText(r.status, ""),
       admin_memo: adminMemo,
+      auth_user_id: authUserId,
+      approved_at: approvedAt,
     };
   });
 }
