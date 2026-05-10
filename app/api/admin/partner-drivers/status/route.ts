@@ -16,9 +16,26 @@ export const runtime = "nodejs";
 type Body = {
   partner_driver_id?: unknown;
   status?: unknown;
-  /** 승인 처리 시 함께 저장할 관리자 메모(선택) */
+  /** 관리자 메모 — 항상 문자열로 정규화해 DB에 반영 */
   admin_memo?: unknown;
 };
+
+/**
+ * 요청 body에 admin_memo 키가 있으면 문자열로 정규화(공백 trim, null → "").
+ * JSON 숫자 등 비문자 타입도 저장되도록 typeof 검사는 하지 않습니다.
+ */
+function parseAdminMemoFromBody(body: Body): string {
+  if (!("admin_memo" in body) || body.admin_memo == null) {
+    return "";
+  }
+  return String(body.admin_memo).trim();
+}
+
+/** 본문에 admin_memo 가 있을 때만 DB 갱신 객체에 포함(키 없음 → 기존 DB 값 유지). */
+function adminMemoPatch(body: Body): { admin_memo: string } | Record<string, never> {
+  if (!("admin_memo" in body)) return {};
+  return { admin_memo: parseAdminMemoFromBody(body) };
+}
 
 const ALLOWED = new Set(["pending", "reviewing", "approved", "rejected"]);
 
@@ -414,20 +431,36 @@ export async function POST(request: Request) {
   const alreadyApproved =
     currentStatusRaw === "approved" || currentStatusRaw === "approve";
 
+  const memoPatch = adminMemoPatch(body);
+
   if (status === "approved" && alreadyApproved) {
-    const memoFields: Record<string, unknown> = {};
-    if ("admin_memo" in body && typeof body.admin_memo === "string") {
-      memoFields.admin_memo = body.admin_memo.trim();
-    }
-    if (Object.keys(memoFields).length > 0) {
-      const upMemo = await updatePartnerDriverRow(
-        admin,
-        partnerDriverId.trim(),
-        memoFields,
+    if (!("admin_memo" in body)) {
+      const { data: refreshedMemoOnly } = await admin
+        .from("partner_drivers")
+        .select("*")
+        .eq("id", partnerDriverId.trim())
+        .maybeSingle();
+      const normalizedOnly = normalizePartnerDrivers(
+        refreshedMemoOnly ? [refreshedMemoOnly] : [],
       );
-      if (upMemo.error) {
-        return NextResponse.json({ error: upMemo.error }, { status: 502 });
-      }
+      return NextResponse.json({
+        ok: true,
+        partner_driver: normalizedOnly[0] ?? null,
+        invite_email_sent: false,
+        linked_existing_auth_user: true,
+        note: "이미 승인된 건입니다.",
+      });
+    }
+    const memoFields: Record<string, unknown> = {
+      admin_memo: parseAdminMemoFromBody(body),
+    };
+    const upMemo = await updatePartnerDriverRow(
+      admin,
+      partnerDriverId.trim(),
+      memoFields,
+    );
+    if (upMemo.error) {
+      return NextResponse.json({ error: upMemo.error }, { status: 502 });
     }
     const { data: refreshedMemo } = await admin
       .from("partner_drivers")
@@ -510,10 +543,8 @@ export async function POST(request: Request) {
       status: "approved",
       auth_user_id: authResult.userId,
       approved_at: approvedAt,
+      ...memoPatch,
     };
-    if (typeof body.admin_memo === "string") {
-      coreUpdate.admin_memo = body.admin_memo.trim();
-    }
 
     const up = await updatePartnerDriverApprovedStrict(
       admin,
@@ -556,10 +587,10 @@ export async function POST(request: Request) {
     });
   }
 
-  const updateFields: Record<string, unknown> = { status };
-  if (typeof body.admin_memo === "string") {
-    updateFields.admin_memo = body.admin_memo.trim();
-  }
+  const updateFields: Record<string, unknown> = {
+    status,
+    ...memoPatch,
+  };
   const up = await updatePartnerDriverRow(admin, partnerDriverId.trim(), updateFields);
   if (up.error) {
     return NextResponse.json({ error: up.error }, { status: 502 });

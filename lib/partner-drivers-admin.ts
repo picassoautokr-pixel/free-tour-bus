@@ -1,6 +1,6 @@
 /**
  * 관리자 화면용 partner_drivers 행 정규화.
- * `admin_memo` 컬럼은 선택 사항 — 없으면 빈 문자열로 처리.
+ * `admin_memo`는 DB 문자열 컬럼으로 저장되며, null·공백은 빈 문자열로 표시합니다.
  */
 
 function safeText(value: unknown, emptyLabel = "—"): string {
@@ -27,7 +27,6 @@ export type PartnerDriverDetail = {
   memo: string;
   status: string;
   admin_memo: string;
-  /** 컬럼 없으면 빈 문자열 */
   auth_user_id: string;
   /** 컬럼 없으면 null */
   approved_at: string | null;
@@ -78,8 +77,7 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       if (Number.isFinite(n)) passengerCapacity = n;
     }
 
-    const adminMemo =
-      "admin_memo" in r ? safeText(r.admin_memo, "") : "";
+    const adminMemo = safeText(r.admin_memo, "");
 
     let authUserId = "";
     if ("auth_user_id" in r && r.auth_user_id != null) {

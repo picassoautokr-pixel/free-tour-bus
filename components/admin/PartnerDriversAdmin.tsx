@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -179,21 +180,24 @@ function PartnerResendInviteButton({
 
 function PartnerWorkflowButtons({
   row,
-  adminMemo,
+  getAdminMemo,
   onPartnerRowUpdated,
   setToast,
 }: {
   row: PartnerDriverDetail;
-  /** 상세 패널 관리자 메모 입력값 — 승인/검토/반려 시 함께 저장 */
-  adminMemo: string;
+  /** 제출 시점 textarea 값 — 클로저/렌더 타이밍과 무관하게 최신 문자열 사용 */
+  getAdminMemo: () => string;
   onPartnerRowUpdated: (next: PartnerDriverDetail) => void;
   setToast: (t: { message: string }) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
 
   const post = async (status: PartnerStatusValue) => {
     setBusy(true);
+    setWorkflowError(null);
     try {
+      const memoTrim = getAdminMemo().trim();
       const res = await fetch("/api/admin/partner-drivers/status", {
         method: "POST",
         credentials: "same-origin",
@@ -201,7 +205,7 @@ function PartnerWorkflowButtons({
         body: JSON.stringify({
           partner_driver_id: row.id,
           status,
-          admin_memo: adminMemo.trim(),
+          admin_memo: memoTrim,
         }),
       });
       const json = (await res.json()) as {
@@ -211,11 +215,11 @@ function PartnerWorkflowButtons({
         linked_existing_auth_user?: boolean;
       };
       if (!res.ok) {
-        setToast({
-          message:
-            json.error ??
-            "처리에 실패했습니다. 서버 로그와 SUPABASE_SERVICE_ROLE_KEY 설정을 확인해 주세요.",
-        });
+        const msg =
+          json.error ??
+          "처리에 실패했습니다. 서버 로그와 SUPABASE_SERVICE_ROLE_KEY 설정을 확인해 주세요.";
+        setWorkflowError(msg);
+        setToast({ message: msg });
         return;
       }
       if (json.partner_driver) {
@@ -242,9 +246,9 @@ function PartnerWorkflowButtons({
       }
       window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
     } catch (e) {
-      setToast({
-        message: e instanceof Error ? e.message : String(e),
-      });
+      const msg = e instanceof Error ? e.message : String(e);
+      setWorkflowError(msg);
+      setToast({ message: msg });
     } finally {
       setBusy(false);
     }
@@ -276,6 +280,14 @@ function PartnerWorkflowButtons({
       >
         반려
       </button>
+      {workflowError ? (
+        <div
+          className="col-span-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800"
+          role="alert"
+        >
+          {workflowError}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -388,7 +400,9 @@ function PartnerStatusSection({
       }
       window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setToast({ message: msg });
     } finally {
       setSaving(false);
     }
@@ -426,7 +440,7 @@ function PartnerStatusSection({
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             disabled={saving}
-            placeholder="내부 검토 메모 (admin_memo 컬럼 필요)"
+            placeholder="내부 검토 메모"
             className="mt-2 min-h-[120px] w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-100"
           />
         </label>
@@ -1053,12 +1067,14 @@ function PartnerDriverSlidePanel({
   setToast: (t: { message: string }) => void;
 }) {
   const [draftMemo, setDraftMemo] = useState("");
+  const draftMemoRef = useRef("");
+  draftMemoRef.current = draftMemo;
 
   useEffect(() => {
     if (!open || !row) return;
     const m = row.admin_memo;
     setDraftMemo(m === "—" ? "" : m);
-  }, [open, row?.id, row?.admin_memo]);
+  }, [open, row?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -1177,20 +1193,6 @@ function PartnerDriverSlidePanel({
             ) : null}
           </dl>
 
-          <PartnerWorkflowButtons
-            row={row}
-            adminMemo={draftMemo}
-            onPartnerRowUpdated={onPartnerRowUpdated}
-            setToast={setToast}
-          />
-
-          <PartnerResendInviteButton
-            partnerDriverId={row.id}
-            email={row.email}
-            status={row.status}
-            setToast={setToast}
-          />
-
           <PartnerStatusSection
             rowId={row.id}
             statusFromServer={row.status}
@@ -1201,6 +1203,20 @@ function PartnerDriverSlidePanel({
               onStatusSaved(row.id, nextStatus, nextMemo)
             }
             onPartnerRowUpdated={onPartnerRowUpdated}
+            setToast={setToast}
+          />
+
+          <PartnerWorkflowButtons
+            row={row}
+            getAdminMemo={() => draftMemoRef.current}
+            onPartnerRowUpdated={onPartnerRowUpdated}
+            setToast={setToast}
+          />
+
+          <PartnerResendInviteButton
+            partnerDriverId={row.id}
+            email={row.email}
+            status={row.status}
             setToast={setToast}
           />
         </div>
