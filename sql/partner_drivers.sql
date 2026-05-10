@@ -11,7 +11,7 @@ create table if not exists public.partner_drivers (
   company_name text not null,
   manager_name text not null,
   phone text not null,
-  email text not null,
+  email text,
   region text not null,
   business_type text not null,
   bus_types text[] not null default '{}',

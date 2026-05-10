@@ -22,7 +22,7 @@ type PartnerInsertPayload = {
   company_name: string;
   manager_name: string;
   phone: string;
-  email: string;
+  email: string | null;
   region: string;
   business_type: string;
   bus_types: string[];
@@ -110,9 +110,11 @@ export default function PartnerRegisterPage() {
 
     const phoneDigits = phone.replace(/[^0-9]/g, "");
     const phoneOk = phoneDigits.length === 11 && phoneDigits.startsWith("010");
-    const emailOk = isSimpleEmail(email);
+    const emailTrim = email.trim();
+    const emailOk =
+      emailTrim === "" || isSimpleEmail(emailTrim);
     setPhoneError(!phoneOk);
-    setEmailError(!emailOk);
+    setEmailError(emailTrim !== "" && !isSimpleEmail(emailTrim));
 
     const busTypes: string[] = [];
     if (busTypeNormal) busTypes.push("일반버스");
@@ -136,7 +138,11 @@ export default function PartnerRegisterPage() {
     }
 
     if (!phoneOk || !emailOk) {
-      setSubmitError("연락처·이메일을 확인해 주세요.");
+      setSubmitError(
+        !phoneOk
+          ? "연락처를 확인해 주세요."
+          : "이메일 형식을 확인해 주세요.",
+      );
       return;
     }
 
@@ -179,7 +185,7 @@ export default function PartnerRegisterPage() {
         company_name: companyName.trim(),
         manager_name: managerName.trim(),
         phone: formatPhoneNumber(phoneDigits),
-        email: email.trim(),
+        email: emailTrim === "" ? null : emailTrim,
         region: region.trim(),
         business_type: businessType,
         bus_types: busTypes,
@@ -289,10 +295,10 @@ export default function PartnerRegisterPage() {
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold text-slate-500">
-                    이메일 <span className="text-red-500">*</span>
+                    이메일 <span className="font-semibold text-slate-400">(선택)</span>
                   </span>
                   <input
-                    type="email"
+                    type="text"
                     inputMode="email"
                     autoComplete="email"
                     className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold outline-none ${
@@ -305,7 +311,7 @@ export default function PartnerRegisterPage() {
                       setEmailError(false);
                       setEmail(e.target.value);
                     }}
-                    placeholder="name@example.com"
+                    placeholder="이메일이 없으면 비워두세요"
                   />
                 </label>
                 <label className="block">

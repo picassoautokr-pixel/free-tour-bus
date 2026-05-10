@@ -74,6 +74,18 @@ function ymdTodayLocal(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function PartnerEmailDisplay({ email }: { email: string }) {
+  const t = email.trim();
+  if (t === "" || t === "—") {
+    return (
+      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
+        이메일 없음
+      </span>
+    );
+  }
+  return <span className="line-clamp-2 break-all">{email}</span>;
+}
+
 function PartnerStatusBadge({ status }: { status: string }) {
   const trimmed = status.trim();
   if (trimmed === "" || trimmed === "—") {
@@ -1526,7 +1538,9 @@ function PartnerDriverSlidePanel({
             <DetailField label="업체명">{row.company_name}</DetailField>
             <DetailField label="담당자명">{row.manager_name}</DetailField>
             <DetailField label="연락처">{row.phone}</DetailField>
-            <DetailField label="이메일">{row.email}</DetailField>
+            <DetailField label="이메일">
+              <PartnerEmailDisplay email={row.email} />
+            </DetailField>
             <DetailField label="차고지">{row.region}</DetailField>
             <DetailField label="사업자 유형">{row.business_type}</DetailField>
             <DetailField label="보유버스 유형">

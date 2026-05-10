@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendDriverApprovalSms } from "@/lib/driver-approval-sms";
+import { resolvePartnerAuthEmail } from "@/lib/partner-phone-login";
 import { getPartnerSetPasswordRedirectTo } from "@/lib/partner-login-redirect";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -499,11 +500,24 @@ export async function POST(request: Request) {
       auth_user_id?: string | null;
     };
 
+    const emailForAuth = resolvePartnerAuthEmail(row);
+    if (!emailForAuth) {
+      return NextResponse.json(
+        {
+          error:
+            "승인을 위해 신청서에 이메일 또는 유효한 010 휴대폰 번호가 필요합니다.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const storedEmailTrimmed = String(r.email ?? "").trim();
+
     const authResult = await resolveOrCreateAuthUserId(
       admin,
       {
         id: String(r.id),
-        email: String(r.email ?? ""),
+        email: emailForAuth,
         auth_user_id:
           "auth_user_id" in row && row.auth_user_id != null
             ? String(row.auth_user_id)
@@ -532,7 +546,7 @@ export async function POST(request: Request) {
       userId: authResult.userId,
       companyName: String(r.company_name ?? "").trim() || "제휴 기사",
       phone: String(r.phone ?? "").trim(),
-      email: String(r.email ?? "").trim(),
+      email: emailForAuth,
       partnerDriverId: String(r.id),
     });
     if (profErr.error) {
@@ -579,7 +593,10 @@ export async function POST(request: Request) {
     void sendDriverApprovalSms({
       toPhone: String(r.phone ?? "").replace(/\D/g, ""),
       companyName: String(r.company_name ?? ""),
-      infoLine: "로그인 안내 메일을 확인해 주세요.",
+      infoLine:
+        storedEmailTrimmed !== ""
+          ? "로그인 안내 메일을 확인해 주세요."
+          : "전화번호로 로그인할 수 있습니다. 비밀번호는 문자·안내에 따라 설정해 주세요.",
     }).catch(() => {});
 
     const { data: refreshed } = await admin

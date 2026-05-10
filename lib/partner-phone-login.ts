@@ -13,6 +13,21 @@ export function syntheticEmailFromPhoneDigits(digits: string): string {
   return `${digits}@${PARTNER_PHONE_EMAIL_DOMAIN}`;
 }
 
+/**
+ * partner_drivers 행에서 Supabase Auth 연결용 이메일:
+ * 신청서 이메일이 있으면 그대로, 없으면 010 휴대폰 기반 synthetic 주소.
+ */
+export function resolvePartnerAuthEmail(row: {
+  email?: unknown;
+  phone?: unknown;
+}): string {
+  const stored = String(row.email ?? "").trim();
+  if (stored !== "") return stored.toLowerCase();
+  const d = digitsOnlyKoreanMobile(String(row.phone ?? ""));
+  if (!d) return "";
+  return syntheticEmailFromPhoneDigits(d).toLowerCase();
+}
+
 function isEmailLike(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
