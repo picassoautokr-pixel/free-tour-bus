@@ -370,6 +370,11 @@ export async function POST(request: Request) {
     message: smsResult.ok
       ? "임시 비밀번호를 문자로 발송했습니다."
       : `계정은 처리되었으나 문자 발송에 실패했습니다. ${smsResult.error ?? ""}`,
+    /** 클라이언트에서 발급 직후 1회만 표시 — DB에는 저장하지 않음 */
+    credentials_once: {
+      login_id: phoneDigits,
+      temporary_password: tempPassword,
+    },
     warnings,
     partner_driver: normalized[0] ?? null,
   });

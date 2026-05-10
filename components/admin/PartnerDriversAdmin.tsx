@@ -252,6 +252,137 @@ function PartnerPasswordResetButton({
   );
 }
 
+function TempCredentialsModal({
+  open,
+  loginId,
+  temporaryPassword,
+  onClose,
+  setToast,
+}: {
+  open: boolean;
+  loginId: string;
+  temporaryPassword: string;
+  onClose: () => void;
+  setToast: (t: { message: string }) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
+
+  const copyText = async (message: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast({ message });
+    } catch {
+      setToast({ message: "복사에 실패했습니다." });
+    }
+  };
+
+  if (!open) return null;
+
+  const copyAll = `${loginId}\n${temporaryPassword}`;
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="임시 로그인 정보 닫기"
+        className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      <div
+        className="fixed left-1/2 top-1/2 z-[110] w-[min(calc(100vw-2rem),24rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-900/25 ring-1 ring-slate-100"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="temp-creds-title"
+      >
+        <h2
+          id="temp-creds-title"
+          className="text-base font-black leading-snug text-slate-900"
+        >
+          임시 로그인 정보
+        </h2>
+        <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-900">
+          이 창을 닫거나 새로고침하면 비밀번호를 다시 볼 수 없습니다. 필요한
+          항목을 복사해 보관해 주세요.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              로그인 ID (전화번호)
+            </p>
+            <div className="mt-1 flex gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
+                {loginId}
+              </code>
+              <button
+                type="button"
+                onClick={() =>
+                  void copyText("로그인 ID를 복사했습니다.", loginId)
+                }
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-800 hover:bg-slate-50"
+              >
+                복사
+              </button>
+            </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              임시 비밀번호
+            </p>
+            <div className="mt-1 flex gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
+                {temporaryPassword}
+              </code>
+              <button
+                type="button"
+                onClick={() =>
+                  void copyText(
+                    "임시 비밀번호를 복사했습니다.",
+                    temporaryPassword,
+                  )
+                }
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-800 hover:bg-slate-50"
+              >
+                복사
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            void copyText("로그인 ID와 비밀번호를 복사했습니다.", copyAll)
+          }
+          className="mt-4 h-10 w-full rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-900 hover:bg-slate-100"
+        >
+          ID·비밀번호 한 번에 복사
+        </button>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-3 h-11 w-full rounded-xl bg-slate-900 text-sm font-black text-white hover:bg-slate-800"
+        >
+          확인
+        </button>
+      </div>
+    </>
+  );
+}
+
 function PartnerSmsTempAccountSection({
   row,
   onPartnerRowUpdated,
@@ -263,6 +394,10 @@ function PartnerSmsTempAccountSection({
 }) {
   const [busyIssue, setBusyIssue] = useState(false);
   const [busyReset, setBusyReset] = useState(false);
+  const [credModal, setCredModal] = useState<{
+    loginId: string;
+    temporaryPassword: string;
+  } | null>(null);
 
   const phoneDigits = row.phone.replace(/\D/g, "");
   const canPhone = /^010\d{8}$/.test(phoneDigits);
@@ -285,10 +420,26 @@ function PartnerSmsTempAccountSection({
         sms_error?: string | null;
         warnings?: string[];
         partner_driver?: PartnerDriverDetail | null;
+        credentials_once?: {
+          login_id?: string;
+          temporary_password?: string;
+        };
       };
       if (!res.ok) {
         setToast({ message: json.error ?? "처리에 실패했습니다." });
         return;
+      }
+      const c = json.credentials_once;
+      if (
+        c?.login_id &&
+        c.temporary_password &&
+        typeof c.login_id === "string" &&
+        typeof c.temporary_password === "string"
+      ) {
+        setCredModal({
+          loginId: c.login_id,
+          temporaryPassword: c.temporary_password,
+        });
       }
       if (json.partner_driver) {
         onPartnerRowUpdated(json.partner_driver);
@@ -314,6 +465,14 @@ function PartnerSmsTempAccountSection({
   };
 
   return (
+    <>
+      <TempCredentialsModal
+        open={credModal != null}
+        loginId={credModal?.loginId ?? ""}
+        temporaryPassword={credModal?.temporaryPassword ?? ""}
+        onClose={() => setCredModal(null)}
+        setToast={setToast}
+      />
     <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50/40 p-4 ring-1 ring-teal-100">
       <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">
         전화번호 로그인 (임시 비밀번호)
@@ -342,9 +501,11 @@ function PartnerSmsTempAccountSection({
         </button>
       </div>
       <p className="mt-2 text-[11px] font-medium leading-snug text-teal-950/80">
-        임시 비밀번호는 문자로만 안내합니다. DB에는 평문으로 저장하지 않습니다.
+        발급 직후 팝업에서 임시 로그인 정보를 1회 확인할 수 있으며, 문자로도
+        안내됩니다. DB에는 평문 비밀번호를 저장하지 않습니다.
       </p>
     </div>
+    </>
   );
 }
 
