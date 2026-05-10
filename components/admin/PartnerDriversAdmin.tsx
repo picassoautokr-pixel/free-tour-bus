@@ -110,12 +110,82 @@ function PartnerStatusBadge({ status }: { status: string }) {
   );
 }
 
+function PartnerResendInviteButton({
+  partnerDriverId,
+  email,
+  status,
+  setToast,
+}: {
+  partnerDriverId: string;
+  email: string;
+  status: string;
+  setToast: (t: { message: string }) => void;
+}) {
+  const approved = parsePartnerStatus(status) === "approved";
+  const [busy, setBusy] = useState(false);
+
+  if (!approved || email.trim() === "") return null;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          void (async () => {
+            setBusy(true);
+            try {
+              const res = await fetch("/api/admin/partner-drivers/resend-invite", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ partner_driver_id: partnerDriverId }),
+              });
+              const json = (await res.json()) as {
+                error?: string;
+                invite_email_sent?: boolean;
+                message?: string;
+              };
+              if (!res.ok) {
+                setToast({
+                  message: json.error ?? "초대 메일 재발송에 실패했습니다.",
+                });
+                return;
+              }
+              setToast({
+                message: json.invite_email_sent
+                  ? "초대 메일 발송을 요청했습니다."
+                  : (json.message ?? "처리되었습니다."),
+              });
+            } catch (e) {
+              setToast({
+                message: e instanceof Error ? e.message : String(e),
+              });
+            } finally {
+              setBusy(false);
+            }
+          })();
+        }}
+        className="min-h-11 w-full rounded-xl border border-indigo-300 bg-indigo-50 px-3 text-sm font-black text-indigo-950 shadow-sm transition hover:bg-indigo-100 disabled:opacity-50"
+      >
+        {busy ? "요청 중…" : "초대메일 재발송"}
+      </button>
+      <p className="mt-2 text-[11px] font-medium leading-snug text-slate-500">
+        이미 계정이 있는 이메일이면 재발송이 제한될 수 있습니다. 오류 시 메시지를 확인해 주세요.
+      </p>
+    </div>
+  );
+}
+
 function PartnerWorkflowButtons({
   row,
+  adminMemo,
   onPartnerRowUpdated,
   setToast,
 }: {
   row: PartnerDriverDetail;
+  /** 상세 패널 관리자 메모 입력값 — 승인/검토/반려 시 함께 저장 */
+  adminMemo: string;
   onPartnerRowUpdated: (next: PartnerDriverDetail) => void;
   setToast: (t: { message: string }) => void;
 }) {
@@ -131,12 +201,14 @@ function PartnerWorkflowButtons({
         body: JSON.stringify({
           partner_driver_id: row.id,
           status,
+          admin_memo: adminMemo.trim(),
         }),
       });
       const json = (await res.json()) as {
         error?: string;
         partner_driver?: PartnerDriverDetail | null;
         invite_email_sent?: boolean;
+        linked_existing_auth_user?: boolean;
       };
       if (!res.ok) {
         setToast({
@@ -150,11 +222,21 @@ function PartnerWorkflowButtons({
         onPartnerRowUpdated(json.partner_driver);
       }
       if (status === "approved") {
-        setToast({
-          message: json.invite_email_sent
-            ? "승인 완료. 초대 이메일이 발송되었습니다."
-            : "승인 완료. 계정이 연결되었습니다.",
-        });
+        if (json.invite_email_sent) {
+          setToast({
+            message: "승인 완료. 초대 이메일이 발송되었습니다.",
+          });
+        } else if (json.linked_existing_auth_user) {
+          setToast({
+            message:
+              "승인 완료. 이미 등록된 이메일 계정과 연결되었습니다. 초대 메일은 발송되지 않았을 수 있습니다.",
+          });
+        } else {
+          setToast({
+            message:
+              "승인 완료. 계정이 생성·연결되었습니다. (초대 메일은 설정·경로에 따라 다를 수 있습니다.)",
+          });
+        }
       } else {
         setToast({ message: "저장되었습니다." });
       }
@@ -219,6 +301,8 @@ function PartnerStatusSection({
   rowId,
   statusFromServer,
   memoFromServer,
+  memo,
+  setMemo,
   onSaved,
   onPartnerRowUpdated,
   setToast,
@@ -226,6 +310,8 @@ function PartnerStatusSection({
   rowId: string;
   statusFromServer: string;
   memoFromServer: string;
+  memo: string;
+  setMemo: (v: string) => void;
   onSaved: (nextStatus: PartnerStatusValue, nextMemo: string) => void;
   onPartnerRowUpdated?: (next: PartnerDriverDetail) => void;
   setToast: (t: { message: string }) => void;
@@ -234,106 +320,73 @@ function PartnerStatusSection({
   const [selected, setSelected] = useState<PartnerStatusValue>(() =>
     coercePartnerStatus(statusFromServer),
   );
-  const [memo, setMemo] = useState(() => memoFromServer ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setSelected(coercePartnerStatus(statusFromServer));
-    setMemo(memoFromServer ?? "");
     setError(null);
-  }, [rowId, statusFromServer, memoFromServer]);
+  }, [rowId, statusFromServer]);
 
   const unchanged =
     selected === normalizedSaved &&
-    (memo ?? "").trim() === (memoFromServer ?? "").trim();
+    memo.trim() === (memoFromServer ?? "").trim();
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
       const memoTrim = memo.trim();
-      const becomesApproved =
-        selected === "approved" && normalizedSaved !== "approved";
-
-      if (becomesApproved) {
-        const res = await fetch("/api/admin/partner-drivers/status", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            partner_driver_id: rowId,
-            status: "approved",
-            admin_memo: memoTrim,
-          }),
-        });
-        const json = (await res.json()) as {
-          error?: string;
-          partner_driver?: PartnerDriverDetail | null;
-          invite_email_sent?: boolean;
-        };
-        if (!res.ok) {
-          const msg =
-            json.error ??
-            "승인 처리에 실패했습니다. 서버 로그를 확인해 주세요.";
-          setError(msg);
-          setToast({ message: msg });
-          return;
-        }
-        if (json.partner_driver) {
-          onPartnerRowUpdated?.(json.partner_driver);
-        }
-        onSaved(
-          coercePartnerStatus(json.partner_driver?.status ?? "approved"),
-          memoTrim,
-        );
-        setToast({
-          message: json.invite_email_sent
-            ? "승인 완료. 초대 이메일이 발송되었습니다."
-            : "승인 완료. 계정이 연결되었습니다.",
-        });
-        window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+      const res = await fetch("/api/admin/partner-drivers/status", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partner_driver_id: rowId,
+          status: selected,
+          admin_memo: memoTrim,
+        }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        partner_driver?: PartnerDriverDetail | null;
+        invite_email_sent?: boolean;
+        linked_existing_auth_user?: boolean;
+      };
+      if (!res.ok) {
+        const msg =
+          json.error ?? "저장에 실패했습니다. 서버 로그를 확인해 주세요.";
+        setError(msg);
+        setToast({ message: msg });
         return;
       }
-
-      const supabase = createSupabaseClient();
-
-      let { error: updateError } = await supabase
-        .from("partner_drivers")
-        .update({ status: selected, admin_memo: memoTrim })
-        .eq("id", rowId);
-
-      if (updateError) {
-        const msg = updateError.message.toLowerCase();
-        const maybeMemoMissing =
-          msg.includes("admin_memo") ||
-          msg.includes("column") ||
-          msg.includes("schema");
-
-        if (maybeMemoMissing) {
-          const retry = await supabase
-            .from("partner_drivers")
-            .update({ status: selected })
-            .eq("id", rowId);
-          updateError = retry.error;
-          if (!retry.error) {
-            onSaved(selected, "");
-            setToast({
-              message:
-                "상태만 저장되었습니다. DB에 admin_memo 컬럼을 추가하면 관리자 메모도 저장됩니다.",
-            });
-            return;
-          }
-        }
-
-        if (updateError) {
-          setError(updateError.message);
-        }
-        return;
+      if (json.partner_driver) {
+        onPartnerRowUpdated?.(json.partner_driver);
       }
-
-      onSaved(selected, memoTrim);
-      setToast({ message: "저장되었습니다." });
+      onSaved(
+        coercePartnerStatus(json.partner_driver?.status ?? selected),
+        memoTrim,
+      );
+      if (selected === "approved") {
+        if (json.invite_email_sent) {
+          setToast({
+            message: "승인 완료. 초대 이메일이 발송되었습니다.",
+          });
+        } else if (json.linked_existing_auth_user) {
+          setToast({
+            message:
+              "승인 완료. 이미 등록된 이메일 계정과 연결되었습니다. 초대 메일은 발송되지 않았을 수 있습니다.",
+          });
+        } else {
+          setToast({
+            message:
+              "승인 완료. 계정이 생성·연결되었습니다.",
+          });
+        }
+      } else {
+        setToast({ message: "저장되었습니다." });
+      }
+      window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -999,6 +1052,14 @@ function PartnerDriverSlidePanel({
   onPartnerRowUpdated: (next: PartnerDriverDetail) => void;
   setToast: (t: { message: string }) => void;
 }) {
+  const [draftMemo, setDraftMemo] = useState("");
+
+  useEffect(() => {
+    if (!open || !row) return;
+    const m = row.admin_memo;
+    setDraftMemo(m === "—" ? "" : m);
+  }, [open, row?.id, row?.admin_memo]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1118,7 +1179,15 @@ function PartnerDriverSlidePanel({
 
           <PartnerWorkflowButtons
             row={row}
+            adminMemo={draftMemo}
             onPartnerRowUpdated={onPartnerRowUpdated}
+            setToast={setToast}
+          />
+
+          <PartnerResendInviteButton
+            partnerDriverId={row.id}
+            email={row.email}
+            status={row.status}
             setToast={setToast}
           />
 
@@ -1126,6 +1195,8 @@ function PartnerDriverSlidePanel({
             rowId={row.id}
             statusFromServer={row.status}
             memoFromServer={row.admin_memo}
+            memo={draftMemo}
+            setMemo={setDraftMemo}
             onSaved={(nextStatus, nextMemo) =>
               onStatusSaved(row.id, nextStatus, nextMemo)
             }

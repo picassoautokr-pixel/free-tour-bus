@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendDriverApprovalSms } from "@/lib/driver-approval-sms";
+import { getPartnerLoginRedirectTo } from "@/lib/partner-login-redirect";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
@@ -62,7 +63,7 @@ async function updatePartnerDriverApprovedStrict(
     .from("partner_drivers")
     .update(fields)
     .eq("id", id)
-    .select("id,status,approved_at,auth_user_id");
+    .select("id,status,approved_at,auth_user_id,admin_memo");
 
   const rows = Array.isArray(data) ? data : data != null ? [data] : [];
 
@@ -173,6 +174,15 @@ async function upsertDriverProfile(
   return { error: error.message };
 }
 
+type AuthResolveResult = {
+  userId: string;
+  error: string | null;
+  /** inviteUserByEmail 로 신규 초대가 성공해(대개) 초대 메일이 발송된 경우만 true */
+  inviteEmailSent: boolean;
+  /** 이미 Auth 에 동일 이메일 계정이 있어 연결만 한 경우 */
+  linkedExistingUser: boolean;
+};
+
 async function resolveOrCreateAuthUserId(
   admin: SupabaseClient,
   row: {
@@ -180,11 +190,19 @@ async function resolveOrCreateAuthUserId(
     email: string;
     auth_user_id?: string | null;
   },
-  siteUrl: string,
-): Promise<{ userId: string; error: string | null; usedInvite: boolean }> {
+  fallbackOrigin: string,
+): Promise<AuthResolveResult> {
   const email = String(row.email).trim();
   const emailLower = email.toLowerCase();
-  const redirectTo = `${siteUrl.replace(/\/$/, "")}/partner/login`;
+
+  let redirectTo = getPartnerLoginRedirectTo();
+  if (!redirectTo) {
+    redirectTo = `${fallbackOrigin.replace(/\/$/, "")}/partner/login`;
+  }
+  console.log(
+    "[partner-drivers/status] inviteUserByEmail redirectTo:",
+    redirectTo,
+  );
 
   const existingId = row.auth_user_id
     ? String(row.auth_user_id).trim()
@@ -192,18 +210,39 @@ async function resolveOrCreateAuthUserId(
   if (existingId) {
     const { data, error } = await admin.auth.admin.getUserById(existingId);
     if (!error && data.user?.id) {
-      return { userId: data.user.id, error: null, usedInvite: false };
+      return {
+        userId: data.user.id,
+        error: null,
+        inviteEmailSent: false,
+        linkedExistingUser: true,
+      };
     }
+  }
+
+  const existingByEmail = await findAuthUserIdByEmail(admin, emailLower);
+  if (existingByEmail) {
+    console.warn(
+      "[partner-drivers/status] 기존 Auth 사용자 이메일 매칭:",
+      emailLower,
+    );
+    return {
+      userId: existingByEmail,
+      error: null,
+      inviteEmailSent: false,
+      linkedExistingUser: true,
+    };
   }
 
   const invited = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo,
   });
+
   if (!invited.error && invited.data.user?.id) {
     return {
       userId: invited.data.user.id,
       error: null,
-      usedInvite: true,
+      inviteEmailSent: true,
+      linkedExistingUser: false,
     };
   }
 
@@ -231,13 +270,18 @@ async function resolveOrCreateAuthUserId(
     const byList = await findAuthUserIdByEmail(admin, emailLower);
     if (byList) {
       console.warn(
-        "[partner-drivers/status] using existing Auth user for email:",
+        "[partner-drivers/status] 초대 실패(중복) 후 기존 사용자 연결:",
         emailLower,
       );
-      return { userId: byList, error: null, usedInvite: false };
+      return {
+        userId: byList,
+        error: null,
+        inviteEmailSent: false,
+        linkedExistingUser: true,
+      };
     }
     console.error(
-      "[partner-drivers/status] duplicate email but user id not found in listUsers:",
+      "[partner-drivers/status] duplicate 이메일인데 listUsers 에서 찾지 못함:",
       emailLower,
     );
   }
@@ -249,10 +293,15 @@ async function resolveOrCreateAuthUserId(
   });
   if (!created.error && created.data.user?.id) {
     console.warn(
-      "[partner-drivers/status] createUser fallback succeeded for:",
+      "[partner-drivers/status] invite 불가 후 createUser 로 계정 생성(초대 메일 없음):",
       emailLower,
     );
-    return { userId: created.data.user.id, error: null, usedInvite: false };
+    return {
+      userId: created.data.user.id,
+      error: null,
+      inviteEmailSent: false,
+      linkedExistingUser: false,
+    };
   }
 
   if (created.error) {
@@ -265,11 +314,12 @@ async function resolveOrCreateAuthUserId(
   const createMsg = created.error?.message ?? "";
   const byList2 = await findAuthUserIdByEmail(admin, emailLower);
   if (byList2) {
-    console.warn(
-      "[partner-drivers/status] resolved user id via listUsers after create failure:",
-      emailLower,
-    );
-    return { userId: byList2, error: null, usedInvite: false };
+    return {
+      userId: byList2,
+      error: null,
+      inviteEmailSent: false,
+      linkedExistingUser: true,
+    };
   }
 
   const combined =
@@ -281,7 +331,8 @@ async function resolveOrCreateAuthUserId(
   return {
     userId: "",
     error: combined,
-    usedInvite: false,
+    inviteEmailSent: false,
+    linkedExistingUser: false,
   };
 }
 
@@ -359,8 +410,41 @@ export async function POST(request: Request) {
     new URL(request.url).origin ||
     "";
 
-  const adminMemoFromBody =
-    typeof body.admin_memo === "string" ? body.admin_memo.trim() : "";
+  const currentStatusRaw = String(row.status ?? "").trim().toLowerCase();
+  const alreadyApproved =
+    currentStatusRaw === "approved" || currentStatusRaw === "approve";
+
+  if (status === "approved" && alreadyApproved) {
+    const memoFields: Record<string, unknown> = {};
+    if ("admin_memo" in body && typeof body.admin_memo === "string") {
+      memoFields.admin_memo = body.admin_memo.trim();
+    }
+    if (Object.keys(memoFields).length > 0) {
+      const upMemo = await updatePartnerDriverRow(
+        admin,
+        partnerDriverId.trim(),
+        memoFields,
+      );
+      if (upMemo.error) {
+        return NextResponse.json({ error: upMemo.error }, { status: 502 });
+      }
+    }
+    const { data: refreshedMemo } = await admin
+      .from("partner_drivers")
+      .select("*")
+      .eq("id", partnerDriverId.trim())
+      .maybeSingle();
+    const normalizedMemo = normalizePartnerDrivers(
+      refreshedMemo ? [refreshedMemo] : [],
+    );
+    return NextResponse.json({
+      ok: true,
+      partner_driver: normalizedMemo[0] ?? null,
+      invite_email_sent: false,
+      linked_existing_auth_user: true,
+      note: "이미 승인된 건입니다. 관리자 메모만 갱신했습니다.",
+    });
+  }
 
   if (status === "approved") {
     const r = row as {
@@ -427,6 +511,9 @@ export async function POST(request: Request) {
       auth_user_id: authResult.userId,
       approved_at: approvedAt,
     };
+    if (typeof body.admin_memo === "string") {
+      coreUpdate.admin_memo = body.admin_memo.trim();
+    }
 
     const up = await updatePartnerDriverApprovedStrict(
       admin,
@@ -447,19 +534,6 @@ export async function POST(request: Request) {
       );
     }
 
-    if (adminMemoFromBody !== "") {
-      const { error: memoErr } = await admin
-        .from("partner_drivers")
-        .update({ admin_memo: adminMemoFromBody })
-        .eq("id", partnerDriverId.trim());
-      if (memoErr) {
-        console.error(
-          "[partner-drivers/status] admin_memo 저장 실패(승인·연결은 완료):",
-          memoErr.message,
-        );
-      }
-    }
-
     void sendDriverApprovalSms({
       toPhone: String(r.phone ?? "").replace(/\D/g, ""),
       companyName: String(r.company_name ?? ""),
@@ -477,11 +551,15 @@ export async function POST(request: Request) {
       ok: true,
       partner_driver: normalized[0] ?? null,
       auth_user_id: authResult.userId,
-      invite_email_sent: authResult.usedInvite,
+      invite_email_sent: authResult.inviteEmailSent,
+      linked_existing_auth_user: authResult.linkedExistingUser,
     });
   }
 
   const updateFields: Record<string, unknown> = { status };
+  if (typeof body.admin_memo === "string") {
+    updateFields.admin_memo = body.admin_memo.trim();
+  }
   const up = await updatePartnerDriverRow(admin, partnerDriverId.trim(), updateFields);
   if (up.error) {
     return NextResponse.json({ error: up.error }, { status: 502 });
