@@ -198,6 +198,8 @@ type AuthResolveResult = {
   inviteEmailSent: boolean;
   /** 이미 Auth 에 동일 이메일 계정이 있어 연결만 한 경우 */
   linkedExistingUser: boolean;
+  /** inviteUserByEmail 실패 메시지(있으면 그대로 관리자에 표시) */
+  inviteErrorMessage: string | null;
 };
 
 async function resolveOrCreateAuthUserId(
@@ -211,6 +213,7 @@ async function resolveOrCreateAuthUserId(
 ): Promise<AuthResolveResult> {
   const email = String(row.email).trim();
   const emailLower = email.toLowerCase();
+  let inviteErrorMessage: string | null = null;
 
   let redirectTo = getPartnerSetPasswordRedirectTo();
   if (!redirectTo) {
@@ -232,6 +235,7 @@ async function resolveOrCreateAuthUserId(
         error: null,
         inviteEmailSent: false,
         linkedExistingUser: true,
+        inviteErrorMessage,
       };
     }
   }
@@ -247,6 +251,7 @@ async function resolveOrCreateAuthUserId(
       error: null,
       inviteEmailSent: false,
       linkedExistingUser: true,
+      inviteErrorMessage,
     };
   }
 
@@ -260,10 +265,12 @@ async function resolveOrCreateAuthUserId(
       error: null,
       inviteEmailSent: true,
       linkedExistingUser: false,
+      inviteErrorMessage,
     };
   }
 
   if (invited.error) {
+    inviteErrorMessage = invited.error.message;
     console.error(
       "[partner-drivers/status] inviteUserByEmail failed:",
       invited.error.message,
@@ -295,6 +302,7 @@ async function resolveOrCreateAuthUserId(
         error: null,
         inviteEmailSent: false,
         linkedExistingUser: true,
+        inviteErrorMessage,
       };
     }
     console.error(
@@ -318,6 +326,7 @@ async function resolveOrCreateAuthUserId(
       error: null,
       inviteEmailSent: false,
       linkedExistingUser: false,
+      inviteErrorMessage,
     };
   }
 
@@ -336,6 +345,7 @@ async function resolveOrCreateAuthUserId(
       error: null,
       inviteEmailSent: false,
       linkedExistingUser: true,
+      inviteErrorMessage,
     };
   }
 
@@ -350,6 +360,7 @@ async function resolveOrCreateAuthUserId(
     error: combined,
     inviteEmailSent: false,
     linkedExistingUser: false,
+    inviteErrorMessage,
   };
 }
 
@@ -584,6 +595,7 @@ export async function POST(request: Request) {
       auth_user_id: authResult.userId,
       invite_email_sent: authResult.inviteEmailSent,
       linked_existing_auth_user: authResult.linkedExistingUser,
+      invite_error: authResult.inviteErrorMessage,
     });
   }
 

@@ -6,10 +6,14 @@ export function getPartnerLoginRedirectTo(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!raw) return "";
   const normalized = raw.replace(/\/$/, "");
-  if (/partner\/login/i.test(raw)) {
-    return normalized;
+  try {
+    const u = new URL(normalized);
+    const origin = u.origin.replace(/\/$/, "");
+    return `${origin}/partner/login`;
+  } catch {
+    if (/partner\/login/i.test(normalized)) return normalized;
+    return `${normalized}/partner/login`;
   }
-  return `${normalized}/partner/login`;
 }
 
 /**
@@ -21,8 +25,13 @@ export function getPartnerSetPasswordRedirectTo(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!raw) return "";
   const normalized = raw.replace(/\/$/, "");
-  if (/partner\/set-password/i.test(raw)) {
-    return normalized;
+  try {
+    // 요구사항: 루트 주소만 사용 (origin) 후 /partner/set-password 고정
+    const u = new URL(normalized);
+    const origin = u.origin.replace(/\/$/, "");
+    return `${origin}/partner/set-password`;
+  } catch {
+    if (/partner\/set-password/i.test(normalized)) return normalized;
+    return `${normalized}/partner/set-password`;
   }
-  return `${normalized}/partner/set-password`;
 }

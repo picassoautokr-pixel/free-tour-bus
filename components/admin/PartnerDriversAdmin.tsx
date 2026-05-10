@@ -115,17 +115,20 @@ function PartnerResendInviteButton({
   partnerDriverId,
   email,
   status,
+  authUserId,
   setToast,
 }: {
   partnerDriverId: string;
   email: string;
   status: string;
+  authUserId: string;
   setToast: (t: { message: string }) => void;
 }) {
   const approved = parsePartnerStatus(status) === "approved";
   const [busy, setBusy] = useState(false);
 
-  if (!approved || email.trim() === "") return null;
+  const allowed = approved || authUserId.trim() !== "";
+  if (!allowed || email.trim() === "") return null;
 
   return (
     <div className="mt-3">
@@ -140,7 +143,7 @@ function PartnerResendInviteButton({
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ partner_driver_id: partnerDriverId }),
+                body: JSON.stringify({ id: partnerDriverId }),
               });
               const json = (await res.json()) as {
                 error?: string;
@@ -173,6 +176,77 @@ function PartnerResendInviteButton({
       </button>
       <p className="mt-2 text-[11px] font-medium leading-snug text-slate-500">
         이미 계정이 있는 이메일이면 재발송이 제한될 수 있습니다. 오류 시 메시지를 확인해 주세요.
+      </p>
+    </div>
+  );
+}
+
+function PartnerPasswordResetButton({
+  partnerDriverId,
+  email,
+  status,
+  authUserId,
+  setToast,
+}: {
+  partnerDriverId: string;
+  email: string;
+  status: string;
+  authUserId: string;
+  setToast: (t: { message: string }) => void;
+}) {
+  const approved = parsePartnerStatus(status) === "approved";
+  const allowed = approved || authUserId.trim() !== "";
+  const [busy, setBusy] = useState(false);
+
+  if (!allowed || email.trim() === "") return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          void (async () => {
+            setBusy(true);
+            try {
+              const res = await fetch("/api/admin/partner-drivers/password-reset", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: partnerDriverId }),
+              });
+              const json = (await res.json()) as {
+                error?: string;
+                password_reset_email_sent?: boolean;
+                message?: string;
+              };
+              if (!res.ok) {
+                setToast({
+                  message:
+                    json.error ?? "비밀번호 설정메일 발송에 실패했습니다.",
+                });
+                return;
+              }
+              setToast({
+                message: json.password_reset_email_sent
+                  ? "비밀번호 설정메일 발송을 요청했습니다."
+                  : (json.message ?? "처리되었습니다."),
+              });
+            } catch (e) {
+              setToast({
+                message: e instanceof Error ? e.message : String(e),
+              });
+            } finally {
+              setBusy(false);
+            }
+          })();
+        }}
+        className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-black text-slate-900 shadow-sm transition hover:bg-slate-100 disabled:opacity-50"
+      >
+        {busy ? "요청 중…" : "비밀번호 설정메일 발송"}
+      </button>
+      <p className="mt-2 text-[11px] font-medium leading-snug text-slate-500">
+        기존 사용자(이미 가입된 이메일)인 경우에는 이 버튼을 사용해 비밀번호 설정/재설정 링크를 발송하세요.
       </p>
     </div>
   );
@@ -213,6 +287,7 @@ function PartnerWorkflowButtons({
         partner_driver?: PartnerDriverDetail | null;
         invite_email_sent?: boolean;
         linked_existing_auth_user?: boolean;
+        invite_error?: string | null;
       };
       if (!res.ok) {
         const msg =
@@ -229,6 +304,10 @@ function PartnerWorkflowButtons({
         if (json.invite_email_sent) {
           setToast({
             message: "승인 완료. 초대 이메일이 발송되었습니다.",
+          });
+        } else if (json.invite_error) {
+          setToast({
+            message: json.invite_error,
           });
         } else if (json.linked_existing_auth_user) {
           setToast({
@@ -364,6 +443,7 @@ function PartnerStatusSection({
         partner_driver?: PartnerDriverDetail | null;
         invite_email_sent?: boolean;
         linked_existing_auth_user?: boolean;
+        invite_error?: string | null;
       };
       if (!res.ok) {
         const msg =
@@ -384,6 +464,8 @@ function PartnerStatusSection({
           setToast({
             message: "승인 완료. 초대 이메일이 발송되었습니다.",
           });
+        } else if (json.invite_error) {
+          setToast({ message: json.invite_error });
         } else if (json.linked_existing_auth_user) {
           setToast({
             message:
@@ -1217,6 +1299,15 @@ function PartnerDriverSlidePanel({
             partnerDriverId={row.id}
             email={row.email}
             status={row.status}
+            authUserId={row.auth_user_id}
+            setToast={setToast}
+          />
+
+          <PartnerPasswordResetButton
+            partnerDriverId={row.id}
+            email={row.email}
+            status={row.status}
+            authUserId={row.auth_user_id}
             setToast={setToast}
           />
         </div>
