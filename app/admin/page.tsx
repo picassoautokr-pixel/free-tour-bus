@@ -258,9 +258,8 @@ type RealtimeToastPayload =
     }
   | {
       kind: "partner";
-      companyName: string;
-      managerName: string;
-      phone: string;
+      title: string;
+      message: string;
     };
 
 type RecentNotificationItem = {
@@ -276,9 +275,8 @@ type RecentNotificationItem = {
     }
   | {
       kind: "partner";
-      company_name: string;
-      manager_name: string;
-      phone: string;
+      notification_id?: string;
+      message: string;
     }
 );
 
@@ -1246,12 +1244,14 @@ export default function AdminApplicationsPage() {
     null,
   );
   const realtimeSubscribedRef = useRef(false);
-  const seenRealtimeIdsRef = useRef<{ bus: Set<string>; partner: Set<string> }>(
-    {
-      bus: new Set(),
-      partner: new Set(),
-    },
-  );
+  const seenRealtimeIdsRef = useRef<{
+    bus: Set<string>;
+    /** admin_notifications 행 단위 중복 방지 */
+    partnerNotif: Set<string>;
+  }>({
+    bus: new Set(),
+    partnerNotif: new Set(),
+  });
 
   soundEnabledRef.current = soundEnabled;
 
@@ -1591,44 +1591,78 @@ export default function AdminApplicationsPage() {
         {
           event: "INSERT",
           schema: "public",
-          table: "partner_drivers",
+          table: "admin_notifications",
         },
         (payload) => {
-          console.log("partner_drivers realtime payload", payload);
+          console.log("admin_notifications payload", payload);
           const raw = payload.new as Record<string, unknown>;
-          const normalized = normalizePartnerDrivers([raw]);
-          const row = normalized[0];
-          if (!row?.id || row.id.startsWith("idx-")) return;
-          if (seenRealtimeIdsRef.current.partner.has(row.id)) return;
-          seenRealtimeIdsRef.current.partner.add(row.id);
+          const notifType = String(raw.type ?? "").trim();
+          if (notifType !== "partner_driver") return;
 
-          // 요구사항: insert 후 즉시 목록 reload + 통계 반영
+          const sourceId = String(raw.source_id ?? "").trim();
+          if (!sourceId) return;
+
+          const notifRowId =
+            raw.id != null && String(raw.id).trim() !== ""
+              ? String(raw.id).trim()
+              : "";
+          const dedupeKey =
+            notifRowId ||
+            `${sourceId}:${raw.created_at != null ? String(raw.created_at) : ""}`;
+          if (seenRealtimeIdsRef.current.partnerNotif.has(dedupeKey)) return;
+          seenRealtimeIdsRef.current.partnerNotif.add(dedupeKey);
+
+          const msg = String(raw.message ?? "").trim();
+
           window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
-          window.dispatchEvent(
-            new CustomEvent("partner-admin-insert", { detail: { row } }),
-          );
+
+          void (async () => {
+            const { data: pdRow, error: fetchErr } = await supabase
+              .from("partner_drivers")
+              .select("*")
+              .eq("id", sourceId)
+              .maybeSingle();
+            if (fetchErr) {
+              console.warn(
+                "[admin_notifications] partner_drivers 조회 실패:",
+                fetchErr.message,
+              );
+              return;
+            }
+            if (pdRow) {
+              const row = normalizePartnerDrivers([pdRow])[0];
+              window.dispatchEvent(
+                new CustomEvent("partner-admin-insert", {
+                  detail: { row },
+                }),
+              );
+            }
+          })();
 
           setUnseenRealtimeCount((c) => c + 1);
           setRecentNotifications((prev) => {
             const item: RecentNotificationItem = {
               kind: "partner",
-              id: row.id,
-              company_name: row.company_name,
-              manager_name: row.manager_name,
-              phone: row.phone,
-              created_at: row.created_at,
+              id: sourceId,
+              notification_id: notifRowId || undefined,
+              message: msg,
+              created_at:
+                raw.created_at != null ? String(raw.created_at) : null,
             };
             return [
               item,
-              ...prev.filter((x) => !(x.kind === item.kind && x.id === item.id)),
+              ...prev.filter((x) => {
+                if (x.kind !== "partner") return true;
+                if (notifRowId) return x.notification_id !== notifRowId;
+                return x.id !== sourceId;
+              }),
             ].slice(0, 25);
           });
 
           setRealtimeToast({
             kind: "partner",
-            companyName: row.company_name,
-            managerName: row.manager_name,
-            phone: row.phone,
+            title: "새 제휴기사 신청이 접수되었습니다.",
+            message: msg || "내용이 없습니다.",
           });
           if (realtimeToastTimerRef.current != null) {
             window.clearTimeout(realtimeToastTimerRef.current);
@@ -1960,27 +1994,42 @@ export default function AdminApplicationsPage() {
                       </li>
                     ) : (
                       recentNotifications.map((n) => (
-                        <li key={n.id}>
+                        <li
+                          key={
+                            n.kind === "bus"
+                              ? `bus-${n.id}`
+                              : `partner-${n.notification_id ?? n.id}`
+                          }
+                        >
                           <button
                             type="button"
                             className="flex w-full flex-col gap-1 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-50 active:bg-slate-100"
                             onClick={() => handleSelectNotification(n)}
                           >
-                            <span className="text-sm font-bold text-slate-900">
-                              {n.kind === "bus"
-                                ? `[버스 신청] ${n.applicant_name} / ${
+                            {n.kind === "bus" ? (
+                              <>
+                                <span className="text-sm font-bold text-slate-900">
+                                  {`[버스 신청] ${n.applicant_name} / ${
                                     n.passenger_count != null &&
                                     Number.isFinite(n.passenger_count)
                                       ? `${n.passenger_count}명`
                                       : "—"
-                                  }`
-                                : `[제휴기사] ${n.company_name} / ${n.manager_name}`}
-                            </span>
-                            <span className="line-clamp-2 text-xs font-medium leading-snug text-slate-600">
-                              {n.kind === "bus"
-                                ? displayApplicationTypeLabel(n.application_type)
-                                : `연락처 ${n.phone}`}
-                            </span>
+                                  }`}
+                                </span>
+                                <span className="line-clamp-2 text-xs font-medium leading-snug text-slate-600">
+                                  {displayApplicationTypeLabel(
+                                    n.application_type,
+                                  )}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="line-clamp-3 whitespace-pre-wrap text-sm font-bold leading-snug text-slate-900">
+                                [제휴기사]{" "}
+                                {n.message.trim() !== ""
+                                  ? n.message
+                                  : "새 제휴기사 신청"}
+                              </span>
+                            )}
                             <span className="text-[11px] font-semibold text-slate-400">
                               {formatCreatedAt(n.created_at)}
                             </span>
@@ -2543,24 +2592,13 @@ export default function AdminApplicationsPage() {
             <div className="min-w-0 flex-1 py-0.5">
               <p className="text-sm font-black leading-snug text-slate-900">
                 {realtimeToast.kind === "partner"
-                  ? "새 제휴기사 신청이 접수되었습니다."
+                  ? realtimeToast.title
                   : "새 신청이 접수되었습니다."}
               </p>
               {realtimeToast.kind === "partner" ? (
-                <>
-                  <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
-                    <span className="text-slate-500">업체명</span>{" "}
-                    {realtimeToast.companyName}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
-                    <span className="text-slate-500">담당자명</span>{" "}
-                    {realtimeToast.managerName}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
-                    <span className="text-slate-500">연락처</span>{" "}
-                    {realtimeToast.phone}
-                  </p>
-                </>
+                <p className="mt-2 whitespace-pre-wrap text-xs font-semibold leading-relaxed text-slate-600">
+                  {realtimeToast.message}
+                </p>
               ) : (
                 <>
                   <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
