@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { CustomerSupportSheet } from "@/components/CustomerSupportSheet";
@@ -10,8 +11,8 @@ const APPLICATION_TYPE_RESERVATION_DONE = "이미 예약을 완료하신 경우"
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 
 const customerApplicationTypes = [
-  APPLICATION_TYPE_RESERVATION_DONE,
   APPLICATION_TYPE_NEW_BOOKING,
+  APPLICATION_TYPE_RESERVATION_DONE,
 ] as const;
 
 /** 증빙자료 첨부 영역을 표시하는 신청 유형만 */
@@ -172,7 +173,7 @@ type FormData = {
 };
 
 const INITIAL_FORM_DATA: FormData = {
-  applicationType: APPLICATION_TYPE_REQUIRES_ATTACHMENT,
+  applicationType: APPLICATION_TYPE_NEW_BOOKING,
   tripType: "왕복",
   busGrade: "일반",
   departure: "",
@@ -439,10 +440,19 @@ export default function Home() {
           재테크 정보도 무료!
         </p>
         <p className="relative mt-6 text-[1.03rem] font-semibold leading-8 tracking-[-0.035em] text-slate-500">
+          최소 30% 부터 전액지원까지~
+          <br />
           열심히 일한 당신은 전액 무료~
           <br />
           신청만 하면 지원 가능~
         </p>
+        <Link
+          href="/partner/register"
+          className="relative mt-5 inline-flex min-h-11 min-w-[min(100%,18rem)] touch-manipulation items-center justify-center rounded-2xl border border-blue-200/90 bg-white/80 px-4 py-2.5 text-sm font-black tracking-[-0.02em] text-blue-800 shadow-sm shadow-blue-900/5 ring-1 ring-blue-100/80 transition hover:border-blue-300 hover:bg-blue-50/90 hover:ring-blue-200/80 active:scale-[0.99]"
+          style={{ WebkitTapHighlightColor: "transparent" }}
+        >
+          ※ 기사님(회사)를 모십니다.
+        </Link>
       </section>
 
       <section className="relative z-10 -mt-10 overflow-visible px-5">
