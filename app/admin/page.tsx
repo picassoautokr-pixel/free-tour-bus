@@ -49,6 +49,20 @@ type ApplicationDetail = {
   status: string;
 };
 
+type DriverQuoteDetail = {
+  id: string;
+  created_at: string;
+  partner_driver_id: string;
+  company_name: string;
+  manager_name: string;
+  phone: string;
+  price: number | null;
+  vehicle_type: string;
+  available_time: string;
+  message: string;
+  status: string;
+};
+
 const APPLICATION_STATUSES = [
   { value: "pending", label: "접수완료" },
   { value: "reviewing", label: "검토중" },
@@ -881,6 +895,142 @@ function StatusChangeSection({
   );
 }
 
+function DriverQuotesSection({ applicationId }: { applicationId: string }) {
+  const [quotes, setQuotes] = useState<DriverQuoteDetail[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadQuotes = useCallback(async () => {
+    if (!isPersistableApplicationId(applicationId)) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/admin/driver-quotes?application_id=${encodeURIComponent(applicationId)}`,
+        { credentials: "same-origin" },
+      );
+      const json = (await res.json()) as {
+        error?: string;
+        quotes?: DriverQuoteDetail[];
+      };
+      if (!res.ok) {
+        setError(json.error ?? "견적 목록을 불러오지 못했습니다.");
+        setQuotes([]);
+        return;
+      }
+      setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setQuotes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [applicationId]);
+
+  useEffect(() => {
+    void loadQuotes();
+  }, [loadQuotes]);
+
+  return (
+    <section className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm ring-1 ring-indigo-100/80">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
+            기사 견적
+          </p>
+          <p className="mt-1 text-xs font-medium text-indigo-950/70">
+            제출된 모든 기사 견적을 관리자만 확인합니다.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadQuotes()}
+          disabled={loading}
+          className="h-9 shrink-0 rounded-xl border border-indigo-200 bg-white px-3 text-xs font-black text-indigo-950 shadow-sm transition hover:bg-indigo-50 disabled:opacity-50"
+        >
+          {loading ? "조회 중…" : "새로고침"}
+        </button>
+      </div>
+
+      {error ? (
+        <div
+          className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-800"
+          role="alert"
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div className="mt-3 space-y-3">
+        {loading && quotes.length === 0 ? (
+          <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
+            견적을 불러오는 중…
+          </p>
+        ) : quotes.length === 0 ? (
+          <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
+            아직 제출된 견적이 없습니다.
+          </p>
+        ) : (
+          quotes.map((quote) => (
+            <article
+              key={quote.id}
+              className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-slate-900">
+                    {quote.company_name}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {quote.manager_name} · {quote.phone}
+                  </p>
+                </div>
+                <p className="shrink-0 text-right text-sm font-black text-indigo-900">
+                  {quote.price == null
+                    ? "금액 미입력"
+                    : `${quote.price.toLocaleString("ko-KR")}원`}
+                </p>
+              </div>
+              <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <div>
+                  <dt className="font-bold text-slate-400">차량유형</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.vehicle_type}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">가능 출발시간</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.available_time}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">제출시간</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {formatCreatedAt(quote.created_at)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">상태</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.status}
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-3">
+                <p className="text-xs font-bold text-slate-400">메모</p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm font-semibold text-slate-800">
+                  {quote.message.trim() === "" ? "—" : quote.message}
+                </p>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function DetailSlidePanel({
   row,
   open,
@@ -1191,6 +1341,8 @@ function DetailSlidePanel({
               </dd>
             </div>
           </dl>
+
+          <DriverQuotesSection applicationId={row.id} />
 
           <div className="mt-4">
             <button
