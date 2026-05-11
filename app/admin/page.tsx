@@ -30,6 +30,7 @@ type ApplicationDetail = {
   bus_grade: string;
   departure: string;
   departure_detail: string;
+  departure_region: string;
   destination: string;
   destination_detail: string;
   stopovers: string[];
@@ -420,6 +421,7 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
       bus_grade: safeText(r.bus_grade),
       departure: safeText(r.departure),
       departure_detail: safeText(r.departure_detail),
+      departure_region: safeText(r.departure_region, ""),
       destination: safeText(r.destination),
       destination_detail: safeText(r.destination_detail),
       stopovers: parseStopovers(r.stopovers),
@@ -1156,6 +1158,9 @@ function DetailSlidePanel({
             <DetailField label="왕복 / 편도">{row.trip_type}</DetailField>
             <DetailField label="버스 등급">{row.bus_grade}</DetailField>
             <DetailField label="출발지">{row.departure}</DetailField>
+            <DetailField label="출발지역">
+              {row.departure_region.trim() === "" ? "—" : row.departure_region}
+            </DetailField>
             <DetailField label="도착지">{row.destination}</DetailField>
             <div className="border-b border-slate-100 py-3 last:border-b-0">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1999,6 +2004,7 @@ export default function AdminApplicationsPage() {
         단체명: r.organization_name,
         단체유형: r.organization_type,
         출발지: r.departure,
+        출발지역: r.departure_region,
         도착지: r.destination,
         출발일: formatIsoDate(r.departure_date),
         출발시간:

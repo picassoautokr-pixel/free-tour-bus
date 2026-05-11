@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { CustomerSupportSheet } from "@/components/CustomerSupportSheet";
+import {
+  SERVICE_REGIONS,
+  inferDepartureRegion,
+  type ServiceRegion,
+} from "@/lib/regions";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 고객 폼에 노출되는 유형만 (업체용 등은 렌더링하지 않음 — 기존 DB 값은 관리자에서 표시) */
@@ -50,6 +55,7 @@ type ApplicationInsertPayload = {
   bus_grade: string;
   departure: string;
   departure_detail: string;
+  departure_region: string | null;
   destination: string;
   destination_detail: string;
   departure_date: string | null;
@@ -158,6 +164,8 @@ type FormData = {
   tripType: string;
   busGrade: string;
   departure: string;
+  departureRegion: ServiceRegion | "";
+  departureRegionManual: boolean;
   destination: string;
   stopovers: string[];
   departureDate: string;
@@ -177,6 +185,8 @@ const INITIAL_FORM_DATA: FormData = {
   tripType: "왕복",
   busGrade: "일반",
   departure: "",
+  departureRegion: "",
+  departureRegionManual: false,
   destination: "",
   stopovers: [],
   departureDate: "",
@@ -215,6 +225,12 @@ export default function Home() {
     null,
   );
   const [supportSheetOpen, setSupportSheetOpen] = useState(false);
+
+  const inferredDepartureRegion = inferDepartureRegion(formData.departure);
+  const displayedDepartureRegion =
+    formData.departureRegionManual || formData.departureRegion !== ""
+      ? formData.departureRegion
+      : inferredDepartureRegion;
 
   useEffect(() => {
     try {
@@ -360,6 +376,10 @@ export default function Home() {
         bus_grade: formData.busGrade,
         departure: depTrim,
         departure_detail: "",
+        departure_region:
+          (formData.departureRegionManual
+            ? formData.departureRegion
+            : inferredDepartureRegion) || null,
         destination: destTrim,
         destination_detail: "",
         departure_date: departureDateValue === "" ? null : departureDateValue,
@@ -564,15 +584,73 @@ export default function Home() {
                     value={formData.departure}
                     onChange={(event) => {
                       setDepartureError(null);
+                      const nextDeparture = event.target.value;
+                      const nextRegion = inferDepartureRegion(nextDeparture);
                       setFormData((prev) => ({
                         ...prev,
-                        departure: event.target.value,
+                        departure: nextDeparture,
+                        departureRegion: prev.departureRegionManual
+                          ? prev.departureRegion
+                          : nextRegion,
                       }));
                     }}
                   />
                   <p className="px-1 text-xs font-medium leading-5 text-slate-500">
                     시/군/구와 동까지 입력해주세요.
                   </p>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black text-slate-500">
+                          출발지역
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          자동 추정이 다르면 직접 선택해 주세요.
+                        </p>
+                      </div>
+                      {inferredDepartureRegion !== "" &&
+                      !formData.departureRegionManual ? (
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700 ring-1 ring-blue-100">
+                          자동: {inferredDepartureRegion}
+                        </span>
+                      ) : null}
+                    </div>
+                    <select
+                      className={`mt-3 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-black outline-none focus:border-blue-500 ${
+                        displayedDepartureRegion ? "text-slate-800" : "text-slate-400"
+                      }`}
+                      value={displayedDepartureRegion}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          departureRegion: event.target.value as ServiceRegion | "",
+                          departureRegionManual: true,
+                        }))
+                      }
+                    >
+                      <option value="">출발지역 선택</option>
+                      {SERVICE_REGIONS.map((region) => (
+                        <option key={region} value={region}>
+                          {region}
+                        </option>
+                      ))}
+                    </select>
+                    {formData.departureRegionManual ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-xs font-bold text-blue-600"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            departureRegion: inferDepartureRegion(prev.departure),
+                            departureRegionManual: false,
+                          }))
+                        }
+                      >
+                        자동 추정으로 되돌리기
+                      </button>
+                    ) : null}
+                  </div>
                   {departureError ? (
                     <p className="px-1 text-xs font-semibold text-red-500">
                       {departureError}

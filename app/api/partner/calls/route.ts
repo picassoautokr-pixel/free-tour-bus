@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
 import { USER_ROLES } from "@/lib/roles";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -13,6 +14,7 @@ type DriverContext =
       ok: true;
       userId: string;
       partnerDriverId: string;
+      serviceRegions: string[];
     }
   | {
       ok: false;
@@ -86,7 +88,7 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
 
   const { data: driver, error: driverError } = await admin
     .from("partner_drivers")
-    .select("id, status")
+    .select("id, status, service_regions")
     .eq("id", partnerDriverId)
     .eq("auth_user_id", user.id)
     .maybeSingle();
@@ -98,7 +100,14 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
     return { ok: false, status: 403, error: "관리자 승인 후 이용 가능합니다." };
   }
 
-  return { ok: true, userId: user.id, partnerDriverId };
+  return {
+    ok: true,
+    userId: user.id,
+    partnerDriverId,
+    serviceRegions: normalizeServiceRegions(
+      (driver as { service_regions?: unknown } | null)?.service_regions,
+    ),
+  };
 }
 
 export async function GET() {
@@ -118,7 +127,7 @@ export async function GET() {
   const { data: applications, error: applicationsError } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, destination, departure_date, departure_time, return_date, passenger_count, status",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, departure_region, destination, departure_date, departure_time, return_date, passenger_count, status",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -131,7 +140,18 @@ export async function GET() {
     );
   }
 
-  const rows = Array.isArray(applications) ? applications : [];
+  const rawRows = Array.isArray(applications) ? applications : [];
+  const rows =
+    driver.serviceRegions.length === 0
+      ? rawRows
+      : rawRows.filter((raw) => {
+          const row = raw as Record<string, unknown>;
+          const departureRegion = normalizeRegion(row.departure_region);
+          return (
+            departureRegion !== "" &&
+            driver.serviceRegions.includes(departureRegion)
+          );
+        });
   const ids = rows
     .map((r) => safeText((r as { id?: unknown }).id, ""))
     .filter(Boolean);
@@ -171,6 +191,7 @@ export async function GET() {
       trip_type: safeText(row.trip_type),
       bus_grade: safeText(row.bus_grade),
       departure: safeText(row.departure),
+      departure_region: safeText(row.departure_region, ""),
       destination: safeText(row.destination),
       departure_date: safeText(row.departure_date, ""),
       departure_time: safeText(row.departure_time),
@@ -180,5 +201,10 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ ok: true, calls });
+  return NextResponse.json({
+    ok: true,
+    calls,
+    service_regions: driver.serviceRegions,
+    service_regions_required: driver.serviceRegions.length === 0,
+  });
 }

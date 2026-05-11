@@ -6,6 +6,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
+import {
+  SERVICE_REGIONS,
+  normalizeServiceRegions,
+  type ServiceRegion,
+} from "@/lib/regions";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import { createSupabaseClient } from "@/lib/supabase";
 
@@ -19,6 +24,7 @@ type PartnerCall = {
   trip_type: string;
   bus_grade: string;
   departure: string;
+  departure_region: string;
   destination: string;
   departure_date: string;
   departure_time: string;
@@ -108,6 +114,10 @@ export default function PartnerDashboardPage() {
     useState<ReferralForm>(emptyReferralForm);
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralMessage, setReferralMessage] = useState<string | null>(null);
+  const [serviceRegions, setServiceRegions] = useState<ServiceRegion[]>([]);
+  const [savedServiceRegions, setSavedServiceRegions] = useState<ServiceRegion[]>([]);
+  const [serviceRegionBusy, setServiceRegionBusy] = useState(false);
+  const [serviceRegionMessage, setServiceRegionMessage] = useState<string | null>(null);
 
   const loadCalls = useCallback(async () => {
     setCallsLoading(true);
@@ -119,6 +129,7 @@ export default function PartnerDashboardPage() {
       const json = (await res.json()) as {
         error?: string;
         calls?: PartnerCall[];
+        service_regions?: unknown;
       };
       if (!res.ok) {
         setCallsError(json.error ?? "대기중인 콜을 불러오지 못했습니다.");
@@ -126,6 +137,9 @@ export default function PartnerDashboardPage() {
         return;
       }
       setCalls(Array.isArray(json.calls) ? json.calls : []);
+      const nextRegions = normalizeServiceRegions(json.service_regions);
+      setServiceRegions(nextRegions);
+      setSavedServiceRegions(nextRegions);
     } catch (e) {
       setCallsError(e instanceof Error ? e.message : String(e));
       setCalls([]);
@@ -235,6 +249,49 @@ export default function PartnerDashboardPage() {
       await supabase.auth.signOut();
     } finally {
       router.replace("/partner/login");
+    }
+  };
+
+  const toggleServiceRegion = (region: ServiceRegion) => {
+    setServiceRegionMessage(null);
+    setServiceRegions((prev) =>
+      prev.includes(region)
+        ? prev.filter((item) => item !== region)
+        : [...prev, region],
+    );
+  };
+
+  const serviceRegionsChanged =
+    serviceRegions.join("|") !== savedServiceRegions.join("|");
+
+  const saveServiceRegions = async () => {
+    setServiceRegionBusy(true);
+    setServiceRegionMessage(null);
+    try {
+      const normalized = normalizeServiceRegions(serviceRegions);
+      const res = await fetch("/api/partner/service-regions", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service_regions: normalized }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        service_regions?: unknown;
+      };
+      if (!res.ok) {
+        setServiceRegionMessage(json.error ?? "수신지역 저장에 실패했습니다.");
+        return;
+      }
+      const nextRegions = normalizeServiceRegions(json.service_regions);
+      setServiceRegions(nextRegions);
+      setSavedServiceRegions(nextRegions);
+      setServiceRegionMessage("수신지역을 저장했습니다.");
+      void loadCalls();
+    } catch (e) {
+      setServiceRegionMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setServiceRegionBusy(false);
     }
   };
 
@@ -391,6 +448,58 @@ export default function PartnerDashboardPage() {
             </div>
           </div>
 
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-sm font-black text-slate-900">
+                  콜 수신지역 설정
+                </h2>
+                <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                  선택한 지역의 출발 콜만 표시됩니다. 비워두면 모든 지역 콜을 표시합니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void saveServiceRegions()}
+                disabled={serviceRegionBusy || !serviceRegionsChanged}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 disabled:opacity-50"
+                style={tapStyle}
+              >
+                {serviceRegionBusy ? "저장 중…" : "수신지역 저장"}
+              </button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {SERVICE_REGIONS.map((region) => {
+                const selected = serviceRegions.includes(region);
+                return (
+                  <button
+                    key={region}
+                    type="button"
+                    onClick={() => toggleServiceRegion(region)}
+                    className={`min-h-9 rounded-full border px-3 text-xs font-black transition ${
+                      selected
+                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    style={tapStyle}
+                  >
+                    {region}
+                  </button>
+                );
+              })}
+            </div>
+            {serviceRegions.length === 0 ? (
+              <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100">
+                수신지역이 설정되지 않아 모든 지역 콜이 표시됩니다.
+              </p>
+            ) : null}
+            {serviceRegionMessage ? (
+              <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-bold leading-5 text-slate-700 ring-1 ring-slate-200">
+                {serviceRegionMessage}
+              </p>
+            ) : null}
+          </section>
+
           {callsError ? (
             <div
               className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-relaxed text-red-800"
@@ -511,6 +620,14 @@ export default function PartnerDashboardPage() {
                         </dt>
                         <dd className="mt-1 font-black text-slate-900">
                           {call.application_type}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <dt className="text-[11px] font-bold text-slate-400">
+                          출발지역
+                        </dt>
+                        <dd className="mt-1 font-black text-slate-900">
+                          {call.departure_region || "—"}
                         </dd>
                       </div>
                     </dl>
