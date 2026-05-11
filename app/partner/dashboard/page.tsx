@@ -55,20 +55,23 @@ export default function PartnerDashboardPage() {
         if (pid) {
           const { data: pwRow, error: pwErr } = await supabase
             .from("partner_drivers")
-            .select("temporary_password_issued_at")
+            .select("temporary_password_issued_at, password_changed_at")
             .eq("id", pid)
             .maybeSingle();
           if (!pwErr && pwRow && typeof pwRow === "object") {
-            const ts = (pwRow as { temporary_password_issued_at?: unknown })
-              .temporary_password_issued_at;
-            if (typeof ts === "string" && ts.trim() !== "") {
-              const ms = new Date(ts).getTime();
-              if (
-                !Number.isNaN(ms) &&
-                Date.now() - ms < 14 * 24 * 60 * 60 * 1000
-              ) {
-                pwHint = true;
-              }
+            const row = pwRow as {
+              temporary_password_issued_at?: unknown;
+              password_changed_at?: unknown;
+            };
+            const issued =
+              row.temporary_password_issued_at != null &&
+              String(row.temporary_password_issued_at).trim() !== "";
+            const changed =
+              row.password_changed_at != null &&
+              String(row.password_changed_at).trim() !== "";
+            if (issued && !changed) {
+              router.replace("/partner/change-password");
+              return;
             }
           }
         }
@@ -113,7 +116,6 @@ export default function PartnerDashboardPage() {
           >
             임시 비밀번호로 접속 중이시면, 보안을 위해{" "}
             <span className="font-black">비밀번호 변경</span>을 권장합니다.
-            (계정 메뉴가 준비되면 이 화면에서 변경할 수 있습니다.)
           </div>
         ) : null}
         <div className="rounded-[2rem] border border-slate-200/90 bg-white px-6 py-10 text-center shadow-[0_18px_45px_rgba(15,23,42,0.1)]">

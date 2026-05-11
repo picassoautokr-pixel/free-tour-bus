@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
 
   if (!user) {
     const redirectUrl = request.nextUrl.clone();
-    if (pathname.startsWith("/partner/dashboard")) {
+    if (pathname.startsWith("/partner/")) {
       redirectUrl.pathname = "/partner/login";
     } else {
       redirectUrl.pathname = "/admin/login";
@@ -54,5 +54,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/partner/dashboard/:path*"],
+  matcher: ["/admin/:path*", "/partner/dashboard/:path*", "/partner/change-password"],
 };

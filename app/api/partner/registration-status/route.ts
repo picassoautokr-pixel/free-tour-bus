@@ -19,13 +19,13 @@ function hyphenPhoneFromDigits(d: string): string {
 async function fetchPartnerStatusByPhone(
   admin: SupabaseClient,
   digits: string,
-): Promise<string | null> {
+): Promise<{ status: string; accountIssued: boolean } | null> {
   const hyphen = hyphenPhoneFromDigits(digits);
 
   const tryEq = async (phoneVal: string) => {
     const { data, error } = await admin
       .from("partner_drivers")
-      .select("status")
+      .select("status, auth_user_id")
       .eq("phone", phoneVal)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -33,7 +33,12 @@ async function fetchPartnerStatusByPhone(
     if (error || !data || typeof (data as { status?: unknown }).status !== "string") {
       return null;
     }
-    return (data as { status: string }).status;
+    const row = data as { status: string; auth_user_id?: unknown };
+    return {
+      status: row.status,
+      accountIssued:
+        row.auth_user_id != null && String(row.auth_user_id).trim() !== "",
+    };
   };
 
   const a = await tryEq(digits);
@@ -57,7 +62,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ status: null as string | null });
   }
 
-  let statusRaw: string | null = null;
+  let found:
+    | {
+        status: string;
+        accountIssued: boolean;
+      }
+    | null = null;
 
   const phoneDigits =
     phoneRaw !== ""
@@ -67,32 +77,40 @@ export async function GET(request: Request) {
         : null;
 
   if (phoneDigits) {
-    statusRaw = await fetchPartnerStatusByPhone(admin, phoneDigits);
+    found = await fetchPartnerStatusByPhone(admin, phoneDigits);
   }
 
   if (
-    statusRaw == null &&
+    found == null &&
     emailRaw !== "" &&
     isEmailLike(emailRaw) &&
     !emailRaw.toLowerCase().endsWith("@phone.free-bus.co.kr")
   ) {
     const { data, error } = await admin
       .from("partner_drivers")
-      .select("status")
+      .select("status, auth_user_id")
       .ilike("email", emailRaw)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (!error && data && typeof (data as { status?: unknown }).status === "string") {
-      statusRaw = (data as { status: string }).status;
+      const row = data as { status: string; auth_user_id?: unknown };
+      found = {
+        status: row.status,
+        accountIssued:
+          row.auth_user_id != null && String(row.auth_user_id).trim() !== "",
+      };
     }
   }
 
-  if (statusRaw == null) {
-    return NextResponse.json({ status: null as string | null });
+  if (found == null) {
+    return NextResponse.json({
+      status: null as string | null,
+      account_issued: false,
+    });
   }
 
-  const st = normalizePartnerDriverStatus(statusRaw);
-  return NextResponse.json({ status: st });
+  const st = normalizePartnerDriverStatus(found.status);
+  return NextResponse.json({ status: st, account_issued: found.accountIssued });
 }

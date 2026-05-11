@@ -19,9 +19,69 @@ const ACCESS_DENIED_MESSAGE =
   "제휴 기사(driver) 권한이 확인되지 않습니다. 등록·승인 여부를 확인하거나 담당자에게 문의해 주세요.";
 
 const APPROVAL_REQUIRED_MESSAGE = "관리자 승인 후 로그인 가능합니다.";
+const ACCOUNT_NOT_FOUND_MESSAGE = "등록되지 않은 계정입니다.";
+const ACCOUNT_NOT_ISSUED_MESSAGE =
+  "계정 발급이 필요합니다. 관리자에게 문의해주세요.";
+const PASSWORD_INVALID_MESSAGE = "비밀번호가 올바르지 않습니다.";
+
+type RegistrationLookup = {
+  status: PartnerDriverRecordStatus | null;
+  accountIssued: boolean;
+};
 
 function isEmailLike(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
+async function fetchRegistrationLookup(
+  rawInput: string,
+): Promise<RegistrationLookup> {
+  const trimmed = rawInput.trim();
+  const phoneDigits = digitsOnlyKoreanMobile(trimmed);
+  const query = phoneDigits
+    ? `phone=${encodeURIComponent(phoneDigits)}`
+    : isEmailLike(trimmed.toLowerCase())
+      ? `email=${encodeURIComponent(trimmed.toLowerCase())}`
+      : "";
+
+  if (query === "") return { status: null, accountIssued: false };
+
+  const res = await fetch(`/api/partner/registration-status?${query}`);
+  const json = (await res.json()) as {
+    status?: PartnerDriverRecordStatus | null;
+    account_issued?: boolean;
+  };
+  return {
+    status: json.status ?? null,
+    accountIssued: json.account_issued === true,
+  };
+}
+
+async function needsTemporaryPasswordChange(
+  supabase: ReturnType<typeof createSupabaseClient>,
+  partnerDriverId: string | null | undefined,
+): Promise<boolean> {
+  const pid = String(partnerDriverId ?? "").trim();
+  if (pid === "") return false;
+
+  const { data, error } = await supabase
+    .from("partner_drivers")
+    .select("temporary_password_issued_at, password_changed_at")
+    .eq("id", pid)
+    .maybeSingle();
+
+  if (error || !data || typeof data !== "object") return false;
+  const row = data as {
+    temporary_password_issued_at?: unknown;
+    password_changed_at?: unknown;
+  };
+  const issued =
+    row.temporary_password_issued_at != null &&
+    String(row.temporary_password_issued_at).trim() !== "";
+  const changed =
+    row.password_changed_at != null &&
+    String(row.password_changed_at).trim() !== "";
+  return issued && !changed;
 }
 
 function RegistrationStatusBadge({
@@ -79,6 +139,8 @@ export default function PartnerLoginPage() {
 
   const [registrationStatus, setRegistrationStatus] =
     useState<PartnerDriverRecordStatus | null>(null);
+  const [registrationAccountIssued, setRegistrationAccountIssued] =
+    useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
 
   const debounceRef = useRef<number | null>(null);
@@ -90,15 +152,12 @@ export default function PartnerLoginPage() {
     if (phoneDigits) {
       setStatusLoading(true);
       try {
-        const res = await fetch(
-          `/api/partner/registration-status?phone=${encodeURIComponent(phoneDigits)}`,
-        );
-        const json = (await res.json()) as {
-          status?: PartnerDriverRecordStatus | null;
-        };
-        setRegistrationStatus(json.status ?? null);
+        const lookup = await fetchRegistrationLookup(phoneDigits);
+        setRegistrationStatus(lookup.status);
+        setRegistrationAccountIssued(lookup.accountIssued);
       } catch {
         setRegistrationStatus(null);
+        setRegistrationAccountIssued(false);
       } finally {
         setStatusLoading(false);
       }
@@ -108,19 +167,17 @@ export default function PartnerLoginPage() {
     const asEmail = trimmed.toLowerCase();
     if (!isEmailLike(asEmail)) {
       setRegistrationStatus(null);
+      setRegistrationAccountIssued(false);
       return;
     }
     setStatusLoading(true);
     try {
-      const res = await fetch(
-        `/api/partner/registration-status?email=${encodeURIComponent(asEmail)}`,
-      );
-      const json = (await res.json()) as {
-        status?: PartnerDriverRecordStatus | null;
-      };
-      setRegistrationStatus(json.status ?? null);
+      const lookup = await fetchRegistrationLookup(asEmail);
+      setRegistrationStatus(lookup.status);
+      setRegistrationAccountIssued(lookup.accountIssued);
     } catch {
       setRegistrationStatus(null);
+      setRegistrationAccountIssued(false);
     } finally {
       setStatusLoading(false);
     }
@@ -158,6 +215,15 @@ export default function PartnerLoginPage() {
           if (!ok) {
             await supabase.auth.signOut();
             setErrorMessage(APPROVAL_REQUIRED_MESSAGE);
+            return;
+          }
+          if (
+            await needsTemporaryPasswordChange(
+              supabase,
+              profile?.partner_driver_id,
+            )
+          ) {
+            router.replace("/partner/change-password");
             return;
           }
           router.replace("/partner/dashboard");
@@ -204,13 +270,27 @@ export default function PartnerLoginPage() {
         return;
       }
 
+      const lookup = await fetchRegistrationLookup(loginId);
+      if (lookup.status == null) {
+        setErrorMessage(ACCOUNT_NOT_FOUND_MESSAGE);
+        return;
+      }
+      if (lookup.status !== "approved") {
+        setErrorMessage(APPROVAL_REQUIRED_MESSAGE);
+        return;
+      }
+      if (!lookup.accountIssued) {
+        setErrorMessage(ACCOUNT_NOT_ISSUED_MESSAGE);
+        return;
+      }
+
       const { error: signError } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password,
       });
 
       if (signError) {
-        setErrorMessage(signError.message);
+        setErrorMessage(PASSWORD_INVALID_MESSAGE);
         return;
       }
 
@@ -241,6 +321,13 @@ export default function PartnerLoginPage() {
       if (!approvedOk) {
         setErrorMessage(APPROVAL_REQUIRED_MESSAGE);
         await supabase.auth.signOut();
+        return;
+      }
+
+      if (
+        await needsTemporaryPasswordChange(supabase, profile?.partner_driver_id)
+      ) {
+        router.replace("/partner/change-password");
         return;
       }
 
@@ -313,6 +400,11 @@ export default function PartnerLoginPage() {
             ) : (
               <RegistrationStatusBadge status={registrationStatus} />
             )}
+            {registrationStatus === "approved" && !registrationAccountIssued ? (
+              <p className="text-center text-xs font-semibold leading-relaxed text-amber-700">
+                {ACCOUNT_NOT_ISSUED_MESSAGE}
+              </p>
+            ) : null}
 
             <label className="block">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">

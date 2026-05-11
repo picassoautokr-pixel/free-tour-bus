@@ -79,7 +79,7 @@ function PartnerEmailDisplay({ email }: { email: string }) {
   if (t === "" || t === "—") {
     return (
       <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
-        이메일 없음
+        이메일 없음 / 휴대폰 계정 사용 가능
       </span>
     );
   }
@@ -1066,6 +1066,16 @@ export function PartnerDriversAdmin({ setToast }: Props) {
           r.approved_at == null || r.approved_at === ""
             ? ""
             : formatCreatedAt(r.approved_at),
+        임시비밀번호발급시각:
+          r.temporary_password_issued_at == null ||
+          r.temporary_password_issued_at === ""
+            ? ""
+            : formatCreatedAt(r.temporary_password_issued_at),
+        비밀번호변경시각:
+          r.password_changed_at == null || r.password_changed_at === ""
+            ? ""
+            : formatCreatedAt(r.password_changed_at),
+        최근문자오류: r.last_sms_error,
       }));
 
       const ws = XLSX.utils.json_to_sheet(exportRows, { skipHeader: false });
@@ -1601,8 +1611,21 @@ function PartnerDriverSlidePanel({
             ) : null}
             {row.temporary_password_issued_at != null &&
             row.temporary_password_issued_at !== "" ? (
-              <DetailField label="임시 비밀번호 문자 발송">
+              <DetailField label="임시 비밀번호 발급 시각">
                 {formatCreatedAt(row.temporary_password_issued_at)}
+              </DetailField>
+            ) : null}
+            {row.password_changed_at != null &&
+            row.password_changed_at !== "" ? (
+              <DetailField label="비밀번호 변경 시각">
+                {formatCreatedAt(row.password_changed_at)}
+              </DetailField>
+            ) : null}
+            {row.last_sms_error.trim() !== "" ? (
+              <DetailField label="최근 문자 발송 오류">
+                <span className="whitespace-pre-wrap text-red-700">
+                  {row.last_sms_error}
+                </span>
               </DetailField>
             ) : null}
           </dl>

@@ -32,6 +32,10 @@ export type PartnerDriverDetail = {
   approved_at: string | null;
   /** 컬럼 없으면 null — 평문 비밀번호는 저장하지 않음 */
   temporary_password_issued_at: string | null;
+  /** 임시 계정 문자 발송 실패 메시지 */
+  last_sms_error: string;
+  /** 기사가 임시 비밀번호에서 실제 비밀번호로 변경한 시각 */
+  password_changed_at: string | null;
 };
 
 function parseBusTypes(raw: unknown): string[] {
@@ -102,6 +106,12 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       temporaryPasswordIssuedAt = s === "" ? null : s;
     }
 
+    let passwordChangedAt: string | null = null;
+    if ("password_changed_at" in r && r.password_changed_at != null) {
+      const s = String(r.password_changed_at).trim();
+      passwordChangedAt = s === "" ? null : s;
+    }
+
     return {
       id,
       created_at: created,
@@ -123,6 +133,8 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       auth_user_id: authUserId,
       approved_at: approvedAt,
       temporary_password_issued_at: temporaryPasswordIssuedAt,
+      last_sms_error: safeText(r.last_sms_error, ""),
+      password_changed_at: passwordChangedAt,
     };
   });
 }

@@ -309,6 +309,7 @@ export async function POST(request: Request) {
   const partnerPatch: Record<string, unknown> = {
     auth_user_id: userId,
     temporary_password_issued_at: nowIso,
+    password_changed_at: null,
   };
 
   if (mode === "issue") {
@@ -325,12 +326,16 @@ export async function POST(request: Request) {
 
   if (
     pdErr &&
-    /temporary_password_issued_at|column/i.test(pdErr.message)
+    /temporary_password_issued_at|password_changed_at|column/i.test(pdErr.message)
   ) {
     warnings.push(
-      "temporary_password_issued_at 컬럼이 없어 시각을 저장하지 못했습니다. sql/partner_drivers_temporary_password.sql 을 적용해 주세요.",
+      "임시 비밀번호 상태 컬럼이 없어 일부 시각을 저장하지 못했습니다. sql/partner_drivers_temporary_password.sql 을 적용해 주세요.",
     );
-    const { temporary_password_issued_at: _tp, ...rest } = partnerPatch;
+    const {
+      temporary_password_issued_at: _tp,
+      password_changed_at: _pc,
+      ...rest
+    } = partnerPatch;
     const { error: e2 } = await admin
       .from("partner_drivers")
       .update(rest)
@@ -354,6 +359,22 @@ export async function POST(request: Request) {
   });
   const smsResult = await sendSolapiSms(phoneDigits, smsText);
 
+  const smsPatch: Record<string, unknown> = {
+    last_sms_error: smsResult.ok ? null : smsResult.error,
+  };
+  const { error: smsPatchErr } = await admin
+    .from("partner_drivers")
+    .update(smsPatch)
+    .eq("id", partnerDriverId.trim());
+
+  if (smsPatchErr && /last_sms_error|column/i.test(smsPatchErr.message)) {
+    warnings.push(
+      "last_sms_error 컬럼이 없어 문자 실패 메시지를 저장하지 못했습니다. sql/partner_drivers_temporary_password.sql 을 적용해 주세요.",
+    );
+  } else if (smsPatchErr) {
+    warnings.push(`문자 발송 결과 저장 실패: ${smsPatchErr.message}`);
+  }
+
   const { data: refreshed } = await admin
     .from("partner_drivers")
     .select("*")
@@ -369,7 +390,7 @@ export async function POST(request: Request) {
     sms_error: smsResult.error,
     message: smsResult.ok
       ? "임시 비밀번호를 문자로 발송했습니다."
-      : `계정은 처리되었으나 문자 발송에 실패했습니다. ${smsResult.error ?? ""}`,
+      : "계정은 생성되었지만 문자 발송에 실패했습니다.",
     /** 클라이언트에서 발급 직후 1회만 표시 — DB에는 저장하지 않음 */
     credentials_once: {
       login_id: phoneDigits,
