@@ -36,6 +36,16 @@ export type PartnerDriverDetail = {
   last_sms_error: string;
   /** 기사가 임시 비밀번호에서 실제 비밀번호로 변경한 시각 */
   password_changed_at: string | null;
+  /** 견적 추천 가입 시 추천한 제휴기사 ID */
+  referrer_partner_driver_id: string;
+  /** 추천 유입 경로 */
+  referral_source: string;
+  /** 추천 토큰 */
+  referral_token: string;
+  /** 관리자 목록 로딩 시 같은 목록에서 보강한 추천인 업체명 */
+  referrer_company_name: string;
+  /** 관리자 목록 로딩 시 같은 목록에서 보강한 추천인 연락처 */
+  referrer_phone: string;
 };
 
 function parseBusTypes(raw: unknown): string[] {
@@ -62,7 +72,7 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
   if (data == null) return [];
   if (!Array.isArray(data)) return [];
 
-  return data.map((raw, index) => {
+  const normalized = data.map((raw, index) => {
     const r = raw as Record<string, unknown>;
     const idRaw = r.id;
     const id =
@@ -135,6 +145,28 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       temporary_password_issued_at: temporaryPasswordIssuedAt,
       last_sms_error: safeText(r.last_sms_error, ""),
       password_changed_at: passwordChangedAt,
+      referrer_partner_driver_id: safeText(r.referrer_partner_driver_id, ""),
+      referral_source: safeText(r.referral_source, ""),
+      referral_token: safeText(r.referral_token, ""),
+      referrer_company_name: safeText(r.referrer_company_name, ""),
+      referrer_phone: safeText(r.referrer_phone, ""),
+    };
+  });
+
+  const byId = new Map(normalized.map((row) => [row.id, row]));
+  return normalized.map((row) => {
+    if (
+      row.referrer_partner_driver_id === "" ||
+      (row.referrer_company_name !== "" && row.referrer_phone !== "")
+    ) {
+      return row;
+    }
+    const referrer = byId.get(row.referrer_partner_driver_id);
+    if (!referrer) return row;
+    return {
+      ...row,
+      referrer_company_name: referrer.company_name,
+      referrer_phone: referrer.phone,
     };
   });
 }

@@ -34,11 +34,19 @@ type QuoteForm = {
   message: string;
 };
 
+type ReferralForm = {
+  phone: string;
+};
+
 const emptyQuoteForm: QuoteForm = {
   price: "",
   vehicleType: "",
   availableTime: "",
   message: "",
+};
+
+const emptyReferralForm: ReferralForm = {
+  phone: "",
 };
 
 function formatDate(value: string): string {
@@ -62,6 +70,29 @@ function formatPrice(value: number | null): string {
   return `${value.toLocaleString("ko-KR")}원`;
 }
 
+function formatPhoneNumber(value: string) {
+  const numbers = value.replace(/[^0-9]/g, "").slice(0, 11);
+  if (numbers.length <= 3) return numbers;
+  if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
+  return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
+}
+
+function buildReferralPreview(call: PartnerCall): string {
+  return `[무료관광버스]
+전세버스 견적요청이 전달되었습니다.
+
+출발: ${call.departure}
+도착: ${call.destination}
+일시: ${formatDeparture(call)}
+인원: ${call.passenger_count ?? "미정"}
+
+견적 확인/제출:
+https://www.free-bus.co.kr/shared-quote/{전달 후 생성}
+
+제휴기사 등록:
+https://www.free-bus.co.kr/partner/register?ref={전달 후 생성}`;
+}
+
 export default function PartnerDashboardPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -72,6 +103,11 @@ export default function PartnerDashboardPage() {
   const [quoteForm, setQuoteForm] = useState<QuoteForm>(emptyQuoteForm);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
+  const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
+  const [referralForm, setReferralForm] =
+    useState<ReferralForm>(emptyReferralForm);
+  const [referralBusy, setReferralBusy] = useState(false);
+  const [referralMessage, setReferralMessage] = useState<string | null>(null);
 
   const loadCalls = useCallback(async () => {
     setCallsLoading(true);
@@ -204,6 +240,7 @@ export default function PartnerDashboardPage() {
 
   const openQuoteForm = (call: PartnerCall) => {
     setActiveQuoteCallId(call.id);
+    setActiveReferralCallId(null);
     setQuoteForm(emptyQuoteForm);
     setQuoteMessage(null);
   };
@@ -213,6 +250,20 @@ export default function PartnerDashboardPage() {
     setActiveQuoteCallId(null);
     setQuoteForm(emptyQuoteForm);
     setQuoteMessage(null);
+  };
+
+  const openReferralForm = (call: PartnerCall) => {
+    setActiveReferralCallId(call.id);
+    setActiveQuoteCallId(null);
+    setReferralForm(emptyReferralForm);
+    setReferralMessage(null);
+  };
+
+  const closeReferralForm = () => {
+    if (referralBusy) return;
+    setActiveReferralCallId(null);
+    setReferralForm(emptyReferralForm);
+    setReferralMessage(null);
   };
 
   const submitQuote = async (call: PartnerCall) => {
@@ -264,6 +315,34 @@ export default function PartnerDashboardPage() {
       setQuoteMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setQuoteBusy(false);
+    }
+  };
+
+  const submitReferral = async (call: PartnerCall) => {
+    setReferralBusy(true);
+    setReferralMessage(null);
+    try {
+      const res = await fetch("/api/partner/quote-referrals", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_id: call.id,
+          referred_phone: referralForm.phone,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setReferralMessage(json.error ?? "문자 발송에 실패했습니다.");
+        return;
+      }
+      setReferralMessage("동료기사에게 견적요청 문자를 발송했습니다.");
+      setActiveReferralCallId(null);
+      setReferralForm(emptyReferralForm);
+    } catch (e) {
+      setReferralMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReferralBusy(false);
     }
   };
 
@@ -330,6 +409,15 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
+          {referralMessage ? (
+            <div
+              className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-relaxed text-emerald-900"
+              role="status"
+            >
+              {referralMessage}
+            </div>
+          ) : null}
+
           <div className="mt-6 space-y-4">
             {callsLoading && calls.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
@@ -348,6 +436,7 @@ export default function PartnerDashboardPage() {
               calls.map((call) => {
                 const alreadyQuoted = call.my_quote != null;
                 const formOpen = activeQuoteCallId === call.id;
+                const referralOpen = activeReferralCallId === call.id;
                 return (
                   <article
                     key={call.id}
@@ -365,20 +454,30 @@ export default function PartnerDashboardPage() {
                           {formatDeparture(call)}
                         </p>
                       </div>
-                      {alreadyQuoted ? (
-                        <span className="inline-flex w-fit items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">
-                          이미 견적 제출 · {formatPrice(call.my_quote?.price ?? null)}
-                        </span>
-                      ) : (
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        {alreadyQuoted ? (
+                          <span className="inline-flex w-fit items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">
+                            이미 견적 제출 · {formatPrice(call.my_quote?.price ?? null)}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openQuoteForm(call)}
+                            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+                            style={tapStyle}
+                          >
+                            견적 제출
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => openQuoteForm(call)}
-                          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+                          onClick={() => openReferralForm(call)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100"
                           style={tapStyle}
                         >
-                          견적 제출
+                          동료기사에게 전달
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -506,6 +605,57 @@ export default function PartnerDashboardPage() {
                             type="button"
                             onClick={closeQuoteForm}
                             disabled={quoteBusy}
+                            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            취소
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {referralOpen ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+                        <label className="block">
+                          <span className="text-xs font-bold text-slate-500">
+                            동료기사 휴대폰번호
+                          </span>
+                          <input
+                            type="tel"
+                            inputMode="numeric"
+                            value={referralForm.phone}
+                            onChange={(e) =>
+                              setReferralForm({
+                                phone: formatPhoneNumber(e.target.value),
+                              })
+                            }
+                            placeholder="010-0000-0000"
+                            className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </label>
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                          <p className="text-xs font-black text-slate-500">
+                            전달 메시지 미리보기
+                          </p>
+                          <pre className="mt-2 whitespace-pre-wrap text-xs font-semibold leading-5 text-slate-700">
+                            {buildReferralPreview(call)}
+                          </pre>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void submitReferral(call)}
+                            disabled={
+                              referralBusy ||
+                              !/^010-\d{4}-\d{4}$/.test(referralForm.phone)
+                            }
+                            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {referralBusy ? "발송 중…" : "문자 발송"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={closeReferralForm}
+                            disabled={referralBusy}
                             className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
                           >
                             취소

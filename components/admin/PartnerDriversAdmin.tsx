@@ -123,6 +123,29 @@ function PartnerStatusBadge({ status }: { status: string }) {
   );
 }
 
+function PartnerReferralBadge({ row }: { row: PartnerDriverDetail }) {
+  const referred =
+    row.referral_source.trim() === "quote_referral" ||
+    row.referrer_partner_driver_id.trim() !== "";
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+        referred
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 ring-emerald-100"
+          : "border-slate-200 bg-slate-50 text-slate-600 ring-slate-100"
+      }`}
+    >
+      {referred ? "추천가입" : "일반가입"}
+    </span>
+  );
+}
+
+function referralSourceLabel(source: string): string {
+  const trimmed = source.trim();
+  if (trimmed === "quote_referral") return "견적요청 추천";
+  return trimmed === "" ? "—" : trimmed;
+}
+
 function PartnerResendInviteButton({
   partnerDriverId,
   email,
@@ -978,6 +1001,10 @@ export function PartnerDriversAdmin({ setToast }: Props) {
         row.vehicle_number,
         row.status,
         statusLabelForSearch(row.status),
+        row.referral_source,
+        row.referral_token,
+        row.referrer_company_name,
+        row.referrer_phone,
       ]
         .join(" ")
         .toLowerCase();
@@ -1057,6 +1084,18 @@ export function PartnerDriversAdmin({ setToast }: Props) {
         차량번호: r.vehicle_number,
         최대탑승인원: r.passenger_capacity ?? "",
         상태: statusLabelForExport(r.status),
+        가입구분:
+          r.referral_source === "quote_referral" ||
+          r.referrer_partner_driver_id.trim() !== ""
+            ? "추천가입"
+            : "일반가입",
+        추천인업체명: r.referrer_company_name,
+        추천인연락처: r.referrer_phone,
+        추천토큰: r.referral_token,
+        추천경로:
+          r.referral_source === "quote_referral"
+            ? "견적요청 추천"
+            : r.referral_source,
         관리자메모: r.admin_memo,
         기타메모: r.memo === "—" ? "" : r.memo,
         사업자등록증파일명: r.business_license_name,
@@ -1266,7 +1305,10 @@ export function PartnerDriversAdmin({ setToast }: Props) {
                     <p className="text-xs text-slate-500">
                       {formatCreatedAt(row.created_at)}
                     </p>
-                    <PartnerStatusBadge status={row.status} />
+                    <div className="flex flex-col items-end gap-1">
+                      <PartnerStatusBadge status={row.status} />
+                      <PartnerReferralBadge row={row} />
+                    </div>
                   </div>
                   <p className="mt-2 text-base font-bold text-slate-900">
                     {row.company_name}
@@ -1386,6 +1428,9 @@ export function PartnerDriversAdmin({ setToast }: Props) {
                       상태{sortIndicator("status")}
                     </button>
                   </th>
+                  <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-700">
+                    가입구분
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -1438,6 +1483,9 @@ export function PartnerDriversAdmin({ setToast }: Props) {
                     </td>
                     <td className="whitespace-nowrap px-3 py-3">
                       <PartnerStatusBadge status={row.status} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      <PartnerReferralBadge row={row} />
                     </td>
                   </tr>
                 ))}
@@ -1597,6 +1645,32 @@ function PartnerDriverSlidePanel({
             <DetailField label="현재 상태">
               <PartnerStatusBadge status={row.status} />
             </DetailField>
+            <DetailField label="가입 구분">
+              <PartnerReferralBadge row={row} />
+            </DetailField>
+            {row.referral_token.trim() !== "" ? (
+              <DetailField label="추천 토큰">
+                <span className="break-all font-mono text-xs text-slate-600">
+                  {row.referral_token}
+                </span>
+              </DetailField>
+            ) : null}
+            {row.referral_source.trim() !== "" ||
+            row.referrer_partner_driver_id.trim() !== "" ? (
+              <>
+                <DetailField label="추천 경로">
+                  {referralSourceLabel(row.referral_source)}
+                </DetailField>
+                <DetailField label="추천인 업체명">
+                  {row.referrer_company_name.trim() === ""
+                    ? "—"
+                    : row.referrer_company_name}
+                </DetailField>
+                <DetailField label="추천인 연락처">
+                  {row.referrer_phone.trim() === "" ? "—" : row.referrer_phone}
+                </DetailField>
+              </>
+            ) : null}
             {row.auth_user_id.trim() !== "" ? (
               <DetailField label="연결된 계정 ID">
                 <span className="break-all font-mono text-xs text-slate-600">

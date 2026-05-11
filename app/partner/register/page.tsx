@@ -9,7 +9,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { createSupabaseClient } from "@/lib/supabase";
 
@@ -32,6 +32,7 @@ type PartnerInsertPayload = {
   business_license_url: string | null;
   business_license_name: string | null;
   memo: string | null;
+  referral_token?: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -78,12 +79,19 @@ export default function PartnerRegisterPage() {
   const [passengerCapacity, setPassengerCapacity] = useState("");
   const [memo, setMemo] = useState("");
   const [licenseFile, setLicenseFile] = useState<File | null>(null);
+  const [referralToken, setReferralToken] = useState("");
 
   const [phoneError, setPhoneError] = useState(false);
   const [emailError, setEmailError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
+
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get("ref") ?? "";
+    const id = window.setTimeout(() => setReferralToken(ref.trim()), 0);
+    return () => window.clearTimeout(id);
+  }, []);
 
   const resetForm = () => {
     setCompanyName("");
@@ -197,17 +205,26 @@ export default function PartnerRegisterPage() {
         memo: memo.trim() === "" ? null : memo.trim(),
       };
 
-      const { error: insertError } = await supabase
-        .from("partner_drivers")
-        .insert(payload);
+      if (referralToken !== "") {
+        payload.referral_token = referralToken;
+      }
 
-      if (insertError) {
-        if (/relation|does not exist|42P01/i.test(insertError.message)) {
+      const res = await fetch("/api/partner/register", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json()) as { error?: string };
+
+      if (!res.ok) {
+        const message = json.error ?? "DB 저장 실패";
+        if (/relation|does not exist|42P01/i.test(message)) {
           setSubmitError(
-            `DB 저장 실패: partner_drivers 테이블이 없습니다. sql/partner_drivers.sql 을 실행해 주세요. (${insertError.message})`,
+            `DB 저장 실패: partner_drivers 테이블이 없습니다. sql/partner_drivers.sql 을 실행해 주세요. (${message})`,
           );
         } else {
-          setSubmitError(`DB 저장 실패: ${insertError.message}`);
+          setSubmitError(`DB 저장 실패: ${message}`);
         }
         return;
       }
@@ -244,6 +261,13 @@ export default function PartnerRegisterPage() {
       <section className="relative z-10 -mt-4 px-5 pb-16">
         <div className="mx-auto max-w-lg rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div className="space-y-9">
+            {referralToken !== "" ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
+                동료기사 추천 링크로 접속했습니다. 등록 신청 시 추천인 정보가 자동으로 연결됩니다.
+                <input type="hidden" name="referral_token" value={referralToken} />
+              </div>
+            ) : null}
+
             <div>
               <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
                 기본 정보
