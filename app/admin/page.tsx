@@ -64,6 +64,25 @@ type DriverQuoteDetail = {
   status: string;
 };
 
+type GuestDriverQuoteDetail = {
+  id: string;
+  created_at: string;
+  application_id: string;
+  quote_referral_id: string;
+  referral_token: string;
+  guest_company_name: string;
+  guest_driver_name: string;
+  guest_phone: string;
+  price: number | null;
+  vehicle_type: string;
+  available_time: string;
+  message: string;
+  status: string;
+  match_result: string;
+  result_notified_at: string;
+  result_sms_error: string;
+};
+
 const APPLICATION_STATUSES = [
   { value: "pending", label: "접수완료" },
   { value: "reviewing", label: "검토중" },
@@ -900,8 +919,10 @@ function StatusChangeSection({
 
 function DriverQuotesSection({ applicationId }: { applicationId: string }) {
   const [quotes, setQuotes] = useState<DriverQuoteDetail[]>([]);
+  const [guestQuotes, setGuestQuotes] = useState<GuestDriverQuoteDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [guestBusyId, setGuestBusyId] = useState<string | null>(null);
 
   const loadQuotes = useCallback(async () => {
     if (!isPersistableApplicationId(applicationId)) return;
@@ -915,20 +936,62 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
       const json = (await res.json()) as {
         error?: string;
         quotes?: DriverQuoteDetail[];
+        guest_quotes?: GuestDriverQuoteDetail[];
       };
       if (!res.ok) {
         setError(json.error ?? "견적 목록을 불러오지 못했습니다.");
         setQuotes([]);
+        setGuestQuotes([]);
         return;
       }
       setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
+      setGuestQuotes(Array.isArray(json.guest_quotes) ? json.guest_quotes : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setQuotes([]);
+      setGuestQuotes([]);
     } finally {
       setLoading(false);
     }
   }, [applicationId]);
+
+  const updateGuestResult = async (
+    quote: GuestDriverQuoteDetail,
+    matchResult: string,
+  ) => {
+    setGuestBusyId(quote.id);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/driver-quotes", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guest_quote_id: quote.id,
+          match_result: matchResult,
+        }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        guest_quote?: GuestDriverQuoteDetail;
+      };
+      if (!res.ok) {
+        setError(json.error ?? "비회원 견적 상태 저장에 실패했습니다.");
+        return;
+      }
+      if (json.guest_quote) {
+        setGuestQuotes((prev) =>
+          prev.map((item) =>
+            item.id === quote.id ? { ...item, ...json.guest_quote } : item,
+          ),
+        );
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuestBusyId(null);
+    }
+  };
 
   useEffect(() => {
     void loadQuotes();
@@ -942,7 +1005,7 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
             기사 견적
           </p>
           <p className="mt-1 text-xs font-medium text-indigo-950/70">
-            제출된 모든 기사 견적을 관리자만 확인합니다.
+            제출된 회원/비회원 기사 견적을 관리자만 확인합니다.
           </p>
         </div>
         <button
@@ -969,16 +1032,23 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
           <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
             견적을 불러오는 중…
           </p>
-        ) : quotes.length === 0 ? (
+        ) : quotes.length === 0 && guestQuotes.length === 0 ? (
           <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
             아직 제출된 견적이 없습니다.
           </p>
         ) : (
-          quotes.map((quote) => (
-            <article
-              key={quote.id}
-              className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm"
-            >
+          <>
+            <p className="text-xs font-black text-indigo-950">회원 기사 견적</p>
+            {quotes.length === 0 ? (
+              <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
+                회원 기사 견적이 없습니다.
+              </p>
+            ) : (
+              quotes.map((quote) => (
+                <article
+                  key={quote.id}
+                  className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm"
+                >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-black text-slate-900">
@@ -1026,8 +1096,100 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                   {quote.message.trim() === "" ? "—" : quote.message}
                 </p>
               </div>
-            </article>
-          ))
+                </article>
+              ))
+            )}
+
+            <p className="pt-2 text-xs font-black text-indigo-950">비회원 견적</p>
+            {guestQuotes.length === 0 ? (
+              <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
+                비회원 견적이 없습니다.
+              </p>
+            ) : (
+              guestQuotes.map((quote) => (
+                <article
+                  key={quote.id}
+                  className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-900">
+                        {quote.guest_company_name}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {quote.guest_driver_name} · {quote.guest_phone}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-right text-sm font-black text-amber-900">
+                      {quote.price == null
+                        ? "금액 미입력"
+                        : `${quote.price.toLocaleString("ko-KR")}원`}
+                    </p>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                    <div>
+                      <dt className="font-bold text-slate-400">차량유형</dt>
+                      <dd className="mt-0.5 font-semibold text-slate-800">
+                        {quote.vehicle_type}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">가능시간</dt>
+                      <dd className="mt-0.5 font-semibold text-slate-800">
+                        {quote.available_time}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">제출시간</dt>
+                      <dd className="mt-0.5 font-semibold text-slate-800">
+                        {formatCreatedAt(quote.created_at)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">매칭결과</dt>
+                      <dd className="mt-0.5 font-semibold text-slate-800">
+                        {quote.match_result}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">추천토큰</dt>
+                      <dd className="mt-0.5 break-all font-mono text-[11px] font-semibold text-slate-800">
+                        {quote.referral_token || "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3">
+                    <p className="text-xs font-bold text-slate-400">메모</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm font-semibold text-slate-800">
+                      {quote.message.trim() === "" ? "—" : quote.message}
+                    </p>
+                  </div>
+                  {quote.result_sms_error.trim() !== "" ? (
+                    <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                      결과 문자 오류: {quote.result_sms_error}
+                    </p>
+                  ) : quote.result_notified_at.trim() !== "" ? (
+                    <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                      결과 문자 발송: {formatCreatedAt(quote.result_notified_at)}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {["pending", "selected", "not_selected"].map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        disabled={guestBusyId === quote.id}
+                        onClick={() => void updateGuestResult(quote, status)}
+                        className="min-h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-black text-slate-800 disabled:opacity-50"
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              ))
+            )}
+          </>
         )}
       </div>
     </section>

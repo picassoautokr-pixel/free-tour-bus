@@ -21,6 +21,7 @@ type Body = {
   memo?: unknown;
   referral_token?: unknown;
   referral_phone?: unknown;
+  actual_referrer_phone?: unknown;
 };
 
 function safeText(value: unknown, emptyLabel = ""): string {
@@ -129,10 +130,11 @@ export async function POST(request: Request) {
   const vehicleNumber = safeText(body.vehicle_number).replace(/\s/g, "");
   const passengerCapacity = parsePassengerCapacity(body.passenger_capacity);
   const referralToken = safeText(body.referral_token);
-  const manualReferralPhoneDigits = normalizeKoreanMobileDigits(
-    body.referral_phone,
+  const actualReferrerPhoneDigits = normalizeKoreanMobileDigits(
+    body.actual_referrer_phone ?? body.referral_phone,
   );
-  const hasManualReferralPhone = safeText(body.referral_phone) !== "";
+  const hasActualReferrerPhone =
+    safeText(body.actual_referrer_phone ?? body.referral_phone) !== "";
 
   if (
     companyName === "" ||
@@ -158,7 +160,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (hasManualReferralPhone && manualReferralPhoneDigits == null) {
+  if (hasActualReferrerPhone && actualReferrerPhoneDigits == null) {
     return NextResponse.json(
       { error: "추천인 연락처 형식을 확인해 주세요." },
       { status: 400 },
@@ -180,8 +182,9 @@ export async function POST(request: Request) {
       }
     | null = null;
   let referralPhoneMismatch = false;
-  let manualReferralSmsNeeded = false;
-  let manualReferralSmsResult: { ok: boolean; error?: string } | null = null;
+  let quoteReferralId = "";
+  let actualReferralSmsNeeded = false;
+  let actualReferralSmsResult: { ok: boolean; error?: string } | null = null;
 
   if (referralToken !== "") {
     const { data: referral, error: referralError } = await admin
@@ -210,23 +213,18 @@ export async function POST(request: Request) {
       const referrerPartnerDriverId = safeText(row.referrer_partner_driver_id);
       const referredPhoneDigits = normalizeKoreanMobileDigits(row.referred_phone);
       if (id !== "" && referrerPartnerDriverId !== "") {
+        quoteReferralId = id;
         const phoneMatches =
           referredPhoneDigits != null && referredPhoneDigits === phoneDigits;
         referralPhoneMismatch = !phoneMatches;
-        if (phoneMatches) {
-          matchedReferral = {
-            id,
-            referrer_partner_driver_id: referrerPartnerDriverId,
-          };
-        }
       }
     }
   }
 
-  if (referralToken === "" && manualReferralPhoneDigits != null) {
+  if (actualReferrerPhoneDigits != null) {
     const phoneCandidates = [
-      manualReferralPhoneDigits,
-      formatKoreanMobile(manualReferralPhoneDigits),
+      actualReferrerPhoneDigits,
+      formatKoreanMobile(actualReferrerPhoneDigits),
     ];
     const { data: referrerRows, error: referrerError } = await admin
       .from("partner_drivers")
@@ -258,7 +256,7 @@ export async function POST(request: Request) {
         referrer_partner_driver_id: safeText(referrer.id),
       };
     } else {
-      manualReferralSmsNeeded = true;
+      actualReferralSmsNeeded = true;
     }
   }
 
@@ -280,22 +278,29 @@ export async function POST(request: Request) {
 
   if (referralToken !== "") {
     insertPayload.referral_token = referralToken;
-    if (referralPhoneMismatch) {
+    if (actualReferrerPhoneDigits != null) {
+      insertPayload.referral_source = "quote_referral_actual_referrer";
+    } else if (referralPhoneMismatch) {
       insertPayload.referral_source = "quote_referral_phone_mismatch";
+    } else {
+      insertPayload.referral_source = "quote_referral";
     }
   }
-  if (referralToken === "" && manualReferralPhoneDigits != null) {
-    insertPayload.referral_phone = manualReferralPhoneDigits;
+  if (actualReferrerPhoneDigits != null) {
+    insertPayload.actual_referrer_phone = actualReferrerPhoneDigits;
+    insertPayload.referral_phone = actualReferrerPhoneDigits;
     insertPayload.referral_source = matchedReferral
-      ? "manual_phone_referral"
-      : "manual_phone_referral_unregistered";
+      ? "manual_actual_referrer"
+      : "manual_actual_referrer_unregistered";
+    insertPayload.actual_referral_source = matchedReferral
+      ? "manual_actual_referrer"
+      : "manual_actual_referrer_unregistered";
   }
   if (matchedReferral) {
     insertPayload.referrer_partner_driver_id =
       matchedReferral.referrer_partner_driver_id;
-    if (referralToken !== "") {
-      insertPayload.referral_source = "quote_referral";
-    }
+    insertPayload.actual_referrer_partner_driver_id =
+      matchedReferral.referrer_partner_driver_id;
   }
 
   const { data: inserted, error: insertError } = await admin
@@ -309,14 +314,18 @@ export async function POST(request: Request) {
   }
 
   const partnerDriverId = safeText((inserted as { id?: unknown } | null)?.id);
-  if (matchedReferral && matchedReferral.id !== "" && partnerDriverId !== "") {
+  if (
+    referralToken !== "" &&
+    quoteReferralId !== "" &&
+    partnerDriverId !== ""
+  ) {
     const { error: updateError } = await admin
       .from("quote_referrals")
       .update({
         status: "joined",
         joined_partner_driver_id: partnerDriverId,
       })
-      .eq("id", matchedReferral.id);
+      .eq("id", quoteReferralId);
 
     if (updateError) {
       return NextResponse.json(
@@ -329,21 +338,29 @@ export async function POST(request: Request) {
   }
 
   if (
-    manualReferralSmsNeeded &&
-    manualReferralPhoneDigits != null &&
+    actualReferralSmsNeeded &&
+    actualReferrerPhoneDigits != null &&
     partnerDriverId !== ""
   ) {
     const sms = await sendManualReferralInviteSms({
-      toDigits: manualReferralPhoneDigits,
+      toDigits: actualReferrerPhoneDigits,
       applicantName: managerName,
     });
-    manualReferralSmsResult = sms.ok
+    actualReferralSmsResult = sms.ok
       ? { ok: true }
       : { ok: false, error: sms.error };
 
     const patch: Record<string, unknown> = sms.ok
-      ? { referral_sms_sent_at: new Date().toISOString(), referral_sms_error: null }
-      : { referral_sms_error: sms.error };
+      ? {
+          actual_referral_sms_sent_at: new Date().toISOString(),
+          actual_referral_sms_error: null,
+          referral_sms_sent_at: new Date().toISOString(),
+          referral_sms_error: null,
+        }
+      : {
+          actual_referral_sms_error: sms.error,
+          referral_sms_error: sms.error,
+        };
     const { error: smsPatchError } = await admin
       .from("partner_drivers")
       .update(patch)
@@ -361,10 +378,10 @@ export async function POST(request: Request) {
     partner_driver_id: partnerDriverId,
     referral_matched: matchedReferral != null,
     referral_phone_mismatch: referralPhoneMismatch,
-    manual_referral_sms_sent: manualReferralSmsResult?.ok === true,
+    manual_referral_sms_sent: actualReferralSmsResult?.ok === true,
     manual_referral_sms_error:
-      manualReferralSmsResult?.ok === false
-        ? manualReferralSmsResult.error
+      actualReferralSmsResult?.ok === false
+        ? actualReferralSmsResult.error
         : null,
   });
 }

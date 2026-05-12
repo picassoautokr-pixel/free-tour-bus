@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SolapiMessageService } from "solapi";
 
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -18,6 +19,16 @@ function parseInteger(value: unknown): number | null {
     if (Number.isFinite(n)) return n;
   }
   return null;
+}
+
+function siteBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) return raw.replace(/\/+$/, "");
+  return "https://www.free-bus.co.kr";
+}
+
+function formatWon(value: number | null): string {
+  return value == null ? "확인 중" : `${value.toLocaleString("ko-KR")}원`;
 }
 
 export async function GET(request: Request) {
@@ -124,5 +135,155 @@ export async function GET(request: Request) {
     };
   });
 
-  return NextResponse.json({ ok: true, quotes: normalized });
+  const { data: guestRaw, error: guestError } = await admin
+    .from("guest_driver_quotes")
+    .select(
+      "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error",
+    )
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
+
+  if (guestError) {
+    return NextResponse.json({ error: guestError.message }, { status: 502 });
+  }
+
+  const guest_quotes = (Array.isArray(guestRaw) ? guestRaw : []).map((raw) => {
+    const row = raw as Record<string, unknown>;
+    return {
+      id: safeText(row.id),
+      created_at: safeText(row.created_at),
+      application_id: safeText(row.application_id),
+      quote_referral_id: safeText(row.quote_referral_id),
+      referral_token: safeText(row.referral_token),
+      guest_company_name: safeText(row.guest_company_name, "—"),
+      guest_driver_name: safeText(row.guest_driver_name, "—"),
+      guest_phone: safeText(row.guest_phone, "—"),
+      price: parseInteger(row.price),
+      vehicle_type: safeText(row.vehicle_type, "—"),
+      available_time: safeText(row.available_time, "—"),
+      message: safeText(row.message),
+      status: safeText(row.status, "submitted"),
+      match_result: safeText(row.match_result, "pending"),
+      result_notified_at: safeText(row.result_notified_at),
+      result_sms_error: safeText(row.result_sms_error),
+    };
+  });
+
+  return NextResponse.json({ ok: true, quotes: normalized, guest_quotes });
+}
+
+export async function PATCH(request: Request) {
+  const sessionClient = await createSupabaseRouteHandlerClient();
+  if (!sessionClient) {
+    return NextResponse.json(
+      { error: "서버 설정 오류(Supabase)입니다." },
+      { status: 500 },
+    );
+  }
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser();
+  if (!user?.id) {
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+
+  let body: { guest_quote_id?: unknown; match_result?: unknown };
+  try {
+    body = (await request.json()) as {
+      guest_quote_id?: unknown;
+      match_result?: unknown;
+    };
+  } catch {
+    return NextResponse.json({ error: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const guestQuoteId = safeText(body.guest_quote_id);
+  const matchResult = safeText(body.match_result);
+  if (guestQuoteId === "" || !["pending", "selected", "not_selected"].includes(matchResult)) {
+    return NextResponse.json({ error: "상태 값이 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const admin = createServiceRoleSupabase();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
+      { status: 503 },
+    );
+  }
+
+  const { data: guest, error: guestError } = await admin
+    .from("guest_driver_quotes")
+    .select("id, application_id, guest_phone, price")
+    .eq("id", guestQuoteId)
+    .maybeSingle();
+  if (guestError) {
+    return NextResponse.json({ error: guestError.message }, { status: 502 });
+  }
+  if (!guest) {
+    return NextResponse.json({ error: "비회원 견적을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  let patch: Record<string, unknown> = { match_result: matchResult };
+  if (matchResult === "not_selected") {
+    const applicationId = safeText((guest as { application_id?: unknown }).application_id);
+    const guestPhone = safeText((guest as { guest_phone?: unknown }).guest_phone);
+
+    const [{ data: memberQuotes }, { data: guestQuotes }] = await Promise.all([
+      admin.from("driver_quotes").select("price").eq("application_id", applicationId),
+      admin.from("guest_driver_quotes").select("price").eq("application_id", applicationId),
+    ]);
+    const prices = [
+      ...(Array.isArray(memberQuotes) ? memberQuotes : []),
+      ...(Array.isArray(guestQuotes) ? guestQuotes : []),
+    ]
+      .map((row) => parseInteger((row as { price?: unknown }).price))
+      .filter((v): v is number => v != null && v > 0);
+    const averagePrice =
+      prices.length === 0
+        ? null
+        : Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length);
+
+    const apiKey = process.env.SOLAPI_API_KEY?.trim();
+    const apiSecret = process.env.SOLAPI_API_SECRET?.trim();
+    const from =
+      process.env.SOLAPI_SENDER_NUMBER?.trim() ??
+      process.env.SOLAPI_SENDER?.trim();
+    if (apiKey && apiSecret && from && /^010\d{8}$/.test(guestPhone)) {
+      const text = `[무료관광버스]
+아쉽게도 이번 견적은 선택되지 않았습니다.
+
+이번 콜의 평균 견적가는 ${formatWon(averagePrice)}입니다.
+다음 콜부터 실시간으로 참여하려면 제휴기사로 가입해주세요.
+
+가입하기:
+${siteBaseUrl()}/partner/register?invitePhone=${guestPhone}`;
+      try {
+        const solapi = new SolapiMessageService(apiKey, apiSecret);
+        await solapi.send([{ to: guestPhone, from, text }]);
+        patch = {
+          ...patch,
+          result_notified_at: new Date().toISOString(),
+          result_sms_error: null,
+        };
+      } catch (e) {
+        patch = {
+          ...patch,
+          result_sms_error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    }
+  }
+
+  const { data: updated, error: updateError } = await admin
+    .from("guest_driver_quotes")
+    .update(patch)
+    .eq("id", guestQuoteId)
+    .select(
+      "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error",
+    )
+    .single();
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 502 });
+  }
+  return NextResponse.json({ ok: true, guest_quote: updated });
 }

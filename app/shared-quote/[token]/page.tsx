@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 type PageProps = {
@@ -106,7 +107,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const { data: referral, error } = await admin
     .from("quote_referrals")
     .select(
-      "token, status, expires_at, applications(departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message)",
+      "id, token, status, expires_at, applications(id, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message)",
     )
     .eq("token", cleanToken)
     .maybeSingle();
@@ -118,6 +119,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const row = referral as
     | {
         expires_at?: unknown;
+        id?: unknown;
         applications?: unknown;
       }
     | null
@@ -152,6 +154,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
     bus_grade: safeText(appRow.bus_grade),
     request_message: safeText(appRow.request_message),
   };
+  const applicationId = safeText(appRow.id, "");
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-5 py-10">
@@ -183,17 +186,6 @@ export default async function SharedQuotePage({ params }: PageProps) {
         </div>
 
         <div className="mt-7 grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            className="min-h-13 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
-            style={tapStyle}
-            title="다음 단계에서 제공됩니다."
-          >
-            비회원으로 견적 제출
-            <span className="mt-1 block text-xs font-bold text-slate-400">
-              준비중
-            </span>
-          </button>
           <Link
             href={`/partner/register?ref=${encodeURIComponent(cleanToken)}`}
             className="inline-flex min-h-13 items-center justify-center rounded-2xl bg-blue-600 px-4 py-3 text-center text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
@@ -202,6 +194,15 @@ export default async function SharedQuotePage({ params }: PageProps) {
             제휴기사 등록하고 견적 제출
           </Link>
         </div>
+        {applicationId !== "" ? (
+          <div className="mt-6">
+            <GuestQuoteForm
+              applicationId={applicationId}
+              referralToken={cleanToken}
+              compact
+            />
+          </div>
+        ) : null}
       </section>
     </main>
   );

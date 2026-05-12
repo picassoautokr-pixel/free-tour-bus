@@ -34,6 +34,7 @@ type PartnerInsertPayload = {
   memo: string | null;
   referral_token?: string;
   referral_phone?: string;
+  actual_referrer_phone?: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -228,8 +229,12 @@ export default function PartnerRegisterPage() {
       if (referralToken !== "") {
         payload.referral_token = referralToken;
       }
-      if (referralToken === "" && referralPhoneDigits !== "") {
-        payload.referral_phone = formatPhoneNumber(referralPhoneDigits);
+      if (referralPhoneDigits !== "") {
+        const formattedReferralPhone = formatPhoneNumber(referralPhoneDigits);
+        payload.actual_referrer_phone = formattedReferralPhone;
+        if (referralToken === "") {
+          payload.referral_phone = formattedReferralPhone;
+        }
       }
 
       const res = await fetch("/api/partner/register", {
@@ -286,7 +291,7 @@ export default function PartnerRegisterPage() {
           <div className="space-y-9">
             {referralToken !== "" ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
-                추천 견적요청 링크를 통해 가입 중입니다. 등록 신청 시 추천인 정보가 자동으로 연결됩니다.
+                추천 견적요청 링크를 통해 가입 중입니다.
                 <input type="hidden" name="referral_token" value={referralToken} />
               </div>
             ) : null}
@@ -372,32 +377,36 @@ export default function PartnerRegisterPage() {
                     placeholder="예: 서울 강남구 / 경기 수원시"
                   />
                 </label>
-                {referralToken === "" ? (
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-bold text-slate-500">
-                      추천인 연락처{" "}
-                      <span className="font-semibold text-slate-400">(선택)</span>
-                    </span>
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold outline-none ${
-                        referralPhoneError
-                          ? "border-red-400 focus:border-red-500"
-                          : "border-slate-200 focus:border-blue-500"
-                      }`}
-                      value={referralPhone}
-                      onChange={(e) => {
-                        setReferralPhoneError(false);
-                        setReferralPhone(formatPhoneNumber(e.target.value));
-                      }}
-                      placeholder="추천해주신 기사님 휴대폰번호를 입력해주세요"
-                    />
-                    <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">
-                      추천인이 없다면 비워두셔도 됩니다.
-                    </span>
-                  </label>
-                ) : null}
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold text-slate-500">
+                    추천인 연락처{" "}
+                    <span className="font-semibold text-slate-400">(선택)</span>
+                  </span>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold outline-none ${
+                      referralPhoneError
+                        ? "border-red-400 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-500"
+                    }`}
+                    value={referralPhone}
+                    onChange={(e) => {
+                      setReferralPhoneError(false);
+                      setReferralPhone(formatPhoneNumber(e.target.value));
+                    }}
+                    placeholder={
+                      referralToken !== ""
+                        ? "실제로 소개해주신 기사님 휴대폰번호를 입력해주세요"
+                        : "추천해주신 기사님 휴대폰번호를 입력해주세요"
+                    }
+                  />
+                  <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">
+                    {referralToken !== ""
+                      ? "문자를 전달해주신 실제 추천인 연락처를 입력해주세요. 추천인이 없다면 비워두셔도 됩니다."
+                      : "추천인이 없다면 비워두셔도 됩니다."}
+                  </span>
+                </label>
                 <div>
                   <p className="mb-2 text-xs font-bold text-slate-500">
                     사업자 유형 <span className="text-red-500">*</span>
@@ -601,9 +610,17 @@ export default function PartnerRegisterPage() {
                 type="button"
                 className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-slate-200 bg-white text-base font-bold text-slate-800 shadow-sm transition hover:bg-slate-50"
                 style={tapStyle}
-                onClick={() => router.push("/partner/login")}
+                onClick={() =>
+                  router.push(
+                    referralToken !== ""
+                      ? `/shared-quote/${encodeURIComponent(referralToken)}`
+                      : "/guest/quotes",
+                  )
+                }
               >
-                제휴기사 로그인으로 이동
+                {referralToken !== ""
+                  ? "견적요청서 확인하고 견적 제출하기"
+                  : "전국 견적요청 확인하기"}
               </button>
               <button
                 type="button"
