@@ -58,6 +58,12 @@ type DriverQuoteDetail = {
   manager_name: string;
   phone: string;
   price: number | null;
+  estimated_support_amount?: number | null;
+  support_discount_amount?: number | null;
+  member_price?: number | null;
+  is_member_quote?: boolean;
+  converted_from_guest_quote_id?: string;
+  converted_from_guest_price?: number | null;
   sponsor_support_amount?: number | null;
   sponsor_discounted_price?: number | null;
   sponsor_quote_enabled?: boolean;
@@ -84,6 +90,8 @@ type GuestDriverQuoteDetail = {
   match_result: string;
   result_notified_at: string;
   result_sms_error: string;
+  converted_to_member_quote_id?: string;
+  converted_at?: string;
   member_converted?: boolean;
   linked_partner_company?: string;
   linked_partner_phone?: string;
@@ -1065,10 +1073,10 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                     ? "금액 미입력"
                     : `${quote.price.toLocaleString("ko-KR")}원`}
                   {quote.sponsor_quote_enabled &&
-                  quote.sponsor_discounted_price != null ? (
+                  (quote.member_price ?? quote.sponsor_discounted_price) != null ? (
                     <span className="mt-1 block text-xs font-bold text-blue-700">
                       지원금 적용{" "}
-                      {quote.sponsor_discounted_price.toLocaleString("ko-KR")}원
+                      {(quote.member_price ?? quote.sponsor_discounted_price ?? 0).toLocaleString("ko-KR")}원
                     </span>
                   ) : null}
                 </p>
@@ -1102,7 +1110,35 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                   <dt className="font-bold text-slate-400">예상 지원금</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {quote.sponsor_quote_enabled
-                      ? `${(quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
+                      ? `${(quote.estimated_support_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">고객 반영 지원금</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.sponsor_quote_enabled
+                      ? `${(quote.support_discount_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">지원금 적용 고객가</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {(quote.member_price ?? quote.sponsor_discounted_price) != null
+                      ? `${(quote.member_price ?? quote.sponsor_discounted_price ?? 0).toLocaleString("ko-KR")}원`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">비회원 견적 전환</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.converted_from_guest_quote_id?.trim()
+                      ? `전환됨${
+                          quote.converted_from_guest_price != null
+                            ? ` · 기존 ${quote.converted_from_guest_price.toLocaleString("ko-KR")}원`
+                            : ""
+                        }`
                       : "—"}
                   </dd>
                 </div>
@@ -1195,7 +1231,11 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                   ) : null}
                   {quote.member_converted ? (
                     <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900">
-                      <p className="font-black">회원 전환됨</p>
+                      <p className="font-black">
+                        {quote.converted_to_member_quote_id?.trim()
+                          ? "회원 견적으로 전환됨"
+                          : "회원 전환됨"}
+                      </p>
                       <p className="mt-1">
                         연결 기사:{" "}
                         {quote.linked_partner_company?.trim() ||
@@ -1203,6 +1243,11 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                         /{" "}
                         {quote.linked_partner_phone?.trim() || "—"}
                       </p>
+                      {quote.converted_at?.trim() ? (
+                        <p className="mt-1">
+                          전환시각: {formatCreatedAt(quote.converted_at)}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="mt-3 grid grid-cols-3 gap-2">

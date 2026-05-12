@@ -27,6 +27,7 @@ export function estimateSponsorSupport(params: {
   passengerCount: unknown;
   price: unknown;
 }): {
+  estimated_support_amount: number;
   supportAmount: number;
   discountedPrice: number;
 } {
@@ -37,6 +38,7 @@ export function estimateSponsorSupport(params: {
     MAX_SUPPORT_AMOUNT,
   );
   return {
+    estimated_support_amount: supportAmount,
     supportAmount,
     discountedPrice: Math.max(price - supportAmount, 0),
   };

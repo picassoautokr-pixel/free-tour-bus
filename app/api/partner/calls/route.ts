@@ -174,6 +174,11 @@ export async function GET() {
     source: "member" | "guest";
     id: string;
     price: number | null;
+    estimated_support_amount?: number | null;
+    support_discount_amount?: number | null;
+    member_price?: number | null;
+    is_member_quote?: boolean;
+    converted_from_guest_quote_id?: string;
     sponsor_support_amount?: number | null;
     sponsor_discounted_price?: number | null;
     sponsor_quote_enabled?: boolean;
@@ -191,7 +196,7 @@ export async function GET() {
     const { data: memberQuotes, error: memberQuotesError } = await admin
       .from("driver_quotes")
       .select(
-        "id, application_id, price, vehicle_type, available_time, message, status, created_at, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
       )
       .in("application_id", ids)
       .or(orFilter)
@@ -214,6 +219,11 @@ export async function GET() {
         source: "member",
         id: safeText(row.id, ""),
         price: parseInteger(row.price),
+        estimated_support_amount: parseInteger(row.estimated_support_amount),
+        support_discount_amount: parseInteger(row.support_discount_amount),
+        member_price: parseInteger(row.member_price),
+        is_member_quote: row.is_member_quote === true,
+        converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id, ""),
         sponsor_support_amount: parseInteger(row.sponsor_support_amount),
         sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
@@ -233,7 +243,7 @@ export async function GET() {
       const { data: guestQuotes, error: guestQuotesError } = await admin
         .from("guest_driver_quotes")
         .select(
-          "id, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result, created_at",
+          "id, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result, created_at, converted_to_member_quote_id, converted_at",
         )
         .in("application_id", ids)
         .in("guest_phone", guestPhones)

@@ -73,7 +73,7 @@ export async function GET(request: Request) {
   const { data: quotesRaw, error: quotesError } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -120,7 +120,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const normalized = quotes.map((raw) => {
+  let normalized = quotes.map((raw) => {
     const row = raw as Record<string, unknown>;
     const partnerDriverId = safeText(row.partner_driver_id);
     const partner = partnerById.get(partnerDriverId);
@@ -131,6 +131,11 @@ export async function GET(request: Request) {
       partner_driver_id: partnerDriverId,
       auth_user_id: safeText(row.auth_user_id),
       price: parseInteger(row.price),
+      estimated_support_amount: parseInteger(row.estimated_support_amount),
+      support_discount_amount: parseInteger(row.support_discount_amount),
+      member_price: parseInteger(row.member_price),
+      is_member_quote: row.is_member_quote === true,
+      converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id),
       sponsor_support_amount: parseInteger(row.sponsor_support_amount),
       sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
       sponsor_quote_enabled: row.sponsor_quote_enabled === true,
@@ -145,9 +150,9 @@ export async function GET(request: Request) {
   });
 
   const guestSelectFull =
-    "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error, linked_partner_driver_id, linked_auth_user_id";
+    "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error, linked_partner_driver_id, linked_auth_user_id, converted_to_member_quote_id, converted_at";
   const guestSelectBasic =
-    "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error";
+    "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error, converted_to_member_quote_id, converted_at";
 
   let guestRaw: unknown[] | null = null;
   let guestError: { message: string } | null = null;
@@ -284,11 +289,24 @@ export async function GET(request: Request) {
       match_result: safeText(row.match_result, "pending"),
       result_notified_at: safeText(row.result_notified_at),
       result_sms_error: safeText(row.result_sms_error),
+      converted_to_member_quote_id: safeText(row.converted_to_member_quote_id),
+      converted_at: safeText(row.converted_at),
       member_converted: resolved != null,
       linked_partner_company: resolved?.company_name ?? "",
       linked_partner_phone: resolved?.phone ?? "",
     };
   });
+
+  const guestPriceById = new Map(
+    guest_quotes.map((quote) => [quote.id, quote.price] as const),
+  );
+  normalized = normalized.map((quote) => ({
+    ...quote,
+    converted_from_guest_price:
+      quote.converted_from_guest_quote_id !== ""
+        ? (guestPriceById.get(quote.converted_from_guest_quote_id) ?? null)
+        : null,
+  }));
 
   return NextResponse.json({ ok: true, quotes: normalized, guest_quotes });
 }

@@ -14,6 +14,7 @@ type Body = {
   application_id?: unknown;
   price?: unknown;
   sponsor_discounted_price?: unknown;
+  support_discount_amount?: unknown;
   vehicle_type?: unknown;
   available_time?: unknown;
   message?: unknown;
@@ -139,6 +140,7 @@ export async function POST(request: Request) {
   const applicationId = safeText(body.application_id);
   const price = parsePrice(body.price);
   const requestedDiscountedPrice = parsePrice(body.sponsor_discounted_price);
+  const requestedSupportDiscountAmount = parsePrice(body.support_discount_amount);
   const vehicleType = safeText(body.vehicle_type);
   const availableTime = safeText(body.available_time);
   const message = safeText(body.message);
@@ -203,9 +205,24 @@ export async function POST(request: Request) {
       ?.passenger_count,
     price,
   });
-  if (supportEstimate.discountedPrice > price) {
+  const supportDiscountAmount =
+    requestedSupportDiscountAmount ?? supportEstimate.estimated_support_amount;
+  if (supportDiscountAmount > supportEstimate.estimated_support_amount) {
     return NextResponse.json(
-      { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
+      { error: "고객에게 반영할 지원금은 예상 지원금보다 클 수 없습니다." },
+      { status: 400 },
+    );
+  }
+  if (supportDiscountAmount > price) {
+    return NextResponse.json(
+      { error: "고객에게 반영할 지원금은 일반 견적가보다 클 수 없습니다." },
+      { status: 400 },
+    );
+  }
+  const memberPrice = price - supportDiscountAmount;
+  if (memberPrice < 0) {
+    return NextResponse.json(
+      { error: "지원금 적용 고객가는 0원보다 작을 수 없습니다." },
       { status: 400 },
     );
   }
@@ -255,6 +272,7 @@ export async function POST(request: Request) {
     );
   }
 
+  let convertingGuestQuoteId: string | null = null;
   if (driver.phoneDigits !== "") {
     const guestPhones = [
       driver.phoneDigits,
@@ -263,7 +281,7 @@ export async function POST(request: Request) {
     const { data: existingGuest, error: existingGuestError } = await admin
       .from("guest_driver_quotes")
       .select(
-        "id, created_at, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result",
+        "id, created_at, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result, converted_to_member_quote_id",
       )
       .eq("application_id", applicationId)
       .in("guest_phone", guestPhones)
@@ -279,25 +297,32 @@ export async function POST(request: Request) {
     }
     if (existingGuest) {
       const row = existingGuest as Record<string, unknown>;
-      return NextResponse.json(
-        {
-          error: "already_quoted",
-          quote_type: "guest" as const,
-          quote: {
-            id: safeText(row.id),
-            created_at: safeText(row.created_at),
-            application_id: safeText(row.application_id),
-            guest_phone: safeText(row.guest_phone),
-            price: parsePrice(row.price),
-            vehicle_type: safeText(row.vehicle_type, "—"),
-            available_time: safeText(row.available_time, "—"),
-            message: safeText(row.message),
-            status: safeText(row.status, "submitted"),
-            match_result: safeText(row.match_result, "pending"),
+      const convertedMemberQuoteId = safeText(row.converted_to_member_quote_id);
+      if (convertedMemberQuoteId !== "") {
+        return NextResponse.json(
+          {
+            error: "already_quoted",
+            quote_type: "guest" as const,
+            guest_quote_exists: true,
+            can_submit_member_quote: false,
+            member_quote_exists: true,
+            quote: {
+              id: safeText(row.id),
+              created_at: safeText(row.created_at),
+              application_id: safeText(row.application_id),
+              guest_phone: safeText(row.guest_phone),
+              price: parsePrice(row.price),
+              vehicle_type: safeText(row.vehicle_type, "—"),
+              available_time: safeText(row.available_time, "—"),
+              message: safeText(row.message),
+              status: safeText(row.status, "submitted"),
+              match_result: safeText(row.match_result, "pending"),
+            },
           },
-        },
-        { status: 409 },
-      );
+          { status: 409 },
+        );
+      }
+      convertingGuestQuoteId = safeText(row.id) || null;
     }
   }
 
@@ -310,16 +335,21 @@ export async function POST(request: Request) {
     available_time: availableTime,
     message,
     status: "submitted",
-    sponsor_support_amount: supportEstimate.supportAmount,
-    sponsor_discounted_price: supportEstimate.discountedPrice,
-    sponsor_quote_enabled: supportEstimate.supportAmount > 0,
+    estimated_support_amount: supportEstimate.estimated_support_amount,
+    support_discount_amount: supportDiscountAmount,
+    member_price: memberPrice,
+    is_member_quote: true,
+    converted_from_guest_quote_id: convertingGuestQuoteId,
+    sponsor_support_amount: supportDiscountAmount,
+    sponsor_discounted_price: memberPrice,
+    sponsor_quote_enabled: true,
   };
 
   const insertResult = await admin
     .from("driver_quotes")
     .insert(insertPayload)
     .select(
-      "id, price, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      "id, price, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
     )
     .single();
   let inserted: unknown = insertResult.data;
@@ -327,7 +357,7 @@ export async function POST(request: Request) {
 
   if (
     insertError &&
-    /sponsor_support_amount|sponsor_discounted_price|sponsor_quote_enabled|does not exist|42703/i.test(
+    /estimated_support_amount|support_discount_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_discounted_price|sponsor_quote_enabled|does not exist|42703/i.test(
       insertError.message,
     )
   ) {
@@ -426,6 +456,31 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json({ error: insertError.message }, { status: 502 });
+  }
+
+  const insertedId = safeText((inserted as { id?: unknown } | null)?.id);
+  if (convertingGuestQuoteId != null && insertedId !== "") {
+    const { error: convertError } = await admin
+      .from("guest_driver_quotes")
+      .update({
+        converted_to_member_quote_id: insertedId,
+        converted_at: new Date().toISOString(),
+        match_result: "converted_to_member_quote",
+      })
+      .eq("id", convertingGuestQuoteId);
+    if (
+      convertError &&
+      !/converted_to_member_quote_id|converted_at|does not exist|42703/i.test(
+        convertError.message,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: `회원 견적은 저장되었지만 비회원 견적 전환 상태 갱신에 실패했습니다: ${convertError.message}`,
+        },
+        { status: 502 },
+      );
+    }
   }
 
   return NextResponse.json({ ok: true, quote: inserted });

@@ -21,6 +21,11 @@ type PartnerMyQuote = {
   source: "member" | "guest";
   id: string;
   price: number | null;
+  estimated_support_amount?: number | null;
+  support_discount_amount?: number | null;
+  member_price?: number | null;
+  is_member_quote?: boolean;
+  converted_from_guest_quote_id?: string;
   sponsor_support_amount?: number | null;
   sponsor_discounted_price?: number | null;
   sponsor_quote_enabled?: boolean;
@@ -52,6 +57,7 @@ type PartnerCall = {
 
 type QuoteForm = {
   price: string;
+  supportDiscountAmount: string;
   vehicleType: string;
   availableTime: string;
   message: string;
@@ -69,6 +75,7 @@ type ReferralResult = {
 
 const emptyQuoteForm: QuoteForm = {
   price: "",
+  supportDiscountAmount: "",
   vehicleType: "",
   availableTime: "",
   message: "",
@@ -117,10 +124,19 @@ function parsePriceInput(value: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function discountedPriceFor(call: PartnerCall, priceText: string): number | null {
+function supportDiscountFor(call: PartnerCall, value: string): number {
+  const parsed = parsePriceInput(value);
+  return parsed ?? call.estimated_support_amount;
+}
+
+function discountedPriceFor(
+  call: PartnerCall,
+  priceText: string,
+  supportDiscountText: string,
+): number | null {
   const price = parsePriceInput(priceText);
   if (price == null) return null;
-  return Math.max(price - call.estimated_support_amount, 0);
+  return Math.max(price - supportDiscountFor(call, supportDiscountText), 0);
 }
 
 function parseReferralPhones(value: string): string[] {
@@ -354,10 +370,21 @@ export default function PartnerDashboardPage() {
   };
 
   const openQuoteForm = (call: PartnerCall) => {
-    if (call.my_quote != null) return;
+    if (call.my_quote?.source === "member") return;
     setActiveQuoteCallId(call.id);
     setActiveReferralCallId(null);
-    setQuoteForm(emptyQuoteForm);
+    setQuoteForm({
+      ...emptyQuoteForm,
+      price: call.my_quote?.source === "guest" && call.my_quote.price != null
+        ? String(call.my_quote.price)
+        : "",
+      vehicleType:
+        call.my_quote?.source === "guest" ? call.my_quote.vehicle_type : "",
+      availableTime:
+        call.my_quote?.source === "guest" ? call.my_quote.available_time : "",
+      message: call.my_quote?.source === "guest" ? call.my_quote.message : "",
+      supportDiscountAmount: String(call.estimated_support_amount),
+    });
     setQuoteMessage(null);
   };
 
@@ -395,7 +422,15 @@ export default function PartnerDashboardPage() {
         body: JSON.stringify({
           application_id: call.id,
           price: quoteForm.price,
-          sponsor_discounted_price: discountedPriceFor(call, quoteForm.price),
+          support_discount_amount: supportDiscountFor(
+            call,
+            quoteForm.supportDiscountAmount,
+          ),
+          sponsor_discounted_price: discountedPriceFor(
+            call,
+            quoteForm.price,
+            quoteForm.supportDiscountAmount,
+          ),
           vehicle_type: quoteForm.vehicleType,
           available_time: quoteForm.availableTime,
           message: quoteForm.message,
@@ -626,7 +661,9 @@ export default function PartnerDashboardPage() {
                   </div>
                   <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
                     <dt className="text-[11px] font-bold text-slate-400">
-                      견적금액
+                      {quoteDetailCall.my_quote.source === "guest"
+                        ? "비회원 제출가"
+                        : "일반 견적가"}
                     </dt>
                     <dd className="mt-1 font-black text-blue-900">
                       {formatPrice(quoteDetailCall.my_quote.price)}
@@ -642,19 +679,34 @@ export default function PartnerDashboardPage() {
                         <dd className="mt-1 font-black text-blue-900">
                           약{" "}
                           {formatPrice(
-                            quoteDetailCall.my_quote.sponsor_support_amount ??
+                            quoteDetailCall.my_quote.estimated_support_amount ??
+                              quoteDetailCall.my_quote.sponsor_support_amount ??
                               0,
                           )}
                         </dd>
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          지원금 적용 예상가
+                          고객 반영 지원금
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           {formatPrice(
-                            quoteDetailCall.my_quote
-                              .sponsor_discounted_price ?? null,
+                            quoteDetailCall.my_quote.support_discount_amount ??
+                              quoteDetailCall.my_quote.sponsor_support_amount ??
+                              0,
+                          )}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
+                          지원금 적용 고객가
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          {formatPrice(
+                            quoteDetailCall.my_quote.member_price ??
+                              quoteDetailCall.my_quote
+                                .sponsor_discounted_price ??
+                              null,
                           )}
                         </dd>
                       </div>
@@ -706,6 +758,25 @@ export default function PartnerDashboardPage() {
                       ) : null}
                     </dd>
                   </div>
+                  <div
+                    className={`rounded-xl p-3 ring-1 ${
+                      quoteDetailCall.my_quote.source === "guest"
+                        ? "bg-amber-50 ring-amber-100"
+                        : "bg-blue-50 ring-blue-100"
+                    }`}
+                  >
+                    <p
+                      className={`text-xs font-semibold leading-5 ${
+                        quoteDetailCall.my_quote.source === "guest"
+                          ? "text-amber-900"
+                          : "text-blue-900"
+                      }`}
+                    >
+                      {quoteDetailCall.my_quote.source === "guest"
+                        ? "비회원 견적은 지원금 미적용가입니다. 회원 전환 후 지원금 적용 견적을 다시 제출할 수 있습니다."
+                        : "지원금 적용가는 후원사 심사 결과에 따라 변동 또는 거절될 수 있습니다."}
+                    </p>
+                  </div>
                 </dl>
                 <button
                   type="button"
@@ -736,12 +807,22 @@ export default function PartnerDashboardPage() {
             ) : (
               calls.map((call) => {
                 const alreadyQuoted = call.my_quote != null;
+                const memberQuoted = call.my_quote?.source === "member";
+                const guestOnlyQuoted = call.my_quote?.source === "guest";
                 const formOpen = activeQuoteCallId === call.id;
                 const referralOpen = activeReferralCallId === call.id;
                 const quoteSourceLabel =
                   call.my_quote?.source === "guest"
-                    ? "비회원 시 제출한 견적"
+                    ? "비회원 견적"
                     : "회원 견적";
+                const supportDiscountValue = supportDiscountFor(
+                  call,
+                  quoteForm.supportDiscountAmount,
+                );
+                const quotePriceValue = parsePriceInput(quoteForm.price);
+                const supportDiscountInvalid =
+                  supportDiscountValue > call.estimated_support_amount ||
+                  (quotePriceValue != null && supportDiscountValue > quotePriceValue);
                 return (
                   <article
                     key={call.id}
@@ -760,7 +841,7 @@ export default function PartnerDashboardPage() {
                         </p>
                       </div>
                       <div className="flex flex-col gap-2 sm:items-end">
-                        {alreadyQuoted ? (
+                        {memberQuoted ? (
                           <button
                             type="button"
                             onClick={() => setQuoteDetailCall(call)}
@@ -768,13 +849,43 @@ export default function PartnerDashboardPage() {
                             style={tapStyle}
                           >
                             <span>
-                              이미 견적제출 -{" "}
+                              회원 견적 제출됨 - 일반가{" "}
                               {formatPrice(call.my_quote?.price ?? null)}
                             </span>
                             <span className="text-[11px] font-bold text-emerald-700/90">
-                              {quoteSourceLabel}
+                              지원가{" "}
+                              {formatPrice(
+                                call.my_quote?.member_price ??
+                                  call.my_quote?.sponsor_discounted_price ??
+                                  null,
+                              )}
                             </span>
                           </button>
+                        ) : guestOnlyQuoted ? (
+                          <div className="flex flex-col gap-2 sm:items-end">
+                            <button
+                              type="button"
+                              onClick={() => setQuoteDetailCall(call)}
+                              className="inline-flex min-h-10 max-w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm font-black text-amber-900 shadow-sm transition hover:bg-amber-100"
+                              style={tapStyle}
+                            >
+                              <span>
+                                비회원 견적 제출됨 -{" "}
+                                {formatPrice(call.my_quote?.price ?? null)}
+                              </span>
+                              <span className="text-[11px] font-bold text-amber-700/90">
+                                지원금 미적용 일반 견적
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openQuoteForm(call)}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+                              style={tapStyle}
+                            >
+                              지원금 적용 회원 견적 다시 제출
+                            </button>
+                          </div>
                         ) : (
                           <button
                             type="button"
@@ -847,8 +958,43 @@ export default function PartnerDashboardPage() {
                       </div>
                     </dl>
 
-                    {formOpen && !alreadyQuoted ? (
+                    {formOpen && !memberQuoted ? (
                       <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                        {guestOnlyQuoted ? (
+                          <div className="mb-4 rounded-2xl border border-amber-200 bg-white p-4">
+                            <p className="text-xs font-black text-amber-800">
+                              기존 비회원 견적 참고
+                            </p>
+                            <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                              <div>
+                                <dt className="font-bold text-slate-400">비회원 제출가</dt>
+                                <dd className="font-black text-slate-900">
+                                  {formatPrice(call.my_quote?.price ?? null)}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="font-bold text-slate-400">제출일시</dt>
+                                <dd className="font-semibold text-slate-800">
+                                  {formatSubmittedAt(call.my_quote?.created_at ?? "")}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="font-bold text-slate-400">차량유형</dt>
+                                <dd className="font-semibold text-slate-800">
+                                  {call.my_quote?.vehicle_type ?? "—"}
+                                </dd>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <dt className="font-bold text-slate-400">메모</dt>
+                                <dd className="whitespace-pre-wrap font-semibold text-slate-800">
+                                  {call.my_quote?.message?.trim()
+                                    ? call.my_quote.message
+                                    : "—"}
+                                </dd>
+                              </div>
+                            </dl>
+                          </div>
+                        ) : null}
                         <div className="grid gap-3 sm:grid-cols-2">
                           <label className="block">
                             <span className="text-xs font-bold text-slate-500">
@@ -878,18 +1024,44 @@ export default function PartnerDashboardPage() {
                           </div>
                           <label className="block sm:col-span-2">
                             <span className="text-xs font-bold text-slate-500">
+                              고객에게 반영할 지원금
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={quoteForm.supportDiscountAmount}
+                              onChange={(e) =>
+                                setQuoteForm((prev) => ({
+                                  ...prev,
+                                  supportDiscountAmount: e.target.value.replace(/[^\d]/g, ""),
+                                }))
+                              }
+                              placeholder="예상 지원금 전액이 기본값입니다"
+                              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                            />
+                            <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
+                              0원도 가능하며, 일반 운행가와 예상 지원금을 초과할 수 없습니다.
+                            </span>
+                          </label>
+                          <label className="block sm:col-span-2">
+                            <span className="text-xs font-bold text-slate-500">
                               고객 체감가
                             </span>
                             <input
                               type="text"
                               readOnly
                               value={
-                                discountedPriceFor(call, quoteForm.price) == null
+                                discountedPriceFor(
+                                  call,
+                                  quoteForm.price,
+                                  quoteForm.supportDiscountAmount,
+                                ) == null
                                   ? ""
                                   : String(
                                       discountedPriceFor(
                                         call,
                                         quoteForm.price,
+                                        quoteForm.supportDiscountAmount,
                                       ),
                                     )
                               }
@@ -897,7 +1069,7 @@ export default function PartnerDashboardPage() {
                               className="mt-1 min-h-11 w-full rounded-xl border border-blue-100 bg-blue-50 px-3 text-sm font-black text-blue-900 outline-none"
                             />
                             <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
-                              * 지원금 적용 예상가는 후원업체 심사 결과에 따라 실제 변동될 수 있습니다.
+                              * 지원금 적용가는 후원사 심사 결과에 따라 변동 또는 거절될 수 있습니다.
                             </span>
                           </label>
                           <label className="block">
@@ -959,7 +1131,8 @@ export default function PartnerDashboardPage() {
                               quoteBusy ||
                               quoteForm.price.trim() === "" ||
                               quoteForm.vehicleType.trim() === "" ||
-                              quoteForm.availableTime.trim() === ""
+                              quoteForm.availableTime.trim() === "" ||
+                              supportDiscountInvalid
                             }
                             className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
                           >
