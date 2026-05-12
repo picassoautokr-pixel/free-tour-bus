@@ -42,6 +42,12 @@ export type PartnerDriverDetail = {
   referral_source: string;
   /** 추천 토큰 */
   referral_token: string;
+  /** 직접 입력한 추천인 연락처 */
+  referral_phone: string;
+  /** 미가입 추천인 문자 발송 실패 메시지 */
+  referral_sms_error: string;
+  /** 미가입 추천인 문자 발송 시각 */
+  referral_sms_sent_at: string | null;
   /** 관리자 목록 로딩 시 같은 목록에서 보강한 추천인 업체명 */
   referrer_company_name: string;
   /** 관리자 목록 로딩 시 같은 목록에서 보강한 추천인 연락처 */
@@ -148,6 +154,12 @@ export function normalizePartnerDrivers(data: unknown): PartnerDriverDetail[] {
       referrer_partner_driver_id: safeText(r.referrer_partner_driver_id, ""),
       referral_source: safeText(r.referral_source, ""),
       referral_token: safeText(r.referral_token, ""),
+      referral_phone: safeText(r.referral_phone, ""),
+      referral_sms_error: safeText(r.referral_sms_error, ""),
+      referral_sms_sent_at:
+        "referral_sms_sent_at" in r && r.referral_sms_sent_at != null
+          ? safeText(r.referral_sms_sent_at, "")
+          : null,
       referrer_company_name: safeText(r.referrer_company_name, ""),
       referrer_phone: safeText(r.referrer_phone, ""),
     };

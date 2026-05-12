@@ -453,12 +453,12 @@ export default function Home() {
         <h1 className="rounded-2xl bg-white px-4 py-2.5 text-lg font-black tracking-[-0.04em] text-blue-900 shadow-sm ring-1 ring-white/60">
           무료관광버스
         </h1>
-        <button
-          type="button"
+        <Link
+          href="/login"
           className="rounded-full px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/15 hover:text-white"
         >
           로그인
-        </button>
+        </Link>
       </header>
 
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">

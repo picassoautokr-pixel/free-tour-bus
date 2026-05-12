@@ -33,6 +33,7 @@ type PartnerInsertPayload = {
   business_license_name: string | null;
   memo: string | null;
   referral_token?: string;
+  referral_phone?: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -80,16 +81,25 @@ export default function PartnerRegisterPage() {
   const [memo, setMemo] = useState("");
   const [licenseFile, setLicenseFile] = useState<File | null>(null);
   const [referralToken, setReferralToken] = useState("");
+  const [referralPhone, setReferralPhone] = useState("");
 
   const [phoneError, setPhoneError] = useState(false);
   const [emailError, setEmailError] = useState(false);
+  const [referralPhoneError, setReferralPhoneError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
 
   useEffect(() => {
-    const ref = new URLSearchParams(window.location.search).get("ref") ?? "";
-    const id = window.setTimeout(() => setReferralToken(ref.trim()), 0);
+    const sp = new URLSearchParams(window.location.search);
+    const ref = sp.get("ref") ?? "";
+    const invitePhone = sp.get("invitePhone") ?? "";
+    const id = window.setTimeout(() => {
+      setReferralToken(ref.trim());
+      if (invitePhone.trim() !== "") {
+        setPhone(formatPhoneNumber(invitePhone));
+      }
+    }, 0);
     return () => window.clearTimeout(id);
   }, []);
 
@@ -107,9 +117,11 @@ export default function PartnerRegisterPage() {
     setPassengerCapacity("");
     setMemo("");
     setLicenseFile(null);
+    setReferralPhone("");
     if (fileInputRef.current) fileInputRef.current.value = "";
     setPhoneError(false);
     setEmailError(false);
+    setReferralPhoneError(false);
     setSubmitError(null);
   };
 
@@ -121,8 +133,14 @@ export default function PartnerRegisterPage() {
     const emailTrim = email.trim();
     const emailOk =
       emailTrim === "" || isSimpleEmail(emailTrim);
+    const referralPhoneDigits = referralPhone.replace(/[^0-9]/g, "");
+    const referralPhoneOk =
+      referralPhoneDigits === "" ||
+      (referralPhoneDigits.length === 11 &&
+        referralPhoneDigits.startsWith("010"));
     setPhoneError(!phoneOk);
     setEmailError(emailTrim !== "" && !isSimpleEmail(emailTrim));
+    setReferralPhoneError(!referralPhoneOk);
 
     const busTypes: string[] = [];
     if (busTypeNormal) busTypes.push("일반버스");
@@ -145,11 +163,13 @@ export default function PartnerRegisterPage() {
       return;
     }
 
-    if (!phoneOk || !emailOk) {
+    if (!phoneOk || !emailOk || !referralPhoneOk) {
       setSubmitError(
         !phoneOk
           ? "연락처를 확인해 주세요."
-          : "이메일 형식을 확인해 주세요.",
+          : !emailOk
+            ? "이메일 형식을 확인해 주세요."
+            : "추천인 연락처 형식을 확인해 주세요.",
       );
       return;
     }
@@ -208,6 +228,9 @@ export default function PartnerRegisterPage() {
       if (referralToken !== "") {
         payload.referral_token = referralToken;
       }
+      if (referralToken === "" && referralPhoneDigits !== "") {
+        payload.referral_phone = formatPhoneNumber(referralPhoneDigits);
+      }
 
       const res = await fetch("/api/partner/register", {
         method: "POST",
@@ -263,7 +286,7 @@ export default function PartnerRegisterPage() {
           <div className="space-y-9">
             {referralToken !== "" ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
-                동료기사 추천 링크로 접속했습니다. 등록 신청 시 추천인 정보가 자동으로 연결됩니다.
+                추천 견적요청 링크를 통해 가입 중입니다. 등록 신청 시 추천인 정보가 자동으로 연결됩니다.
                 <input type="hidden" name="referral_token" value={referralToken} />
               </div>
             ) : null}
@@ -349,6 +372,32 @@ export default function PartnerRegisterPage() {
                     placeholder="예: 서울 강남구 / 경기 수원시"
                   />
                 </label>
+                {referralToken === "" ? (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-bold text-slate-500">
+                      추천인 연락처{" "}
+                      <span className="font-semibold text-slate-400">(선택)</span>
+                    </span>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold outline-none ${
+                        referralPhoneError
+                          ? "border-red-400 focus:border-red-500"
+                          : "border-slate-200 focus:border-blue-500"
+                      }`}
+                      value={referralPhone}
+                      onChange={(e) => {
+                        setReferralPhoneError(false);
+                        setReferralPhone(formatPhoneNumber(e.target.value));
+                      }}
+                      placeholder="추천해주신 기사님 휴대폰번호를 입력해주세요"
+                    />
+                    <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">
+                      추천인이 없다면 비워두셔도 됩니다.
+                    </span>
+                  </label>
+                ) : null}
                 <div>
                   <p className="mb-2 text-xs font-bold text-slate-500">
                     사업자 유형 <span className="text-red-500">*</span>
@@ -542,19 +591,19 @@ export default function PartnerRegisterPage() {
               id="partner-success-title"
               className="text-center text-xl font-black tracking-[-0.04em] text-slate-950"
             >
-              제휴기사 등록신청이 접수되었습니다.
+              제휴기사 등록 신청이 완료되었습니다.
             </h2>
             <p className="mt-4 text-center text-[0.9375rem] font-semibold leading-7 text-slate-600">
-              담당자 확인 후 순차적으로 연락드리겠습니다.
+              관리자 승인 후 로그인할 수 있습니다.
             </p>
             <div className="mt-8 flex flex-col gap-3">
               <button
                 type="button"
                 className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-slate-200 bg-white text-base font-bold text-slate-800 shadow-sm transition hover:bg-slate-50"
                 style={tapStyle}
-                onClick={() => setSuccessOpen(false)}
+                onClick={() => router.push("/partner/login")}
               >
-                확인
+                제휴기사 로그인으로 이동
               </button>
               <button
                 type="button"

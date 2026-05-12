@@ -125,21 +125,25 @@ function PartnerStatusBadge({ status }: { status: string }) {
 
 function PartnerReferralBadge({ row }: { row: PartnerDriverDetail }) {
   const mismatch = row.referral_source.trim() === "quote_referral_phone_mismatch";
+  const unregistered =
+    row.referral_source.trim() === "manual_phone_referral_unregistered";
   const referred =
     mismatch ||
+    unregistered ||
     row.referral_source.trim() === "quote_referral" ||
+    row.referral_source.trim() === "manual_phone_referral" ||
     row.referrer_partner_driver_id.trim() !== "";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-        mismatch
+        mismatch || unregistered
           ? "border-amber-200 bg-amber-50 text-amber-800 ring-amber-100"
           : referred
           ? "border-emerald-200 bg-emerald-50 text-emerald-800 ring-emerald-100"
           : "border-slate-200 bg-slate-50 text-slate-600 ring-slate-100"
       }`}
     >
-      {mismatch ? "추천보류" : referred ? "추천가입" : "일반가입"}
+      {mismatch || unregistered ? "추천보류" : referred ? "추천가입" : "일반가입"}
     </span>
   );
 }
@@ -150,6 +154,10 @@ function referralSourceLabel(source: string): string {
   if (trimmed === "quote_referral_phone_mismatch") {
     return "추천 링크 전화번호 불일치";
   }
+  if (trimmed === "manual_phone_referral") return "추천인 연락처 직접 입력";
+  if (trimmed === "manual_phone_referral_unregistered") {
+    return "추천인 연락처 직접 입력(미가입)";
+  }
   return trimmed === "" ? "—" : trimmed;
 }
 
@@ -159,9 +167,13 @@ function referralStatusLabel(row: PartnerDriverDetail): string {
   }
   if (
     row.referral_source.trim() === "quote_referral" ||
+    row.referral_source.trim() === "manual_phone_referral" ||
     row.referrer_partner_driver_id.trim() !== ""
   ) {
     return "추천인 자동등록 완료";
+  }
+  if (row.referral_source.trim() === "manual_phone_referral_unregistered") {
+    return "미가입 추천인";
   }
   return "일반가입";
 }
@@ -172,9 +184,13 @@ function referralPhoneMatchLabel(row: PartnerDriverDetail): string {
   }
   if (
     row.referral_source.trim() === "quote_referral" ||
+    row.referral_source.trim() === "manual_phone_referral" ||
     row.referrer_partner_driver_id.trim() !== ""
   ) {
     return "일치";
+  }
+  if (row.referral_source.trim() === "manual_phone_referral_unregistered") {
+    return "미가입";
   }
   return "—";
 }
@@ -1126,10 +1142,16 @@ export function PartnerDriversAdmin({ setToast }: Props) {
             : "일반가입",
         추천인업체명: r.referrer_company_name,
         추천인연락처: r.referrer_phone,
+        입력추천인연락처: r.referral_phone,
         추천토큰: r.referral_token,
         추천경로: referralSourceLabel(r.referral_source),
         추천상태: referralStatusLabel(r),
         전화번호일치여부: referralPhoneMatchLabel(r),
+        추천인미가입문자발송시각:
+          r.referral_sms_sent_at == null || r.referral_sms_sent_at === ""
+            ? ""
+            : formatCreatedAt(r.referral_sms_sent_at),
+        추천인미가입문자오류: r.referral_sms_error,
         관리자메모: r.admin_memo,
         기타메모: r.memo === "—" ? "" : r.memo,
         사업자등록증파일명: r.business_license_name,
@@ -1698,6 +1720,13 @@ function PartnerDriverSlidePanel({
                 <DetailField label="추천 상태">
                   {referralStatusLabel(row)}
                 </DetailField>
+                <DetailField label="추천인 연락처">
+                  {row.referral_phone.trim() !== ""
+                    ? row.referral_phone
+                    : row.referrer_phone.trim() === ""
+                      ? "—"
+                      : row.referrer_phone}
+                </DetailField>
                 <DetailField label="전화번호 일치 여부">
                   {referralPhoneMatchLabel(row)}
                 </DetailField>
@@ -1708,6 +1737,26 @@ function PartnerDriverSlidePanel({
                       추천 링크의 수신번호와 가입 휴대폰번호가 달라 추천인 자동등록은 보류되었습니다.
                     </span>
                   </DetailField>
+                ) : null}
+                {row.referral_source.trim() ===
+                "manual_phone_referral_unregistered" ? (
+                  <>
+                    <DetailField label="추천인 미가입 문자 발송 여부">
+                      {row.referral_sms_sent_at != null &&
+                      row.referral_sms_sent_at !== ""
+                        ? `발송됨 · ${formatCreatedAt(row.referral_sms_sent_at)}`
+                        : row.referral_sms_error.trim() !== ""
+                          ? "발송 실패"
+                          : "미발송"}
+                    </DetailField>
+                    {row.referral_sms_error.trim() !== "" ? (
+                      <DetailField label="추천인 미가입 문자 실패 사유">
+                        <span className="whitespace-pre-wrap text-red-700">
+                          {row.referral_sms_error}
+                        </span>
+                      </DetailField>
+                    ) : null}
+                  </>
                 ) : null}
                 <DetailField label="추천인 업체명">
                   {row.referrer_company_name.trim() === ""

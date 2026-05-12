@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SolapiMessageService } from "solapi";
 
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -19,6 +20,7 @@ type Body = {
   business_license_name?: unknown;
   memo?: unknown;
   referral_token?: unknown;
+  referral_phone?: unknown;
 };
 
 function safeText(value: unknown, emptyLabel = ""): string {
@@ -55,6 +57,55 @@ function normalizeKoreanMobileDigits(value: unknown): string | null {
   return null;
 }
 
+function formatKoreanMobile(digits: string): string {
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function siteBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) return raw.replace(/\/+$/, "");
+  return "https://www.free-bus.co.kr";
+}
+
+async function sendManualReferralInviteSms(params: {
+  toDigits: string;
+  applicantName: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const apiKey = process.env.SOLAPI_API_KEY?.trim();
+  const apiSecret = process.env.SOLAPI_API_SECRET?.trim();
+  const from =
+    process.env.SOLAPI_SENDER_NUMBER?.trim() ??
+    process.env.SOLAPI_SENDER?.trim();
+
+  if (!apiKey || !apiSecret || !from) {
+    return {
+      ok: false,
+      error:
+        "솔라피 환경변수(SOLAPI_API_KEY, SOLAPI_API_SECRET, SOLAPI_SENDER_NUMBER)가 설정되지 않았습니다.",
+    };
+  }
+
+  const text = `[무료관광버스]
+방금 소개해주신 ${params.applicantName}님이 무료버스 제휴기사로 회원가입을 신청하셨습니다.
+
+앞으로 저희 무료버스와 함께해주시면 더욱 감사드리겠습니다.
+
+제휴기사 등록:
+${siteBaseUrl()}/partner/register?invitePhone=${params.toDigits}`;
+
+  try {
+    const solapi = new SolapiMessageService(apiKey, apiSecret);
+    await solapi.send([{ to: params.toDigits, from, text }]);
+    return { ok: true };
+  } catch (e) {
+    console.error("[partner/register] manual referral sms failed:", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
 export async function POST(request: Request) {
   let body: Body;
   try {
@@ -78,6 +129,10 @@ export async function POST(request: Request) {
   const vehicleNumber = safeText(body.vehicle_number).replace(/\s/g, "");
   const passengerCapacity = parsePassengerCapacity(body.passenger_capacity);
   const referralToken = safeText(body.referral_token);
+  const manualReferralPhoneDigits = normalizeKoreanMobileDigits(
+    body.referral_phone,
+  );
+  const hasManualReferralPhone = safeText(body.referral_phone) !== "";
 
   if (
     companyName === "" ||
@@ -103,6 +158,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (hasManualReferralPhone && manualReferralPhoneDigits == null) {
+    return NextResponse.json(
+      { error: "추천인 연락처 형식을 확인해 주세요." },
+      { status: 400 },
+    );
+  }
 
   const admin = createServiceRoleSupabase();
   if (!admin) {
@@ -119,6 +180,8 @@ export async function POST(request: Request) {
       }
     | null = null;
   let referralPhoneMismatch = false;
+  let manualReferralSmsNeeded = false;
+  let manualReferralSmsResult: { ok: boolean; error?: string } | null = null;
 
   if (referralToken !== "") {
     const { data: referral, error: referralError } = await admin
@@ -160,6 +223,45 @@ export async function POST(request: Request) {
     }
   }
 
+  if (referralToken === "" && manualReferralPhoneDigits != null) {
+    const phoneCandidates = [
+      manualReferralPhoneDigits,
+      formatKoreanMobile(manualReferralPhoneDigits),
+    ];
+    const { data: referrerRows, error: referrerError } = await admin
+      .from("partner_drivers")
+      .select("id, status")
+      .in("phone", phoneCandidates)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (referrerError) {
+      return NextResponse.json({ error: referrerError.message }, { status: 502 });
+    }
+
+    const referrer = (Array.isArray(referrerRows) ? referrerRows : []).find(
+      (raw) => {
+        const row = raw as { id?: unknown; status?: unknown };
+        const status = safeText(row.status).toLowerCase();
+        return (
+          safeText(row.id) !== "" &&
+          (status === "approved" ||
+            status === "pending" ||
+            status === "reviewing")
+        );
+      },
+    ) as { id?: unknown } | undefined;
+
+    if (referrer?.id) {
+      matchedReferral = {
+        id: "",
+        referrer_partner_driver_id: safeText(referrer.id),
+      };
+    } else {
+      manualReferralSmsNeeded = true;
+    }
+  }
+
   const insertPayload: Record<string, unknown> = {
     company_name: companyName,
     manager_name: managerName,
@@ -182,10 +284,18 @@ export async function POST(request: Request) {
       insertPayload.referral_source = "quote_referral_phone_mismatch";
     }
   }
+  if (referralToken === "" && manualReferralPhoneDigits != null) {
+    insertPayload.referral_phone = manualReferralPhoneDigits;
+    insertPayload.referral_source = matchedReferral
+      ? "manual_phone_referral"
+      : "manual_phone_referral_unregistered";
+  }
   if (matchedReferral) {
     insertPayload.referrer_partner_driver_id =
       matchedReferral.referrer_partner_driver_id;
-    insertPayload.referral_source = "quote_referral";
+    if (referralToken !== "") {
+      insertPayload.referral_source = "quote_referral";
+    }
   }
 
   const { data: inserted, error: insertError } = await admin
@@ -199,7 +309,7 @@ export async function POST(request: Request) {
   }
 
   const partnerDriverId = safeText((inserted as { id?: unknown } | null)?.id);
-  if (matchedReferral && partnerDriverId !== "") {
+  if (matchedReferral && matchedReferral.id !== "" && partnerDriverId !== "") {
     const { error: updateError } = await admin
       .from("quote_referrals")
       .update({
@@ -218,10 +328,43 @@ export async function POST(request: Request) {
     }
   }
 
+  if (
+    manualReferralSmsNeeded &&
+    manualReferralPhoneDigits != null &&
+    partnerDriverId !== ""
+  ) {
+    const sms = await sendManualReferralInviteSms({
+      toDigits: manualReferralPhoneDigits,
+      applicantName: managerName,
+    });
+    manualReferralSmsResult = sms.ok
+      ? { ok: true }
+      : { ok: false, error: sms.error };
+
+    const patch: Record<string, unknown> = sms.ok
+      ? { referral_sms_sent_at: new Date().toISOString(), referral_sms_error: null }
+      : { referral_sms_error: sms.error };
+    const { error: smsPatchError } = await admin
+      .from("partner_drivers")
+      .update(patch)
+      .eq("id", partnerDriverId);
+    if (smsPatchError) {
+      console.warn(
+        "[partner/register] referral sms status update failed:",
+        smsPatchError.message,
+      );
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     partner_driver_id: partnerDriverId,
     referral_matched: matchedReferral != null,
     referral_phone_mismatch: referralPhoneMismatch,
+    manual_referral_sms_sent: manualReferralSmsResult?.ok === true,
+    manual_referral_sms_error:
+      manualReferralSmsResult?.ok === false
+        ? manualReferralSmsResult.error
+        : null,
   });
 }
