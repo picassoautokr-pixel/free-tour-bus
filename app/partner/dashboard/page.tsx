@@ -41,7 +41,13 @@ type QuoteForm = {
 };
 
 type ReferralForm = {
+  phones: string;
+};
+
+type ReferralResult = {
   phone: string;
+  status: "sent" | "skipped_duplicate" | "invalid_phone" | "send_failed";
+  error?: string;
 };
 
 const emptyQuoteForm: QuoteForm = {
@@ -52,7 +58,7 @@ const emptyQuoteForm: QuoteForm = {
 };
 
 const emptyReferralForm: ReferralForm = {
-  phone: "",
+  phones: "",
 };
 
 function formatDate(value: string): string {
@@ -76,11 +82,18 @@ function formatPrice(value: number | null): string {
   return `${value.toLocaleString("ko-KR")}원`;
 }
 
-function formatPhoneNumber(value: string) {
-  const numbers = value.replace(/[^0-9]/g, "").slice(0, 11);
-  if (numbers.length <= 3) return numbers;
-  if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
-  return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7)}`;
+function parseReferralPhones(value: string): string[] {
+  return value
+    .split(/[\s,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function referralStatusLabel(status: ReferralResult["status"]): string {
+  if (status === "sent") return "발송 완료";
+  if (status === "skipped_duplicate") return "중복 건너뜀";
+  if (status === "invalid_phone") return "번호 오류";
+  return "발송 실패";
 }
 
 function buildReferralPreview(call: PartnerCall): string {
@@ -92,7 +105,7 @@ function buildReferralPreview(call: PartnerCall): string {
 일시: ${formatDeparture(call)}
 인원: ${call.passenger_count ?? "미정"}
 
-견적 확인/제출:
+견적 확인:
 https://www.free-bus.co.kr/shared-quote/{전달 후 생성}
 
 제휴기사 등록:
@@ -114,6 +127,7 @@ export default function PartnerDashboardPage() {
     useState<ReferralForm>(emptyReferralForm);
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralMessage, setReferralMessage] = useState<string | null>(null);
+  const [referralResults, setReferralResults] = useState<ReferralResult[]>([]);
   const [serviceRegions, setServiceRegions] = useState<ServiceRegion[]>([]);
   const [savedServiceRegions, setSavedServiceRegions] = useState<ServiceRegion[]>([]);
   const [serviceRegionBusy, setServiceRegionBusy] = useState(false);
@@ -314,6 +328,7 @@ export default function PartnerDashboardPage() {
     setActiveQuoteCallId(null);
     setReferralForm(emptyReferralForm);
     setReferralMessage(null);
+    setReferralResults([]);
   };
 
   const closeReferralForm = () => {
@@ -321,6 +336,7 @@ export default function PartnerDashboardPage() {
     setActiveReferralCallId(null);
     setReferralForm(emptyReferralForm);
     setReferralMessage(null);
+    setReferralResults([]);
   };
 
   const submitQuote = async (call: PartnerCall) => {
@@ -378,24 +394,36 @@ export default function PartnerDashboardPage() {
   const submitReferral = async (call: PartnerCall) => {
     setReferralBusy(true);
     setReferralMessage(null);
+    setReferralResults([]);
     try {
+      const phones = parseReferralPhones(referralForm.phones);
       const res = await fetch("/api/partner/quote-referrals", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           application_id: call.id,
-          referred_phone: referralForm.phone,
+          phones,
         }),
       });
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json()) as {
+        error?: string;
+        success_count?: number;
+        fail_count?: number;
+        skipped_count?: number;
+        results?: ReferralResult[];
+      };
       if (!res.ok) {
         setReferralMessage(json.error ?? "문자 발송에 실패했습니다.");
         return;
       }
-      setReferralMessage("동료기사에게 견적요청 문자를 발송했습니다.");
-      setActiveReferralCallId(null);
-      setReferralForm(emptyReferralForm);
+      setReferralResults(Array.isArray(json.results) ? json.results : []);
+      setReferralMessage(
+        `발송 ${json.success_count ?? 0}건 · 실패 ${json.fail_count ?? 0}건 · 중복 ${json.skipped_count ?? 0}건`,
+      );
+      if ((json.success_count ?? 0) > 0) {
+        setReferralForm(emptyReferralForm);
+      }
     } catch (e) {
       setReferralMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -736,18 +764,19 @@ export default function PartnerDashboardPage() {
                           <span className="text-xs font-bold text-slate-500">
                             동료기사 휴대폰번호
                           </span>
-                          <input
-                            type="tel"
-                            inputMode="numeric"
-                            value={referralForm.phone}
+                          <textarea
+                            value={referralForm.phones}
                             onChange={(e) =>
                               setReferralForm({
-                                phone: formatPhoneNumber(e.target.value),
+                                phones: e.target.value,
                               })
                             }
-                            placeholder="010-0000-0000"
-                            className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                            placeholder={"010-1111-2222\n010-3333-4444, 010-5555-6666"}
+                            className="mt-1 min-h-28 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                           />
+                          <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">
+                            줄바꿈, 쉼표, 공백, 세미콜론으로 구분합니다. 한 번에 최대 20명까지 전달할 수 있습니다.
+                          </span>
                         </label>
                         <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                           <p className="text-xs font-black text-slate-500">
@@ -763,7 +792,7 @@ export default function PartnerDashboardPage() {
                             onClick={() => void submitReferral(call)}
                             disabled={
                               referralBusy ||
-                              !/^010-\d{4}-\d{4}$/.test(referralForm.phone)
+                              parseReferralPhones(referralForm.phones).length === 0
                             }
                             className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
                           >
@@ -778,6 +807,34 @@ export default function PartnerDashboardPage() {
                             취소
                           </button>
                         </div>
+                        {referralResults.length > 0 ? (
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                            <p className="text-xs font-black text-slate-500">
+                              발송 결과
+                            </p>
+                            <ul className="mt-2 space-y-1 text-xs font-semibold text-slate-700">
+                              {referralResults.map((result, index) => (
+                                <li
+                                  key={`${result.phone}-${index}`}
+                                  className="flex justify-between gap-3"
+                                >
+                                  <span className="font-mono">{result.phone}</span>
+                                  <span
+                                    className={
+                                      result.status === "sent"
+                                        ? "text-emerald-700"
+                                        : result.status === "skipped_duplicate"
+                                          ? "text-amber-700"
+                                          : "text-red-700"
+                                    }
+                                  >
+                                    {referralStatusLabel(result.status)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>

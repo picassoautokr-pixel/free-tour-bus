@@ -48,6 +48,13 @@ function isSimpleEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+function normalizeKoreanMobileDigits(value: unknown): string | null {
+  const digits = safeText(value).replace(/\D/g, "");
+  if (/^010\d{8}$/.test(digits)) return digits;
+  if (/^8210\d{8}$/.test(digits)) return `0${digits.slice(2)}`;
+  return null;
+}
+
 export async function POST(request: Request) {
   let body: Body;
   try {
@@ -62,6 +69,7 @@ export async function POST(request: Request) {
   const companyName = safeText(body.company_name);
   const managerName = safeText(body.manager_name);
   const phone = safeText(body.phone);
+  const phoneDigits = normalizeKoreanMobileDigits(phone);
   const email = safeText(body.email);
   const region = safeText(body.region);
   const businessType = safeText(body.business_type);
@@ -74,7 +82,7 @@ export async function POST(request: Request) {
   if (
     companyName === "" ||
     managerName === "" ||
-    phone === "" ||
+    phoneDigits == null ||
     region === "" ||
     businessType === "" ||
     busTypes.length === 0 ||
@@ -110,11 +118,12 @@ export async function POST(request: Request) {
         referrer_partner_driver_id: string;
       }
     | null = null;
+  let referralPhoneMismatch = false;
 
   if (referralToken !== "") {
     const { data: referral, error: referralError } = await admin
       .from("quote_referrals")
-      .select("id, referrer_partner_driver_id, expires_at")
+      .select("id, referrer_partner_driver_id, referred_phone, expires_at")
       .eq("token", referralToken)
       .maybeSingle();
 
@@ -126,6 +135,7 @@ export async function POST(request: Request) {
       | {
           id?: unknown;
           referrer_partner_driver_id?: unknown;
+          referred_phone?: unknown;
           expires_at?: unknown;
         }
       | null
@@ -135,11 +145,17 @@ export async function POST(request: Request) {
     if (row && Number.isFinite(expiresTime) && expiresTime >= Date.now()) {
       const id = safeText(row.id);
       const referrerPartnerDriverId = safeText(row.referrer_partner_driver_id);
+      const referredPhoneDigits = normalizeKoreanMobileDigits(row.referred_phone);
       if (id !== "" && referrerPartnerDriverId !== "") {
-        matchedReferral = {
-          id,
-          referrer_partner_driver_id: referrerPartnerDriverId,
-        };
+        const phoneMatches =
+          referredPhoneDigits != null && referredPhoneDigits === phoneDigits;
+        referralPhoneMismatch = !phoneMatches;
+        if (phoneMatches) {
+          matchedReferral = {
+            id,
+            referrer_partner_driver_id: referrerPartnerDriverId,
+          };
+        }
       }
     }
   }
@@ -162,6 +178,9 @@ export async function POST(request: Request) {
 
   if (referralToken !== "") {
     insertPayload.referral_token = referralToken;
+    if (referralPhoneMismatch) {
+      insertPayload.referral_source = "quote_referral_phone_mismatch";
+    }
   }
   if (matchedReferral) {
     insertPayload.referrer_partner_driver_id =
@@ -203,5 +222,6 @@ export async function POST(request: Request) {
     ok: true,
     partner_driver_id: partnerDriverId,
     referral_matched: matchedReferral != null,
+    referral_phone_mismatch: referralPhoneMismatch,
   });
 }

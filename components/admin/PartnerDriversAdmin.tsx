@@ -124,18 +124,22 @@ function PartnerStatusBadge({ status }: { status: string }) {
 }
 
 function PartnerReferralBadge({ row }: { row: PartnerDriverDetail }) {
+  const mismatch = row.referral_source.trim() === "quote_referral_phone_mismatch";
   const referred =
+    mismatch ||
     row.referral_source.trim() === "quote_referral" ||
     row.referrer_partner_driver_id.trim() !== "";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-        referred
+        mismatch
+          ? "border-amber-200 bg-amber-50 text-amber-800 ring-amber-100"
+          : referred
           ? "border-emerald-200 bg-emerald-50 text-emerald-800 ring-emerald-100"
           : "border-slate-200 bg-slate-50 text-slate-600 ring-slate-100"
       }`}
     >
-      {referred ? "추천가입" : "일반가입"}
+      {mismatch ? "추천보류" : referred ? "추천가입" : "일반가입"}
     </span>
   );
 }
@@ -143,7 +147,36 @@ function PartnerReferralBadge({ row }: { row: PartnerDriverDetail }) {
 function referralSourceLabel(source: string): string {
   const trimmed = source.trim();
   if (trimmed === "quote_referral") return "견적요청 추천";
+  if (trimmed === "quote_referral_phone_mismatch") {
+    return "추천 링크 전화번호 불일치";
+  }
   return trimmed === "" ? "—" : trimmed;
+}
+
+function referralStatusLabel(row: PartnerDriverDetail): string {
+  if (row.referral_source.trim() === "quote_referral_phone_mismatch") {
+    return "추천인 자동등록 보류";
+  }
+  if (
+    row.referral_source.trim() === "quote_referral" ||
+    row.referrer_partner_driver_id.trim() !== ""
+  ) {
+    return "추천인 자동등록 완료";
+  }
+  return "일반가입";
+}
+
+function referralPhoneMatchLabel(row: PartnerDriverDetail): string {
+  if (row.referral_source.trim() === "quote_referral_phone_mismatch") {
+    return "불일치";
+  }
+  if (
+    row.referral_source.trim() === "quote_referral" ||
+    row.referrer_partner_driver_id.trim() !== ""
+  ) {
+    return "일치";
+  }
+  return "—";
 }
 
 function PartnerResendInviteButton({
@@ -1085,17 +1118,18 @@ export function PartnerDriversAdmin({ setToast }: Props) {
         최대탑승인원: r.passenger_capacity ?? "",
         상태: statusLabelForExport(r.status),
         가입구분:
-          r.referral_source === "quote_referral" ||
-          r.referrer_partner_driver_id.trim() !== ""
+          r.referral_source === "quote_referral_phone_mismatch"
+            ? "추천보류"
+            : r.referral_source === "quote_referral" ||
+                r.referrer_partner_driver_id.trim() !== ""
             ? "추천가입"
             : "일반가입",
         추천인업체명: r.referrer_company_name,
         추천인연락처: r.referrer_phone,
         추천토큰: r.referral_token,
-        추천경로:
-          r.referral_source === "quote_referral"
-            ? "견적요청 추천"
-            : r.referral_source,
+        추천경로: referralSourceLabel(r.referral_source),
+        추천상태: referralStatusLabel(r),
+        전화번호일치여부: referralPhoneMatchLabel(r),
         관리자메모: r.admin_memo,
         기타메모: r.memo === "—" ? "" : r.memo,
         사업자등록증파일명: r.business_license_name,
@@ -1661,6 +1695,20 @@ function PartnerDriverSlidePanel({
                 <DetailField label="추천 경로">
                   {referralSourceLabel(row.referral_source)}
                 </DetailField>
+                <DetailField label="추천 상태">
+                  {referralStatusLabel(row)}
+                </DetailField>
+                <DetailField label="전화번호 일치 여부">
+                  {referralPhoneMatchLabel(row)}
+                </DetailField>
+                {row.referral_source.trim() ===
+                "quote_referral_phone_mismatch" ? (
+                  <DetailField label="추천 링크 전화번호 불일치">
+                    <span className="whitespace-pre-wrap text-amber-800">
+                      추천 링크의 수신번호와 가입 휴대폰번호가 달라 추천인 자동등록은 보류되었습니다.
+                    </span>
+                  </DetailField>
+                ) : null}
                 <DetailField label="추천인 업체명">
                   {row.referrer_company_name.trim() === ""
                     ? "—"

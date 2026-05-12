@@ -13,7 +13,14 @@ const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 
 type Body = {
   application_id?: unknown;
+  phones?: unknown;
   referred_phone?: unknown;
+};
+
+type ReferralResult = {
+  phone: string;
+  status: "sent" | "skipped_duplicate" | "invalid_phone" | "send_failed";
+  error?: string;
 };
 
 type DriverContext =
@@ -44,6 +51,21 @@ function normalizeKoreanMobileDigits(value: unknown): string | null {
 
 function formatKoreanMobile(digits: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function inputPhones(body: Body): unknown[] {
+  if (Array.isArray(body.phones)) return body.phones;
+  if (body.referred_phone != null) return [body.referred_phone];
+  return [];
+}
+
+function phoneLookupValues(phones: string[]): string[] {
+  const values = new Set<string>();
+  for (const phone of phones) {
+    values.add(phone);
+    values.add(formatKoreanMobile(phone));
+  }
+  return [...values];
 }
 
 function siteBaseUrl(): string {
@@ -137,33 +159,53 @@ export async function POST(request: Request) {
   }
 
   const applicationId = safeText(body.application_id);
-  const phoneDigits = normalizeKoreanMobileDigits(body.referred_phone);
   if (applicationId === "") {
     return NextResponse.json(
       { error: "application_id가 필요합니다." },
       { status: 400 },
     );
   }
-  if (phoneDigits == null) {
+
+  const rawPhones = inputPhones(body);
+  if (rawPhones.length === 0) {
     return NextResponse.json(
-      { error: "유효한 휴대폰 번호(010)가 아닙니다." },
+      { error: "전달할 휴대폰 번호를 입력해 주세요." },
       { status: 400 },
     );
   }
 
-  const apiKey = process.env.SOLAPI_API_KEY?.trim();
-  const apiSecret = process.env.SOLAPI_API_SECRET?.trim();
-  const from =
-    process.env.SOLAPI_SENDER_NUMBER?.trim() ??
-    process.env.SOLAPI_SENDER?.trim();
-  if (!apiKey || !apiSecret || !from) {
+  const results: ReferralResult[] = [];
+  const validPhones: string[] = [];
+  const seenPhones = new Set<string>();
+  for (const rawPhone of rawPhones) {
+    const displayPhone = safeText(rawPhone);
+    const normalized = normalizeKoreanMobileDigits(rawPhone);
+    if (normalized == null) {
+      results.push({
+        phone: displayPhone.replace(/\s+/g, "") || String(rawPhone ?? ""),
+        status: "invalid_phone",
+      });
+      continue;
+    }
+    if (seenPhones.has(normalized)) continue;
+    seenPhones.add(normalized);
+    validPhones.push(normalized);
+  }
+
+  if (validPhones.length > 20) {
     return NextResponse.json(
-      {
-        error:
-          "솔라피 환경변수(SOLAPI_API_KEY, SOLAPI_API_SECRET, SOLAPI_SENDER_NUMBER)가 설정되지 않았습니다.",
-      },
-      { status: 503 },
+      { error: "한 번에 최대 20명까지만 전달할 수 있습니다." },
+      { status: 400 },
     );
+  }
+  if (validPhones.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      success_count: 0,
+      fail_count: results.length,
+      skipped_count: 0,
+      results,
+    });
   }
 
   const admin = createServiceRoleSupabase();
@@ -194,24 +236,100 @@ export async function POST(request: Request) {
     );
   }
 
-  const token = randomUUID();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const referredPhone = formatKoreanMobile(phoneDigits);
+  const duplicatePhones = new Set<string>();
+  if (validPhones.length > 0) {
+    const { data: existingRows, error: existingError } = await admin
+      .from("quote_referrals")
+      .select("referred_phone")
+      .eq("application_id", applicationId)
+      .in("referred_phone", phoneLookupValues(validPhones));
 
-  const { data: inserted, error: insertError } = await admin
-    .from("quote_referrals")
-    .insert({
-      application_id: applicationId,
-      referrer_partner_driver_id: driver.partnerDriverId,
-      referred_phone: referredPhone,
-      token,
-      status: "sent",
-      expires_at: expiresAt,
-    })
-    .select("id, token")
-    .single();
+    if (existingError) {
+      return NextResponse.json({ error: existingError.message }, { status: 502 });
+    }
+
+    for (const existing of Array.isArray(existingRows) ? existingRows : []) {
+      const normalized = normalizeKoreanMobileDigits(
+        (existing as { referred_phone?: unknown }).referred_phone,
+      );
+      if (normalized) duplicatePhones.add(normalized);
+    }
+  }
+
+  for (const phone of validPhones) {
+    if (duplicatePhones.has(phone)) {
+      results.push({ phone, status: "skipped_duplicate" });
+    }
+  }
+
+  const phonesToSend = validPhones.filter((phone) => !duplicatePhones.has(phone));
+  if (phonesToSend.length > 0) {
+    const now = new Date();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const nextDayStart = new Date(dayStart);
+    nextDayStart.setDate(dayStart.getDate() + 1);
+    const expiresStart = new Date(dayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const expiresEnd = new Date(nextDayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const { count, error: countError } = await admin
+      .from("quote_referrals")
+      .select("id", { count: "exact", head: true })
+      .eq("referrer_partner_driver_id", driver.partnerDriverId)
+      .gte("expires_at", expiresStart.toISOString())
+      .lt("expires_at", expiresEnd.toISOString());
+
+    if (countError) {
+      return NextResponse.json({ error: countError.message }, { status: 502 });
+    }
+    if ((count ?? 0) + phonesToSend.length > 100) {
+      return NextResponse.json(
+        { error: "오늘 발송 가능 횟수를 초과했습니다." },
+        { status: 429 },
+      );
+    }
+  }
+
+  const apiKey = process.env.SOLAPI_API_KEY?.trim();
+  const apiSecret = process.env.SOLAPI_API_SECRET?.trim();
+  const from =
+    process.env.SOLAPI_SENDER_NUMBER?.trim() ??
+    process.env.SOLAPI_SENDER?.trim();
+  if (phonesToSend.length > 0 && (!apiKey || !apiSecret || !from)) {
+    return NextResponse.json(
+      {
+        error:
+          "솔라피 환경변수(SOLAPI_API_KEY, SOLAPI_API_SECRET, SOLAPI_SENDER_NUMBER)가 설정되지 않았습니다.",
+      },
+      { status: 503 },
+    );
+  }
+
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const rowsToInsert = phonesToSend.map((phone) => ({
+    application_id: applicationId,
+    referrer_partner_driver_id: driver.partnerDriverId,
+    referred_phone: phone,
+    token: randomUUID(),
+    status: "sent",
+    expires_at: expiresAt,
+  }));
+
+  const { data: insertedRows, error: insertError } =
+    rowsToInsert.length > 0
+      ? await admin
+          .from("quote_referrals")
+          .insert(rowsToInsert)
+          .select("referred_phone, token")
+      : { data: [], error: null };
 
   if (insertError) {
+    if (/duplicate|unique/i.test(insertError.message)) {
+      return NextResponse.json(
+        { error: "일부 번호는 이미 이 콜을 전달받았습니다. 새로고침 후 다시 시도해 주세요." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: insertError.message }, { status: 502 });
   }
 
@@ -220,7 +338,25 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join(" ");
   const passengerCount = parseInteger(app.passenger_count);
-  const text = `[무료관광버스]
+  const insertedByPhone = new Map<string, string>();
+  for (const inserted of Array.isArray(insertedRows) ? insertedRows : []) {
+    const row = inserted as { referred_phone?: unknown; token?: unknown };
+    const phone = normalizeKoreanMobileDigits(row.referred_phone);
+    const token = safeText(row.token);
+    if (phone && token) insertedByPhone.set(phone, token);
+  }
+
+  const solapi =
+    phonesToSend.length > 0 && apiKey && apiSecret
+      ? new SolapiMessageService(apiKey, apiSecret)
+      : null;
+  for (const phone of phonesToSend) {
+    const token = insertedByPhone.get(phone);
+    if (!token) {
+      results.push({ phone, status: "send_failed", error: "추천 토큰 생성 실패" });
+      continue;
+    }
+    const text = `[무료관광버스]
 전세버스 견적요청이 전달되었습니다.
 
 출발: ${safeText(app.departure, "미정")}
@@ -228,24 +364,38 @@ export async function POST(request: Request) {
 일시: ${dateTime || "미정"}
 인원: ${passengerCount == null ? "미정" : passengerCount}
 
-견적 확인/제출:
+견적 확인:
 ${baseUrl}/shared-quote/${token}
 
 제휴기사 등록:
 ${baseUrl}/partner/register?ref=${token}`;
 
-  try {
-    const solapi = new SolapiMessageService(apiKey, apiSecret);
-    await solapi.send([{ to: phoneDigits, from, text }]);
-    return NextResponse.json({ ok: true, referral: inserted });
-  } catch (e) {
-    console.error("[quote-referrals] Solapi send failed:", e);
-    const msg =
-      e instanceof Error
-        ? e.message
-        : typeof e === "object" && e !== null && "toString" in e
-          ? String(e)
-          : "문자 발송에 실패했습니다.";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    try {
+      await solapi?.send([{ to: phone, from: from ?? "", text }]);
+      results.push({ phone, status: "sent" });
+    } catch (e) {
+      console.error("[quote-referrals] Solapi send failed:", e);
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "toString" in e
+            ? String(e)
+            : "문자 발송에 실패했습니다.";
+      results.push({ phone, status: "send_failed", error: msg });
+    }
   }
+
+  const successCount = results.filter((r) => r.status === "sent").length;
+  const skippedCount = results.filter((r) => r.status === "skipped_duplicate").length;
+  const failCount = results.filter(
+    (r) => r.status === "invalid_phone" || r.status === "send_failed",
+  ).length;
+
+  return NextResponse.json({
+    ok: true,
+    success_count: successCount,
+    fail_count: failCount,
+    skipped_count: skippedCount,
+    results,
+  });
 }
