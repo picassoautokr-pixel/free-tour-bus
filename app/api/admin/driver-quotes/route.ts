@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SolapiMessageService } from "solapi";
 
+import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -29,6 +30,11 @@ function siteBaseUrl(): string {
 
 function formatWon(value: number | null): string {
   return value == null ? "확인 중" : `${value.toLocaleString("ko-KR")}원`;
+}
+
+function hyphenKoreanMobile(digits: string): string {
+  if (digits.length !== 11) return digits;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
 export async function GET(request: Request) {
@@ -135,20 +141,129 @@ export async function GET(request: Request) {
     };
   });
 
-  const { data: guestRaw, error: guestError } = await admin
-    .from("guest_driver_quotes")
-    .select(
-      "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error",
-    )
-    .eq("application_id", applicationId)
-    .order("created_at", { ascending: false });
+  const guestSelectFull =
+    "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error, linked_partner_driver_id, linked_auth_user_id";
+  const guestSelectBasic =
+    "id, created_at, application_id, quote_referral_id, referral_token, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status, match_result, result_notified_at, result_sms_error";
+
+  let guestRaw: unknown[] | null = null;
+  let guestError: { message: string } | null = null;
+  let guestHasLinkColumns = true;
+
+  {
+    const res = await admin
+      .from("guest_driver_quotes")
+      .select(guestSelectFull)
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    guestRaw = Array.isArray(res.data) ? res.data : [];
+    guestError = res.error;
+    if (
+      res.error &&
+      /linked_partner_driver_id|linked_auth_user_id|does not exist|42703/i.test(
+        res.error.message,
+      )
+    ) {
+      guestHasLinkColumns = false;
+      const res2 = await admin
+        .from("guest_driver_quotes")
+        .select(guestSelectBasic)
+        .eq("application_id", applicationId)
+        .order("created_at", { ascending: false });
+      guestRaw = Array.isArray(res2.data) ? res2.data : [];
+      guestError = res2.error;
+    }
+  }
 
   if (guestError) {
     return NextResponse.json({ error: guestError.message }, { status: 502 });
   }
 
-  const guest_quotes = (Array.isArray(guestRaw) ? guestRaw : []).map((raw) => {
+  const guestRows = guestRaw ?? [];
+  const linkedIds = guestHasLinkColumns
+    ? Array.from(
+        new Set(
+          guestRows
+            .map((raw) =>
+              safeText(
+                (raw as { linked_partner_driver_id?: unknown })
+                  .linked_partner_driver_id,
+                "",
+              ),
+            )
+            .filter(Boolean),
+        ),
+      )
+    : [];
+
+  const guestLinkPartnerById = new Map<
+    string,
+    { company_name: string; phone: string }
+  >();
+  if (linkedIds.length > 0) {
+    const { data: linkedPartners, error: lpErr } = await admin
+      .from("partner_drivers")
+      .select("id, company_name, phone")
+      .in("id", linkedIds);
+    if (!lpErr) {
+      for (const raw of Array.isArray(linkedPartners) ? linkedPartners : []) {
+        const row = raw as Record<string, unknown>;
+        const id = safeText(row.id);
+        if (id === "") continue;
+        guestLinkPartnerById.set(id, {
+          company_name: safeText(row.company_name, "—"),
+          phone: safeText(row.phone, "—"),
+        });
+      }
+    }
+  }
+
+  const phoneVariants = Array.from(
+    new Set(
+      guestRows.flatMap((raw) => {
+        const d = digitsOnlyKoreanMobile(
+          safeText((raw as { guest_phone?: unknown }).guest_phone, ""),
+        );
+        if (!d) return [];
+        return [d, hyphenKoreanMobile(d)];
+      }),
+    ),
+  );
+
+  const partnerByPhoneDigit = new Map<
+    string,
+    { id: string; company_name: string; phone: string }
+  >();
+  if (phoneVariants.length > 0) {
+    const { data: phonePartners, error: ppErr } = await admin
+      .from("partner_drivers")
+      .select("id, company_name, phone")
+      .in("phone", phoneVariants);
+    if (!ppErr) {
+      for (const raw of Array.isArray(phonePartners) ? phonePartners : []) {
+        const row = raw as Record<string, unknown>;
+        const d = digitsOnlyKoreanMobile(safeText(row.phone, ""));
+        if (!d || partnerByPhoneDigit.has(d)) continue;
+        partnerByPhoneDigit.set(d, {
+          id: safeText(row.id),
+          company_name: safeText(row.company_name, "—"),
+          phone: safeText(row.phone, "—"),
+        });
+      }
+    }
+  }
+
+  const guest_quotes = guestRows.map((raw) => {
     const row = raw as Record<string, unknown>;
+    const guestPhone = safeText(row.guest_phone, "—");
+    const guestDigits = digitsOnlyKoreanMobile(guestPhone);
+    const linkedId = guestHasLinkColumns
+      ? safeText(row.linked_partner_driver_id, "")
+      : "";
+    const fromLink = linkedId !== "" ? guestLinkPartnerById.get(linkedId) : undefined;
+    const fromPhone =
+      guestDigits != null ? partnerByPhoneDigit.get(guestDigits) : undefined;
+    const resolved = fromLink ?? fromPhone;
     return {
       id: safeText(row.id),
       created_at: safeText(row.created_at),
@@ -157,7 +272,7 @@ export async function GET(request: Request) {
       referral_token: safeText(row.referral_token),
       guest_company_name: safeText(row.guest_company_name, "—"),
       guest_driver_name: safeText(row.guest_driver_name, "—"),
-      guest_phone: safeText(row.guest_phone, "—"),
+      guest_phone: guestPhone,
       price: parseInteger(row.price),
       vehicle_type: safeText(row.vehicle_type, "—"),
       available_time: safeText(row.available_time, "—"),
@@ -166,6 +281,9 @@ export async function GET(request: Request) {
       match_result: safeText(row.match_result, "pending"),
       result_notified_at: safeText(row.result_notified_at),
       result_sms_error: safeText(row.result_sms_error),
+      member_converted: resolved != null,
+      linked_partner_company: resolved?.company_name ?? "",
+      linked_partner_phone: resolved?.phone ?? "",
     };
   });
 

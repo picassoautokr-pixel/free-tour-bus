@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
 import { USER_ROLES } from "@/lib/roles";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
@@ -9,12 +10,18 @@ export const runtime = "nodejs";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 
+function hyphenKoreanMobile(digits: string): string {
+  if (digits.length !== 11) return digits;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
 type DriverContext =
   | {
       ok: true;
       userId: string;
       partnerDriverId: string;
       serviceRegions: string[];
+      phoneDigits: string;
     }
   | {
       ok: false;
@@ -88,7 +95,7 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
 
   const { data: driver, error: driverError } = await admin
     .from("partner_drivers")
-    .select("id, status, service_regions")
+    .select("id, status, service_regions, phone")
     .eq("id", partnerDriverId)
     .eq("auth_user_id", user.id)
     .maybeSingle();
@@ -100,10 +107,16 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
     return { ok: false, status: 403, error: "관리자 승인 후 이용 가능합니다." };
   }
 
+  const phoneDigits =
+    digitsOnlyKoreanMobile(
+      safeText((driver as { phone?: unknown } | null)?.phone, ""),
+    ) ?? "";
+
   return {
     ok: true,
     userId: user.id,
     partnerDriverId,
+    phoneDigits,
     serviceRegions: normalizeServiceRegions(
       (driver as { service_regions?: unknown } | null)?.service_regions,
     ),
@@ -156,26 +169,114 @@ export async function GET() {
     .map((r) => safeText((r as { id?: unknown }).id, ""))
     .filter(Boolean);
 
-  const quotedByApplication = new Map<string, { id: string; price: number | null }>();
-  if (ids.length > 0) {
-    const { data: quotes, error: quotesError } = await admin
-      .from("driver_quotes")
-      .select("id, application_id, price")
-      .eq("partner_driver_id", driver.partnerDriverId)
-      .in("application_id", ids);
+  type MyQuotePayload = {
+    source: "member" | "guest";
+    id: string;
+    price: number | null;
+    vehicle_type: string;
+    available_time: string;
+    message: string;
+    status: string;
+    created_at: string;
+    match_result?: string;
+  };
 
-    if (quotesError) {
-      return NextResponse.json({ error: quotesError.message }, { status: 502 });
+  const quotedByApplication = new Map<string, MyQuotePayload>();
+  if (ids.length > 0) {
+    const orFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
+    const { data: memberQuotes, error: memberQuotesError } = await admin
+      .from("driver_quotes")
+      .select(
+        "id, application_id, price, vehicle_type, available_time, message, status, created_at",
+      )
+      .in("application_id", ids)
+      .or(orFilter)
+      .order("created_at", { ascending: false });
+
+    if (memberQuotesError) {
+      return NextResponse.json(
+        { error: memberQuotesError.message },
+        { status: 502 },
+      );
     }
 
-    for (const q of Array.isArray(quotes) ? quotes : []) {
+    const seenMemberApp = new Set<string>();
+    for (const q of Array.isArray(memberQuotes) ? memberQuotes : []) {
       const row = q as Record<string, unknown>;
       const applicationId = safeText(row.application_id, "");
-      if (applicationId === "") continue;
+      if (applicationId === "" || seenMemberApp.has(applicationId)) continue;
+      seenMemberApp.add(applicationId);
       quotedByApplication.set(applicationId, {
+        source: "member",
         id: safeText(row.id, ""),
         price: parseInteger(row.price),
+        vehicle_type: safeText(row.vehicle_type, "—"),
+        available_time: safeText(row.available_time, "—"),
+        message: safeText(row.message),
+        status: safeText(row.status, "submitted"),
+        created_at: safeText(row.created_at, ""),
       });
+    }
+
+    if (driver.phoneDigits !== "") {
+      const guestPhones = [
+        driver.phoneDigits,
+        hyphenKoreanMobile(driver.phoneDigits),
+      ];
+      const { data: guestQuotes, error: guestQuotesError } = await admin
+        .from("guest_driver_quotes")
+        .select(
+          "id, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result, created_at",
+        )
+        .in("application_id", ids)
+        .in("guest_phone", guestPhones)
+        .order("created_at", { ascending: false });
+
+      if (guestQuotesError) {
+        return NextResponse.json(
+          { error: guestQuotesError.message },
+          { status: 502 },
+        );
+      }
+
+      const seenGuestApp = new Set<string>();
+      for (const q of Array.isArray(guestQuotes) ? guestQuotes : []) {
+        const row = q as Record<string, unknown>;
+        const applicationId = safeText(row.application_id, "");
+        if (applicationId === "" || seenGuestApp.has(applicationId)) continue;
+        seenGuestApp.add(applicationId);
+        if (quotedByApplication.has(applicationId)) continue;
+        quotedByApplication.set(applicationId, {
+          source: "guest",
+          id: safeText(row.id, ""),
+          price: parseInteger(row.price),
+          vehicle_type: safeText(row.vehicle_type, "—"),
+          available_time: safeText(row.available_time, "—"),
+          message: safeText(row.message),
+          status: safeText(row.status, "submitted"),
+          created_at: safeText(row.created_at, ""),
+          match_result: safeText(row.match_result, "pending"),
+        });
+      }
+
+      const { error: linkErr } = await admin
+        .from("guest_driver_quotes")
+        .update({
+          linked_partner_driver_id: driver.partnerDriverId,
+          linked_auth_user_id: driver.userId,
+        })
+        .in("application_id", ids)
+        .in("guest_phone", guestPhones)
+        .is("linked_partner_driver_id", null);
+
+      if (
+        linkErr &&
+        !/linked_partner_driver_id|linked_auth_user_id|does not exist|42703/i.test(
+          linkErr.message,
+        )
+      ) {
+        console.warn("[partner/calls] guest quote link update:", linkErr.message);
+      }
     }
   }
 

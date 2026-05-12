@@ -16,6 +16,19 @@ import { createSupabaseClient } from "@/lib/supabase";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
+/** 콜 목록에 포함된 내 견적(회원 제출 또는 동일 번호 비회원 제출) */
+type PartnerMyQuote = {
+  source: "member" | "guest";
+  id: string;
+  price: number | null;
+  vehicle_type: string;
+  available_time: string;
+  message: string;
+  status: string;
+  created_at: string;
+  match_result?: string;
+};
+
 type PartnerCall = {
   id: string;
   created_at: string;
@@ -30,7 +43,7 @@ type PartnerCall = {
   departure_time: string;
   return_date: string;
   passenger_count: number | null;
-  my_quote: { id: string; price: number | null } | null;
+  my_quote: PartnerMyQuote | null;
 };
 
 type QuoteForm = {
@@ -82,6 +95,17 @@ function formatPrice(value: number | null): string {
   return `${value.toLocaleString("ko-KR")}원`;
 }
 
+function formatSubmittedAt(iso: string): string {
+  const t = iso.trim();
+  if (t === "" || t === "—") return "—";
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return t;
+  return d.toLocaleString("ko-KR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 function parseReferralPhones(value: string): string[] {
   return value
     .split(/[\s,;]+/)
@@ -122,6 +146,9 @@ export default function PartnerDashboardPage() {
   const [quoteForm, setQuoteForm] = useState<QuoteForm>(emptyQuoteForm);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
+  const [quoteDetailCall, setQuoteDetailCall] = useState<PartnerCall | null>(
+    null,
+  );
   const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
   const [referralForm, setReferralForm] =
     useState<ReferralForm>(emptyReferralForm);
@@ -310,6 +337,7 @@ export default function PartnerDashboardPage() {
   };
 
   const openQuoteForm = (call: PartnerCall) => {
+    if (call.my_quote != null) return;
     setActiveQuoteCallId(call.id);
     setActiveReferralCallId(null);
     setQuoteForm(emptyQuoteForm);
@@ -357,29 +385,18 @@ export default function PartnerDashboardPage() {
       });
       const json = (await res.json()) as {
         error?: string;
+        quote_type?: "guest" | "member";
         quote?: { id?: string; price?: number | null };
       };
       if (!res.ok) {
+        if (json.error === "already_quoted") {
+          setQuoteMessage("이미 이 견적요청에 견적서를 제출했습니다.");
+          void loadCalls();
+          return;
+        }
         setQuoteMessage(json.error ?? "견적 제출에 실패했습니다.");
         return;
       }
-      const quoteId = String(json.quote?.id ?? "");
-      setCalls((prev) =>
-        prev.map((item) =>
-          item.id === call.id
-            ? {
-                ...item,
-                my_quote: {
-                  id: quoteId,
-                  price:
-                    typeof json.quote?.price === "number"
-                      ? json.quote.price
-                      : null,
-                },
-              }
-            : item,
-        ),
-      );
       setQuoteMessage("견적을 제출했습니다.");
       setActiveQuoteCallId(null);
       setQuoteForm(emptyQuoteForm);
@@ -555,6 +572,107 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
+          {quoteDetailCall?.my_quote ? (
+            <div
+              className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="partner-quote-detail-title"
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                aria-label="닫기"
+                onClick={() => setQuoteDetailCall(null)}
+              />
+              <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
+                <h2
+                  id="partner-quote-detail-title"
+                  className="text-lg font-black tracking-[-0.04em] text-slate-950"
+                >
+                  내 견적 상세
+                </h2>
+                <p className="mt-1 text-xs font-bold text-slate-500">
+                  {quoteDetailCall.departure} → {quoteDetailCall.destination}
+                </p>
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      제출 방식
+                    </dt>
+                    <dd className="mt-1 font-black text-slate-900">
+                      {quoteDetailCall.my_quote.source === "guest"
+                        ? "비회원 시 제출한 견적"
+                        : "회원 견적"}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      견적금액
+                    </dt>
+                    <dd className="mt-1 font-black text-blue-900">
+                      {formatPrice(quoteDetailCall.my_quote.price)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      차량유형
+                    </dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {quoteDetailCall.my_quote.vehicle_type}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      가능 출발시간
+                    </dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {quoteDetailCall.my_quote.available_time}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">메모</dt>
+                    <dd className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">
+                      {quoteDetailCall.my_quote.message.trim() === ""
+                        ? "—"
+                        : quoteDetailCall.my_quote.message}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      제출일시
+                    </dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {formatSubmittedAt(quoteDetailCall.my_quote.created_at)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      견적 상태
+                    </dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {quoteDetailCall.my_quote.status}
+                      {quoteDetailCall.my_quote.source === "guest" &&
+                      quoteDetailCall.my_quote.match_result ? (
+                        <span className="ml-2 text-xs font-bold text-slate-500">
+                          (매칭: {quoteDetailCall.my_quote.match_result})
+                        </span>
+                      ) : null}
+                    </dd>
+                  </div>
+                </dl>
+                <button
+                  type="button"
+                  className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-black text-white shadow-sm"
+                  style={tapStyle}
+                  onClick={() => setQuoteDetailCall(null)}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-6 space-y-4">
             {callsLoading && calls.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
@@ -574,6 +692,10 @@ export default function PartnerDashboardPage() {
                 const alreadyQuoted = call.my_quote != null;
                 const formOpen = activeQuoteCallId === call.id;
                 const referralOpen = activeReferralCallId === call.id;
+                const quoteSourceLabel =
+                  call.my_quote?.source === "guest"
+                    ? "비회원 시 제출한 견적"
+                    : "회원 견적";
                 return (
                   <article
                     key={call.id}
@@ -593,9 +715,20 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="flex flex-col gap-2 sm:items-end">
                         {alreadyQuoted ? (
-                          <span className="inline-flex w-fit items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">
-                            이미 견적 제출 · {formatPrice(call.my_quote?.price ?? null)}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setQuoteDetailCall(call)}
+                            className="inline-flex min-h-10 max-w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-center text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100"
+                            style={tapStyle}
+                          >
+                            <span>
+                              이미 견적제출 -{" "}
+                              {formatPrice(call.my_quote?.price ?? null)}
+                            </span>
+                            <span className="text-[11px] font-bold text-emerald-700/90">
+                              {quoteSourceLabel}
+                            </span>
+                          </button>
                         ) : (
                           <button
                             type="button"

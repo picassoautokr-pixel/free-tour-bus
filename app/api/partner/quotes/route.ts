@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { USER_ROLES } from "@/lib/roles";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -22,6 +23,11 @@ function safeText(value: unknown, emptyLabel = ""): string {
   return s === "" ? emptyLabel : s;
 }
 
+function hyphenKoreanMobile(digits: string): string {
+  if (digits.length !== 11) return digits;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
 function parsePrice(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.trunc(value);
@@ -37,7 +43,7 @@ function parsePrice(value: unknown): number | null {
 }
 
 async function resolveApprovedDriver(): Promise<
-  | { ok: true; userId: string; partnerDriverId: string }
+  | { ok: true; userId: string; partnerDriverId: string; phoneDigits: string }
   | { ok: false; status: number; error: string }
 > {
   const sessionClient = await createSupabaseRouteHandlerClient();
@@ -90,7 +96,7 @@ async function resolveApprovedDriver(): Promise<
 
   const { data: driver, error: driverError } = await admin
     .from("partner_drivers")
-    .select("id, status")
+    .select("id, status, phone")
     .eq("id", partnerDriverId)
     .eq("auth_user_id", user.id)
     .maybeSingle();
@@ -104,7 +110,12 @@ async function resolveApprovedDriver(): Promise<
     return { ok: false, status: 403, error: "관리자 승인 후 이용 가능합니다." };
   }
 
-  return { ok: true, userId: user.id, partnerDriverId };
+  const phoneDigits =
+    digitsOnlyKoreanMobile(
+      safeText((driver as { phone?: unknown } | null)?.phone, ""),
+    ) ?? "";
+
+  return { ok: true, userId: user.id, partnerDriverId, phoneDigits };
 }
 
 export async function POST(request: Request) {
@@ -185,21 +196,89 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: existing, error: existingError } = await admin
+  const memberOrFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
+  const { data: existingMember, error: existingMemberError } = await admin
     .from("driver_quotes")
-    .select("id")
+    .select(
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status",
+    )
     .eq("application_id", applicationId)
-    .eq("partner_driver_id", driver.partnerDriverId)
+    .or(memberOrFilter)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 502 });
-  }
-  if (existing) {
+  if (existingMemberError) {
     return NextResponse.json(
-      { error: "이미 견적을 제출했습니다." },
+      { error: existingMemberError.message },
+      { status: 502 },
+    );
+  }
+  if (existingMember) {
+    const row = existingMember as Record<string, unknown>;
+    return NextResponse.json(
+      {
+        error: "already_quoted",
+        quote_type: "member" as const,
+        quote: {
+          id: safeText(row.id),
+          created_at: safeText(row.created_at),
+          application_id: safeText(row.application_id),
+          price: parsePrice(row.price),
+          vehicle_type: safeText(row.vehicle_type, "—"),
+          available_time: safeText(row.available_time, "—"),
+          message: safeText(row.message),
+          status: safeText(row.status, "submitted"),
+        },
+      },
       { status: 409 },
     );
+  }
+
+  if (driver.phoneDigits !== "") {
+    const guestPhones = [
+      driver.phoneDigits,
+      hyphenKoreanMobile(driver.phoneDigits),
+    ];
+    const { data: existingGuest, error: existingGuestError } = await admin
+      .from("guest_driver_quotes")
+      .select(
+        "id, created_at, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result",
+      )
+      .eq("application_id", applicationId)
+      .in("guest_phone", guestPhones)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingGuestError) {
+      return NextResponse.json(
+        { error: existingGuestError.message },
+        { status: 502 },
+      );
+    }
+    if (existingGuest) {
+      const row = existingGuest as Record<string, unknown>;
+      return NextResponse.json(
+        {
+          error: "already_quoted",
+          quote_type: "guest" as const,
+          quote: {
+            id: safeText(row.id),
+            created_at: safeText(row.created_at),
+            application_id: safeText(row.application_id),
+            guest_phone: safeText(row.guest_phone),
+            price: parsePrice(row.price),
+            vehicle_type: safeText(row.vehicle_type, "—"),
+            available_time: safeText(row.available_time, "—"),
+            message: safeText(row.message),
+            status: safeText(row.status, "submitted"),
+            match_result: safeText(row.match_result, "pending"),
+          },
+        },
+        { status: 409 },
+      );
+    }
   }
 
   const { data: inserted, error: insertError } = await admin
@@ -219,8 +298,76 @@ export async function POST(request: Request) {
 
   if (insertError) {
     if (/duplicate|unique/i.test(insertError.message)) {
+      const { data: mem } = await admin
+        .from("driver_quotes")
+        .select(
+          "id, created_at, application_id, price, vehicle_type, available_time, message, status",
+        )
+        .eq("application_id", applicationId)
+        .or(memberOrFilter)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (mem) {
+        const row = mem as Record<string, unknown>;
+        return NextResponse.json(
+          {
+            error: "already_quoted",
+            quote_type: "member" as const,
+            quote: {
+              id: safeText(row.id),
+              created_at: safeText(row.created_at),
+              application_id: safeText(row.application_id),
+              price: parsePrice(row.price),
+              vehicle_type: safeText(row.vehicle_type, "—"),
+              available_time: safeText(row.available_time, "—"),
+              message: safeText(row.message),
+              status: safeText(row.status, "submitted"),
+            },
+          },
+          { status: 409 },
+        );
+      }
+      if (driver.phoneDigits !== "") {
+        const guestPhones = [
+          driver.phoneDigits,
+          hyphenKoreanMobile(driver.phoneDigits),
+        ];
+        const { data: g } = await admin
+          .from("guest_driver_quotes")
+          .select(
+            "id, created_at, application_id, guest_phone, price, vehicle_type, available_time, message, status, match_result",
+          )
+          .eq("application_id", applicationId)
+          .in("guest_phone", guestPhones)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (g) {
+          const row = g as Record<string, unknown>;
+          return NextResponse.json(
+            {
+              error: "already_quoted",
+              quote_type: "guest" as const,
+              quote: {
+                id: safeText(row.id),
+                created_at: safeText(row.created_at),
+                application_id: safeText(row.application_id),
+                guest_phone: safeText(row.guest_phone),
+                price: parsePrice(row.price),
+                vehicle_type: safeText(row.vehicle_type, "—"),
+                available_time: safeText(row.available_time, "—"),
+                message: safeText(row.message),
+                status: safeText(row.status, "submitted"),
+                match_result: safeText(row.match_result, "pending"),
+              },
+            },
+            { status: 409 },
+          );
+        }
+      }
       return NextResponse.json(
-        { error: "이미 견적을 제출했습니다." },
+        { error: "이미 이 견적요청에 견적서를 제출했습니다." },
         { status: 409 },
       );
     }

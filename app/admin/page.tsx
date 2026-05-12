@@ -81,6 +81,9 @@ type GuestDriverQuoteDetail = {
   match_result: string;
   result_notified_at: string;
   result_sms_error: string;
+  member_converted?: boolean;
+  linked_partner_company?: string;
+  linked_partner_phone?: string;
 };
 
 const APPLICATION_STATUSES = [
@@ -971,21 +974,12 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
           match_result: matchResult,
         }),
       });
-      const json = (await res.json()) as {
-        error?: string;
-        guest_quote?: GuestDriverQuoteDetail;
-      };
+      const json = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(json.error ?? "비회원 견적 상태 저장에 실패했습니다.");
         return;
       }
-      if (json.guest_quote) {
-        setGuestQuotes((prev) =>
-          prev.map((item) =>
-            item.id === quote.id ? { ...item, ...json.guest_quote } : item,
-          ),
-        );
-      }
+      void loadQuotes();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1172,6 +1166,18 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                     <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
                       결과 문자 발송: {formatCreatedAt(quote.result_notified_at)}
                     </p>
+                  ) : null}
+                  {quote.member_converted ? (
+                    <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900">
+                      <p className="font-black">회원 전환됨</p>
+                      <p className="mt-1">
+                        연결 기사:{" "}
+                        {quote.linked_partner_company?.trim() ||
+                          "—"}{" "}
+                        /{" "}
+                        {quote.linked_partner_phone?.trim() || "—"}
+                      </p>
+                    </div>
                   ) : null}
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     {["pending", "selected", "not_selected"].map((status) => (
