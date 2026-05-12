@@ -37,6 +37,17 @@ type PartnerInsertPayload = {
   actual_referrer_phone?: string;
 };
 
+type DuplicateRegistration = {
+  duplicate: true;
+  status: string;
+  title?: string;
+  message?: string;
+  action_label?: string;
+  action_url?: string;
+  secondary_action_label?: string;
+  secondary_action_url?: string;
+};
+
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
 function formatPhoneNumber(value: string) {
@@ -90,6 +101,8 @@ export default function PartnerRegisterPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] =
+    useState<DuplicateRegistration | null>(null);
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -124,6 +137,7 @@ export default function PartnerRegisterPage() {
     setEmailError(false);
     setReferralPhoneError(false);
     setSubmitError(null);
+    setDuplicateInfo(null);
   };
 
   const handleSubmit = async () => {
@@ -243,10 +257,16 @@ export default function PartnerRegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json()) as
+        | { error?: string }
+        | DuplicateRegistration;
 
       if (!res.ok) {
-        const message = json.error ?? "DB 저장 실패";
+        if ("duplicate" in json && json.duplicate) {
+          setDuplicateInfo(json);
+          return;
+        }
+        const message = "error" in json ? (json.error ?? "DB 저장 실패") : "DB 저장 실패";
         if (/relation|does not exist|42P01/i.test(message)) {
           setSubmitError(
             `DB 저장 실패: partner_drivers 테이블이 없습니다. sql/partner_drivers.sql 을 실행해 주세요. (${message})`,
@@ -265,6 +285,11 @@ export default function PartnerRegisterPage() {
       setIsSubmitting(false);
     }
   };
+
+  const licenseNotice =
+    businessType === "법인 회사"
+      ? "법인 버스는 사업자등록증 없이도 신청 가능합니다."
+      : "첨부를 권장합니다. 미첨부 시에도 신청 가능하지만 검토 과정에서 추가 확인이 필요할 수 있습니다.";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
@@ -519,10 +544,15 @@ export default function PartnerRegisterPage() {
               </h2>
               <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
                 PDF, JPG, PNG ·{" "}
-                <span className="font-bold text-amber-700">
-                  첨부를 권장합니다
+                <span
+                  className={`font-bold ${
+                    businessType === "법인 회사"
+                      ? "text-emerald-700"
+                      : "text-amber-700"
+                  }`}
+                >
+                  {licenseNotice}
                 </span>
-                (미첨부 시에도 신청 가능)
               </p>
               <p className="mt-2 text-xs font-semibold text-slate-400">
                 Supabase Storage에 버킷{" "}
@@ -633,6 +663,63 @@ export default function PartnerRegisterPage() {
                 }}
               >
                 메인으로 돌아가기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {duplicateInfo ? (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 px-4 py-8 backdrop-blur-[3px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="partner-duplicate-title"
+        >
+          <div className="w-full max-w-md rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
+            <h2
+              id="partner-duplicate-title"
+              className="text-center text-xl font-black tracking-[-0.04em] text-slate-950"
+            >
+              {duplicateInfo.title ?? "이미 신청된 내역이 있습니다."}
+            </h2>
+            <p className="mt-4 whitespace-pre-wrap text-center text-[0.9375rem] font-semibold leading-7 text-slate-600">
+              {duplicateInfo.message ??
+                "신청 상태를 확인한 뒤 다시 이용해 주세요."}
+            </p>
+            <div className="mt-8 flex flex-col gap-3">
+              {duplicateInfo.secondary_action_url ? (
+                <button
+                  type="button"
+                  className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl border-2 border-slate-200 bg-white text-base font-bold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                  style={tapStyle}
+                  onClick={() =>
+                    router.push(duplicateInfo.secondary_action_url ?? "/")
+                  }
+                >
+                  {duplicateInfo.secondary_action_label ?? "고객센터 문의"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-base font-black text-white shadow-lg transition hover:brightness-105"
+                style={tapStyle}
+                onClick={() => {
+                  if (duplicateInfo.action_url === "resubmit") {
+                    setDuplicateInfo(null);
+                    return;
+                  }
+                  router.push(duplicateInfo.action_url ?? "/partner/login");
+                }}
+              >
+                {duplicateInfo.action_label ?? "확인"}
+              </button>
+              <button
+                type="button"
+                className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-bold text-slate-500"
+                style={tapStyle}
+                onClick={() => setDuplicateInfo(null)}
+              >
+                닫기
               </button>
             </div>
           </div>

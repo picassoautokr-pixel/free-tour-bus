@@ -1615,6 +1615,7 @@ function PartnerDriverSlidePanel({
   const licenseUrl = row.business_license_url.trim();
   const licenseHttp =
     licenseUrl.startsWith("http://") || licenseUrl.startsWith("https://");
+  const isCorporateBus = row.business_type.trim() === "법인 회사";
 
   return (
     <>
@@ -1667,7 +1668,7 @@ function PartnerDriverSlidePanel({
             </DetailField>
             <DetailField label="사업자등록증 파일명">
               {row.business_license_name.trim() === "" ? (
-                "—"
+                <span className="text-slate-400">사업자등록증 미첨부</span>
               ) : (
                 row.business_license_name
               )}
@@ -1686,8 +1687,14 @@ function PartnerDriverSlidePanel({
                   >
                     파일 보기
                   </a>
+                ) : isCorporateBus ? (
+                  <span className="inline-flex rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800 ring-1 ring-emerald-100">
+                    법인 버스 신청 — 사업자등록증 미첨부 허용
+                  </span>
                 ) : (
-                  <span className="text-sm text-slate-400">첨부 없음</span>
+                  <span className="text-sm text-slate-400">
+                    사업자등록증 미첨부
+                  </span>
                 )}
               </dd>
             </div>

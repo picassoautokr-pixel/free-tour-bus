@@ -24,6 +24,14 @@ type Body = {
   actual_referrer_phone?: unknown;
 };
 
+type DuplicatePartnerRow = {
+  id: string;
+  status: string;
+  company_name: string;
+  manager_name: string;
+  created_at: string;
+};
+
 function safeText(value: unknown, emptyLabel = ""): string {
   if (value == null) return emptyLabel;
   const s = String(value).trim();
@@ -60,6 +68,128 @@ function normalizeKoreanMobileDigits(value: unknown): string | null {
 
 function formatKoreanMobile(digits: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function normalizeStatus(value: string): string {
+  const status = value.trim().toLowerCase();
+  if (status === "접수완료") return "pending";
+  if (status === "검토중") return "reviewing";
+  if (status === "승인완료" || status === "approve") return "approved";
+  if (status === "반려" || status === "reject" || status === "denied") {
+    return "rejected";
+  }
+  return status || "pending";
+}
+
+function duplicateResponse(row: DuplicatePartnerRow) {
+  const status = normalizeStatus(row.status);
+  if (status === "reviewing") {
+    return {
+      duplicate: true,
+      status,
+      title: "제휴기사 신청이 검토 중입니다.",
+      message:
+        "관리자가 제출하신 정보를 검토하고 있습니다.\n검토가 완료되면 안내드리겠습니다.",
+      action_label: "홈으로 이동",
+      action_url: "/",
+      company_name: row.company_name,
+      manager_name: row.manager_name,
+      created_at: row.created_at,
+    };
+  }
+  if (status === "approved") {
+    return {
+      duplicate: true,
+      status,
+      title: "이미 승인된 제휴기사 계정입니다.",
+      message:
+        "이미 제휴기사로 승인되어 로그인 후 콜대기 페이지를 이용하실 수 있습니다.",
+      action_label: "제휴기사 로그인",
+      action_url: "/partner/login",
+      company_name: row.company_name,
+      manager_name: row.manager_name,
+      created_at: row.created_at,
+    };
+  }
+  if (status === "rejected") {
+    return {
+      duplicate: true,
+      status,
+      title: "이전 제휴기사 신청이 반려되었습니다.",
+      message:
+        "이전 신청이 반려되었습니다.\n정보를 수정하여 다시 신청하시려면 관리자에게 문의하거나 새 신청을 진행해주세요.",
+      action_label: "다시 신청하기",
+      action_url: "resubmit",
+      secondary_action_label: "고객센터 문의",
+      secondary_action_url: "https://open.kakao.com/o/spkjNeui",
+      company_name: row.company_name,
+      manager_name: row.manager_name,
+      created_at: row.created_at,
+    };
+  }
+  return {
+    duplicate: true,
+    status: status || "pending",
+    title: "이미 제휴기사 신청이 접수되어 있습니다.",
+    message:
+      "현재 신청서가 접수되어 관리자 확인을 기다리고 있습니다.\n승인 후 문자 또는 안내를 받으실 수 있습니다.",
+    action_label: "신청 상태 확인하기",
+    action_url: "/partner/login",
+    company_name: row.company_name,
+    manager_name: row.manager_name,
+    created_at: row.created_at,
+  };
+}
+
+async function findExistingPartnerDriver(
+  admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>,
+  params: { phoneDigits: string; email: string },
+): Promise<{ row: DuplicatePartnerRow | null; error: string | null }> {
+  const phoneCandidates = [params.phoneDigits, formatKoreanMobile(params.phoneDigits)];
+  const { data: phoneRows, error: phoneError } = await admin
+    .from("partner_drivers")
+    .select("id, status, company_name, manager_name, created_at")
+    .in("phone", phoneCandidates)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (phoneError) return { row: null, error: phoneError.message };
+  const phoneRow = Array.isArray(phoneRows) ? phoneRows[0] : null;
+  if (phoneRow) {
+    const row = phoneRow as Record<string, unknown>;
+    return {
+      row: {
+        id: safeText(row.id),
+        status: safeText(row.status, "pending"),
+        company_name: safeText(row.company_name),
+        manager_name: safeText(row.manager_name),
+        created_at: safeText(row.created_at),
+      },
+      error: null,
+    };
+  }
+
+  if (params.email === "") return { row: null, error: null };
+
+  const { data: emailRows, error: emailError } = await admin
+    .from("partner_drivers")
+    .select("id, status, company_name, manager_name, created_at")
+    .eq("email", params.email)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (emailError) return { row: null, error: emailError.message };
+  const emailRow = Array.isArray(emailRows) ? emailRows[0] : null;
+  if (!emailRow) return { row: null, error: null };
+  const row = emailRow as Record<string, unknown>;
+  return {
+    row: {
+      id: safeText(row.id),
+      status: safeText(row.status, "pending"),
+      company_name: safeText(row.company_name),
+      manager_name: safeText(row.manager_name),
+      created_at: safeText(row.created_at),
+    },
+    error: null,
+  };
 }
 
 function siteBaseUrl(): string {
@@ -173,6 +303,21 @@ export async function POST(request: Request) {
       { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
       { status: 503 },
     );
+  }
+
+  const existingLookup = await findExistingPartnerDriver(admin, {
+    phoneDigits,
+    email,
+  });
+  if (existingLookup.error) {
+    return NextResponse.json({ error: existingLookup.error }, { status: 502 });
+  }
+  const existingPartner = existingLookup.row;
+  const isRejectedResubmission =
+    existingPartner != null &&
+    normalizeStatus(existingPartner.status) === "rejected";
+  if (existingPartner && !isRejectedResubmission) {
+    return NextResponse.json(duplicateResponse(existingPartner), { status: 409 });
   }
 
   let matchedReferral:
@@ -303,13 +448,40 @@ export async function POST(request: Request) {
       matchedReferral.referrer_partner_driver_id;
   }
 
-  const { data: inserted, error: insertError } = await admin
-    .from("partner_drivers")
-    .insert(insertPayload)
+  const writeQuery = isRejectedResubmission
+    ? admin
+        .from("partner_drivers")
+        .update({
+          ...insertPayload,
+          status: "pending",
+          admin_memo: null,
+        })
+        .eq("id", existingPartner.id)
+    : admin.from("partner_drivers").insert(insertPayload);
+
+  const { data: inserted, error: insertError } = await writeQuery
     .select("id")
     .single();
 
   if (insertError) {
+    if (/duplicate key|unique constraint|23505/i.test(insertError.message)) {
+      const fallbackLookup = await findExistingPartnerDriver(admin, {
+        phoneDigits,
+        email,
+      });
+      if (fallbackLookup.row) {
+        return NextResponse.json(duplicateResponse(fallbackLookup.row), {
+          status: 409,
+        });
+      }
+      return NextResponse.json(
+        {
+          error:
+            "이미 같은 연락처 또는 이메일로 신청된 내역이 있습니다. 신청 상태 확인 또는 고객센터 문의를 이용해 주세요.",
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: insertError.message }, { status: 502 });
   }
 
