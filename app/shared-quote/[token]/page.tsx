@@ -199,6 +199,8 @@ export default async function SharedQuotePage({ params }: PageProps) {
             <GuestQuoteForm
               applicationId={applicationId}
               referralToken={cleanToken}
+              passengerCount={app.passenger_count}
+              registerHref={`/partner/register?ref=${encodeURIComponent(cleanToken)}`}
               compact
             />
           </div>

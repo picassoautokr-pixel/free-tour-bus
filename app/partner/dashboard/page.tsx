@@ -21,6 +21,9 @@ type PartnerMyQuote = {
   source: "member" | "guest";
   id: string;
   price: number | null;
+  sponsor_support_amount?: number | null;
+  sponsor_discounted_price?: number | null;
+  sponsor_quote_enabled?: boolean;
   vehicle_type: string;
   available_time: string;
   message: string;
@@ -43,6 +46,7 @@ type PartnerCall = {
   departure_time: string;
   return_date: string;
   passenger_count: number | null;
+  estimated_support_amount: number;
   my_quote: PartnerMyQuote | null;
 };
 
@@ -104,6 +108,19 @@ function formatSubmittedAt(iso: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function parsePriceInput(value: string): number | null {
+  const digits = value.replace(/[^\d]/g, "");
+  if (digits === "") return null;
+  const n = Number.parseInt(digits, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function discountedPriceFor(call: PartnerCall, priceText: string): number | null {
+  const price = parsePriceInput(priceText);
+  if (price == null) return null;
+  return Math.max(price - call.estimated_support_amount, 0);
 }
 
 function parseReferralPhones(value: string): string[] {
@@ -378,6 +395,7 @@ export default function PartnerDashboardPage() {
         body: JSON.stringify({
           application_id: call.id,
           price: quoteForm.price,
+          sponsor_discounted_price: discountedPriceFor(call, quoteForm.price),
           vehicle_type: quoteForm.vehicleType,
           available_time: quoteForm.availableTime,
           message: quoteForm.message,
@@ -614,6 +632,34 @@ export default function PartnerDashboardPage() {
                       {formatPrice(quoteDetailCall.my_quote.price)}
                     </dd>
                   </div>
+                  {quoteDetailCall.my_quote.source === "member" &&
+                  quoteDetailCall.my_quote.sponsor_quote_enabled ? (
+                    <>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
+                          예상 지원금
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          약{" "}
+                          {formatPrice(
+                            quoteDetailCall.my_quote.sponsor_support_amount ??
+                              0,
+                          )}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
+                          지원금 적용 예상가
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          {formatPrice(
+                            quoteDetailCall.my_quote
+                              .sponsor_discounted_price ?? null,
+                          )}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
                   <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
                     <dt className="text-[11px] font-bold text-slate-400">
                       차량유형
@@ -791,6 +837,14 @@ export default function PartnerDashboardPage() {
                           {call.departure_region || "—"}
                         </dd>
                       </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
+                          예상 지원금
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          약 {formatPrice(call.estimated_support_amount)}
+                        </dd>
+                      </div>
                     </dl>
 
                     {formOpen && !alreadyQuoted ? (
@@ -798,7 +852,7 @@ export default function PartnerDashboardPage() {
                         <div className="grid gap-3 sm:grid-cols-2">
                           <label className="block">
                             <span className="text-xs font-bold text-slate-500">
-                              견적금액
+                              일반 운행가
                             </span>
                             <input
                               type="text"
@@ -813,6 +867,38 @@ export default function PartnerDashboardPage() {
                               placeholder="예: 450000"
                               className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                             />
+                          </label>
+                          <div className="rounded-xl border border-blue-100 bg-white p-3">
+                            <p className="text-xs font-bold text-blue-500">
+                              예상 지원금
+                            </p>
+                            <p className="mt-1 text-sm font-black text-blue-900">
+                              약 {formatPrice(call.estimated_support_amount)}
+                            </p>
+                          </div>
+                          <label className="block sm:col-span-2">
+                            <span className="text-xs font-bold text-slate-500">
+                              고객 체감가
+                            </span>
+                            <input
+                              type="text"
+                              readOnly
+                              value={
+                                discountedPriceFor(call, quoteForm.price) == null
+                                  ? ""
+                                  : String(
+                                      discountedPriceFor(
+                                        call,
+                                        quoteForm.price,
+                                      ),
+                                    )
+                              }
+                              placeholder="일반 운행가 입력 시 자동 계산"
+                              className="mt-1 min-h-11 w-full rounded-xl border border-blue-100 bg-blue-50 px-3 text-sm font-black text-blue-900 outline-none"
+                            />
+                            <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
+                              * 지원금 적용 예상가는 후원업체 심사 결과에 따라 실제 변동될 수 있습니다.
+                            </span>
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold text-slate-500">

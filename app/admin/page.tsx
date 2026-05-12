@@ -58,6 +58,9 @@ type DriverQuoteDetail = {
   manager_name: string;
   phone: string;
   price: number | null;
+  sponsor_support_amount?: number | null;
+  sponsor_discounted_price?: number | null;
+  sponsor_quote_enabled?: boolean;
   vehicle_type: string;
   available_time: string;
   message: string;
@@ -1047,6 +1050,11 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                 <div>
                   <p className="text-sm font-black text-slate-900">
                     {quote.company_name}
+                    {quote.sponsor_quote_enabled ? (
+                      <span className="ml-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-black text-blue-700 ring-1 ring-blue-100">
+                        ⭐ 지원금 가능 기사
+                      </span>
+                    ) : null}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
                     {quote.manager_name} · {quote.phone}
@@ -1056,6 +1064,13 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                   {quote.price == null
                     ? "금액 미입력"
                     : `${quote.price.toLocaleString("ko-KR")}원`}
+                  {quote.sponsor_quote_enabled &&
+                  quote.sponsor_discounted_price != null ? (
+                    <span className="mt-1 block text-xs font-bold text-blue-700">
+                      지원금 적용{" "}
+                      {quote.sponsor_discounted_price.toLocaleString("ko-KR")}원
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
@@ -1081,6 +1096,14 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                   <dt className="font-bold text-slate-400">상태</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {quote.status}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">예상 지원금</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.sponsor_quote_enabled
+                      ? `${(quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
+                      : "—"}
                   </dd>
                 </div>
               </dl>
@@ -1109,6 +1132,9 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
                     <div>
                       <p className="text-sm font-black text-slate-900">
                         {quote.guest_company_name}
+                        <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600 ring-1 ring-slate-200">
+                          일반 견적
+                        </span>
                       </p>
                       <p className="mt-1 text-xs font-semibold text-slate-500">
                         {quote.guest_driver_name} · {quote.guest_phone}

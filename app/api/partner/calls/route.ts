@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
 import { USER_ROLES } from "@/lib/roles";
+import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -173,6 +174,9 @@ export async function GET() {
     source: "member" | "guest";
     id: string;
     price: number | null;
+    sponsor_support_amount?: number | null;
+    sponsor_discounted_price?: number | null;
+    sponsor_quote_enabled?: boolean;
     vehicle_type: string;
     available_time: string;
     message: string;
@@ -187,7 +191,7 @@ export async function GET() {
     const { data: memberQuotes, error: memberQuotesError } = await admin
       .from("driver_quotes")
       .select(
-        "id, application_id, price, vehicle_type, available_time, message, status, created_at",
+        "id, application_id, price, vehicle_type, available_time, message, status, created_at, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
       )
       .in("application_id", ids)
       .or(orFilter)
@@ -210,6 +214,9 @@ export async function GET() {
         source: "member",
         id: safeText(row.id, ""),
         price: parseInteger(row.price),
+        sponsor_support_amount: parseInteger(row.sponsor_support_amount),
+        sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
+        sponsor_quote_enabled: row.sponsor_quote_enabled === true,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
         message: safeText(row.message),
@@ -284,6 +291,11 @@ export async function GET() {
     const row = raw as Record<string, unknown>;
     const id = safeText(row.id, "");
     const quote = quotedByApplication.get(id) ?? null;
+    const passengerCount = parseInteger(row.passenger_count);
+    const supportEstimate = estimateSponsorSupport({
+      passengerCount,
+      price: 0,
+    });
     return {
       id,
       created_at: safeText(row.created_at, ""),
@@ -297,7 +309,8 @@ export async function GET() {
       departure_date: safeText(row.departure_date, ""),
       departure_time: safeText(row.departure_time),
       return_date: safeText(row.return_date, ""),
-      passenger_count: parseInteger(row.passenger_count),
+      passenger_count: passengerCount,
+      estimated_support_amount: supportEstimate.supportAmount,
       my_quote: quote,
     };
   });

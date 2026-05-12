@@ -73,7 +73,7 @@ export async function GET(request: Request) {
   const { data: quotesRaw, error: quotesError } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -131,6 +131,9 @@ export async function GET(request: Request) {
       partner_driver_id: partnerDriverId,
       auth_user_id: safeText(row.auth_user_id),
       price: parseInteger(row.price),
+      sponsor_support_amount: parseInteger(row.sponsor_support_amount),
+      sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
+      sponsor_quote_enabled: row.sponsor_quote_enabled === true,
       vehicle_type: safeText(row.vehicle_type, "—"),
       available_time: safeText(row.available_time, "—"),
       message: safeText(row.message),

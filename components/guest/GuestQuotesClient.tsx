@@ -142,9 +142,17 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
               <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">
                 {call.request_message || "요청사항 없음"}
               </p>
+              <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
+                회원 등록 시 지원금 견적 제출 가능
+              </p>
               {openId === call.id ? (
                 <div className="mt-4">
-                  <GuestQuoteForm applicationId={call.id} compact />
+                  <GuestQuoteForm
+                    applicationId={call.id}
+                    compact
+                    passengerCount={call.passenger_count}
+                    registerHref="/partner/register"
+                  />
                 </div>
               ) : null}
             </article>

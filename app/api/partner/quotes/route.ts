@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { USER_ROLES } from "@/lib/roles";
+import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -12,6 +13,7 @@ const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 type Body = {
   application_id?: unknown;
   price?: unknown;
+  sponsor_discounted_price?: unknown;
   vehicle_type?: unknown;
   available_time?: unknown;
   message?: unknown;
@@ -136,6 +138,7 @@ export async function POST(request: Request) {
 
   const applicationId = safeText(body.application_id);
   const price = parsePrice(body.price);
+  const requestedDiscountedPrice = parsePrice(body.sponsor_discounted_price);
   const vehicleType = safeText(body.vehicle_type);
   const availableTime = safeText(body.available_time);
   const message = safeText(body.message);
@@ -175,7 +178,7 @@ export async function POST(request: Request) {
 
   const { data: application, error: applicationError } = await admin
     .from("applications")
-    .select("id, application_type")
+    .select("id, application_type, passenger_count")
     .eq("id", applicationId)
     .maybeSingle();
 
@@ -192,6 +195,23 @@ export async function POST(request: Request) {
   if (!application || appType !== APPLICATION_TYPE_NEW_BOOKING) {
     return NextResponse.json(
       { error: "견적 제출 대상 신청이 아닙니다." },
+      { status: 400 },
+    );
+  }
+  const supportEstimate = estimateSponsorSupport({
+    passengerCount: (application as { passenger_count?: unknown } | null)
+      ?.passenger_count,
+    price,
+  });
+  if (supportEstimate.discountedPrice > price) {
+    return NextResponse.json(
+      { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
+      { status: 400 },
+    );
+  }
+  if (requestedDiscountedPrice != null && requestedDiscountedPrice > price) {
+    return NextResponse.json(
+      { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
       { status: 400 },
     );
   }
@@ -281,9 +301,37 @@ export async function POST(request: Request) {
     }
   }
 
-  const { data: inserted, error: insertError } = await admin
+  const insertPayload = {
+    application_id: applicationId,
+    partner_driver_id: driver.partnerDriverId,
+    auth_user_id: driver.userId,
+    price,
+    vehicle_type: vehicleType,
+    available_time: availableTime,
+    message,
+    status: "submitted",
+    sponsor_support_amount: supportEstimate.supportAmount,
+    sponsor_discounted_price: supportEstimate.discountedPrice,
+    sponsor_quote_enabled: supportEstimate.supportAmount > 0,
+  };
+
+  const insertResult = await admin
     .from("driver_quotes")
-    .insert({
+    .insert(insertPayload)
+    .select(
+      "id, price, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+    )
+    .single();
+  let inserted: unknown = insertResult.data;
+  let insertError = insertResult.error;
+
+  if (
+    insertError &&
+    /sponsor_support_amount|sponsor_discounted_price|sponsor_quote_enabled|does not exist|42703/i.test(
+      insertError.message,
+    )
+  ) {
+    const fallbackPayload = {
       application_id: applicationId,
       partner_driver_id: driver.partnerDriverId,
       auth_user_id: driver.userId,
@@ -292,9 +340,15 @@ export async function POST(request: Request) {
       available_time: availableTime,
       message,
       status: "submitted",
-    })
-    .select("id, price")
-    .single();
+    };
+    const fallback = await admin
+      .from("driver_quotes")
+      .insert(fallbackPayload)
+      .select("id, price")
+      .single();
+    inserted = fallback.data;
+    insertError = fallback.error;
+  }
 
   if (insertError) {
     if (/duplicate|unique/i.test(insertError.message)) {
