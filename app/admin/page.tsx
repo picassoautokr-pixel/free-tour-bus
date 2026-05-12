@@ -83,6 +83,7 @@ type SortKey =
   | "phone"
   | "organization_name"
   | "departure"
+  | "departure_region"
   | "destination"
   | "passenger_count"
   | "status"
@@ -2506,6 +2507,12 @@ export default function AdminApplicationsPage() {
                         </dd>
                       </div>
                       <div className="flex justify-between gap-2">
+                        <dt className="text-slate-500">출발지역</dt>
+                        <dd className="text-right font-medium text-slate-800">
+                          {row.departure_region || "—"}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
                         <dt className="text-slate-500">인원</dt>
                         <dd className="text-right font-medium text-slate-800">
                           {row.passenger_count ?? "—"}
@@ -2590,6 +2597,15 @@ export default function AdminApplicationsPage() {
                     <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
                       <button
                         type="button"
+                        onClick={() => handleSortClick("departure_region")}
+                        className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
+                      >
+                        출발지역{sortIndicator("departure_region")}
+                      </button>
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
+                      <button
+                        type="button"
                         onClick={() => handleSortClick("destination")}
                         className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
                       >
@@ -2665,6 +2681,9 @@ export default function AdminApplicationsPage() {
                       </td>
                       <td className="max-w-[140px] px-4 py-3 text-slate-700">
                         <span className="line-clamp-2">{row.departure}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                        {row.departure_region || "—"}
                       </td>
                       <td className="max-w-[140px] px-4 py-3 text-slate-700">
                         <span className="line-clamp-2">{row.destination}</span>

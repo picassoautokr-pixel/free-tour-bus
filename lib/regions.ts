@@ -22,7 +22,7 @@ export type ServiceRegion = (typeof SERVICE_REGIONS)[number];
 
 const REGION_ALIASES: Array<[ServiceRegion, RegExp]> = [
   ["서울", /서울|서울시|서울특별시/],
-  ["경기", /경기|경기도|수원|성남|고양|용인|부천|안산|안양|남양주|화성|평택|의정부|파주|김포|광명|광주|군포|하남|오산|이천|안성|구리|의왕|양평|여주|동두천|과천|가평|연천/],
+  ["경기", /경기|경기도|수원|성남|고양|용인|부천|안산|안양|남양주|화성|평택|의정부|파주|김포|광명|경기광주|광주시|군포|하남|오산|이천|안성|구리|의왕|양평|여주|동두천|과천|가평|연천/],
   ["인천", /인천|인천시|인천광역시/],
   ["부산", /부산|부산시|부산광역시/],
   ["대구", /대구|대구시|대구광역시/],
@@ -41,22 +41,27 @@ const REGION_ALIASES: Array<[ServiceRegion, RegExp]> = [
 ];
 
 const PLACE_OVERRIDES: Array<[ServiceRegion, RegExp]> = [
-  ["경기", /에버랜드|킨텍스|kintex/i],
-  ["부산", /해운대/],
-  ["서울", /국립중앙박물관|서울역|김포공항/],
-  ["인천", /인천공항/],
+  ["서울", /영등포역|영등포|강남역|서울역|잠실|홍대|사당|신촌|고속터미널|김포공항|국립중앙박물관/],
+  ["인천", /인천공항|송도/],
+  ["경기", /수원|용인|에버랜드|킨텍스|kintex|일산|판교|분당/i],
+  ["부산", /해운대|부산역|광안리|서면/],
 ];
 
 const NOISE_WORDS = [
+  "인근지역",
+  "근처에서",
+  "앞에서",
   "근처",
   "앞",
   "건너편",
   "맞은편",
+  "주변",
+  "인근",
   "입구",
   "정문",
   "후문",
-  "주변",
-  "인근",
+  "부근",
+  "근방",
 ];
 
 export function normalizeRegion(value: unknown): ServiceRegion | "" {
@@ -79,7 +84,7 @@ export function normalizeServiceRegions(value: unknown): ServiceRegion[] {
 
 export function normalizeDepartureText(value: string): string {
   let text = value.trim();
-  for (const word of NOISE_WORDS) {
+  for (const word of [...NOISE_WORDS].sort((a, b) => b.length - a.length)) {
     text = text.replaceAll(word, " ");
   }
   return text.replace(/\s+/g, " ").trim();

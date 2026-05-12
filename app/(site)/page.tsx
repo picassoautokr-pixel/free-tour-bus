@@ -211,6 +211,9 @@ export default function Home() {
   const [phoneError, setPhoneError] = useState(false);
   const [passengerCountError, setPassengerCountError] = useState(false);
   const [departureError, setDepartureError] = useState<string | null>(null);
+  const [departureRegionError, setDepartureRegionError] = useState<string | null>(
+    null,
+  );
   const [destinationError, setDestinationError] = useState<string | null>(null);
   const [dateTimeError, setDateTimeError] = useState<string | null>(null);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -271,6 +274,7 @@ export default function Home() {
     setPhoneError(false);
     setPassengerCountError(false);
     setDepartureError(null);
+    setDepartureRegionError(null);
     setDestinationError(null);
     setDateTimeError(null);
     setSuccessSummary(null);
@@ -280,6 +284,7 @@ export default function Home() {
     console.log("submit clicked");
 
     setDepartureError(null);
+    setDepartureRegionError(null);
     setDestinationError(null);
     setDateTimeError(null);
 
@@ -295,15 +300,20 @@ export default function Home() {
 
     const depTrim = formData.departure.trim();
     const destTrim = formData.destination.trim();
-    const minPlaceLen = 5;
+    const finalDepartureRegion =
+      (formData.departureRegionManual
+        ? formData.departureRegion
+        : inferredDepartureRegion) || "";
 
     let depErr: string | null = null;
-    if (depTrim.length < minPlaceLen) {
-      depErr = "출발지를 시/군/구와 동까지 입력해주세요.";
+    if (depTrim === "") {
+      depErr = "출발지를 입력해주세요.";
     }
+    const depRegionErr =
+      finalDepartureRegion === "" ? "출발지역을 선택해주세요." : null;
     let destErr: string | null = null;
-    if (destTrim.length < minPlaceLen) {
-      destErr = "도착지를 시/군/구와 동까지 입력해주세요.";
+    if (destTrim === "") {
+      destErr = "도착지를 입력해주세요.";
     }
 
     const dateOk = formData.departureDate.trim() !== "";
@@ -315,8 +325,9 @@ export default function Home() {
         ? "출발일과 시간대를 모두 선택해 주세요."
         : null;
 
-    if (depErr || destErr || dtErr) {
+    if (depErr || depRegionErr || destErr || dtErr) {
       setDepartureError(depErr);
+      setDepartureRegionError(depRegionErr);
       setDestinationError(destErr);
       setDateTimeError(dtErr);
       return;
@@ -376,10 +387,7 @@ export default function Home() {
         bus_grade: formData.busGrade,
         departure: depTrim,
         departure_detail: "",
-        departure_region:
-          (formData.departureRegionManual
-            ? formData.departureRegion
-            : inferredDepartureRegion) || null,
+        departure_region: finalDepartureRegion,
         destination: destTrim,
         destination_detail: "",
         departure_date: departureDateValue === "" ? null : departureDateValue,
@@ -584,6 +592,7 @@ export default function Home() {
                     value={formData.departure}
                     onChange={(event) => {
                       setDepartureError(null);
+                      setDepartureRegionError(null);
                       const nextDeparture = event.target.value;
                       const nextRegion = inferDepartureRegion(nextDeparture);
                       setFormData((prev) => ({
@@ -596,16 +605,25 @@ export default function Home() {
                     }}
                   />
                   <p className="px-1 text-xs font-medium leading-5 text-slate-500">
-                    시/군/구와 동까지 입력해주세요.
+                    출발 장소를 입력해 주세요.
                   </p>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div
+                    className={`rounded-2xl border bg-slate-50 p-3 ${
+                      departureRegionError
+                        ? "border-red-400"
+                        : "border-slate-200"
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-black text-slate-500">
                           출발지역
                         </p>
                         <p className="mt-1 text-xs font-semibold text-slate-500">
-                          자동 추정이 다르면 직접 선택해 주세요.
+                          {inferredDepartureRegion !== "" &&
+                          !formData.departureRegionManual
+                            ? `자동 인식 지역: ${inferredDepartureRegion}`
+                            : "출발지역을 직접 선택해주세요."}
                         </p>
                       </div>
                       {inferredDepartureRegion !== "" &&
@@ -620,13 +638,14 @@ export default function Home() {
                         displayedDepartureRegion ? "text-slate-800" : "text-slate-400"
                       }`}
                       value={displayedDepartureRegion}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setDepartureRegionError(null);
                         setFormData((prev) => ({
                           ...prev,
                           departureRegion: event.target.value as ServiceRegion | "",
                           departureRegionManual: true,
-                        }))
-                      }
+                        }));
+                      }}
                     >
                       <option value="">출발지역 선택</option>
                       {SERVICE_REGIONS.map((region) => (
@@ -639,16 +658,22 @@ export default function Home() {
                       <button
                         type="button"
                         className="mt-2 text-xs font-bold text-blue-600"
-                        onClick={() =>
+                        onClick={() => {
+                          setDepartureRegionError(null);
                           setFormData((prev) => ({
                             ...prev,
                             departureRegion: inferDepartureRegion(prev.departure),
                             departureRegionManual: false,
-                          }))
-                        }
+                          }));
+                        }}
                       >
                         자동 추정으로 되돌리기
                       </button>
+                    ) : null}
+                    {departureRegionError ? (
+                      <p className="mt-2 px-1 text-xs font-semibold text-red-500">
+                        {departureRegionError}
+                      </p>
                     ) : null}
                   </div>
                   {departureError ? (
@@ -676,7 +701,7 @@ export default function Home() {
                     }}
                   />
                   <p className="px-1 text-xs font-medium leading-5 text-slate-500">
-                    시/군/구와 동까지 입력해주세요.
+                    도착 장소를 입력해 주세요.
                   </p>
                   {destinationError ? (
                     <p className="px-1 text-xs font-semibold text-red-500">
