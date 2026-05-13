@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 
+import {
+  ContractPreview,
+  type ContractPreviewData,
+} from "@/components/ContractPreview";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -18,7 +22,11 @@ type ClientQuote = {
   driver_name: string;
   phone: string;
   price: number | null;
+  estimated_support_amount?: number | null;
+  support_discount_amount?: number | null;
   member_price: number | null;
+  driver_support_amount?: number | null;
+  client_reward_amount?: number | null;
   sponsor_quote_enabled: boolean;
   vehicle_type: string;
   available_time: string;
@@ -27,8 +35,17 @@ type ClientQuote = {
 
 type ClientApplication = {
   receipt_number: string;
+  applicant_name: string;
+  phone: string;
   departure: string;
   destination: string;
+  stopovers: string[];
+  departure_date: string;
+  departure_time: string;
+  trip_type: string;
+  bus_grade: string;
+  passenger_count: number | null;
+  request_message: string;
   quote_status: string;
   quote_deadline_at: string;
   quote_limit_count: number | null;
@@ -63,10 +80,12 @@ export default function ClientDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [contractChecks, setContractChecks] = useState({
+    preview: false,
     route: false,
     deposit: false,
     support: false,
   });
+  const [contractPreviewOpen, setContractPreviewOpen] = useState(false);
   const quoteCountRef = useRef(0);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
@@ -175,7 +194,7 @@ export default function ClientDashboardPage() {
         return;
       }
       setMessage("클라이언트 계약 확인이 완료되었습니다.");
-      setContractChecks({ route: false, deposit: false, support: false });
+      setContractChecks({ preview: false, route: false, deposit: false, support: false });
       await load({ silent: true });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
@@ -200,11 +219,44 @@ export default function ClientDashboardPage() {
   const canShowContract =
     contactRevealed && selectedQuote != null && application != null;
   const contractCheckComplete =
-    contractChecks.route && contractChecks.deposit && contractChecks.support;
+    contractChecks.preview &&
+    contractChecks.route &&
+    contractChecks.deposit &&
+    contractChecks.support;
   const rideConfirmed =
     application?.contract_status === "ride_confirmed" ||
     application?.deposit_status === "paid" ||
     application?.deposit_status === "waived";
+  const contractPreviewData: ContractPreviewData | null =
+    application && selectedQuote
+      ? {
+          contractStatus: application.contract_status || "pending",
+          clientName: application.applicant_name,
+          clientPhone: application.phone,
+          receiptNumber: application.receipt_number,
+          driverCompanyName: selectedQuote.company_name,
+          driverManagerName: selectedQuote.driver_name,
+          driverPhone: selectedQuote.phone,
+          vehicleType: selectedQuote.vehicle_type,
+          departure: application.departure,
+          stopovers: application.stopovers,
+          destination: application.destination,
+          departureDateTime: [application.departure_date, application.departure_time]
+            .filter(Boolean)
+            .join(" "),
+          tripType: application.trip_type,
+          busGrade: application.bus_grade,
+          passengerCount: application.passenger_count,
+          requestMessage: application.request_message,
+          normalPrice: selectedQuote.price,
+          memberPrice: selectedQuote.member_price,
+          estimatedSupportAmount: selectedQuote.estimated_support_amount ?? null,
+          supportDiscountAmount: selectedQuote.support_discount_amount ?? null,
+          driverSupportAmount: selectedQuote.driver_support_amount ?? null,
+          clientRewardAmount: selectedQuote.client_reward_amount ?? null,
+          depositAmount: application.deposit_amount,
+        }
+      : null;
 
   return (
     <main className="min-h-screen bg-[#f3f8fb] px-5 py-10">
@@ -358,6 +410,13 @@ export default function ClientDashboardPage() {
                   <p className="text-sm font-black text-indigo-950">
                     전자계약 및 예약금 안내
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setContractPreviewOpen(true)}
+                    className="mt-3 min-h-10 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-black text-indigo-900"
+                  >
+                    전자계약서 보기
+                  </button>
                   <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
                     <p>운행: {application.departure} → {application.destination}</p>
                     <p>
@@ -380,6 +439,7 @@ export default function ClientDashboardPage() {
                   </div>
                   <div className="mt-4 space-y-2">
                     {[
+                      ["preview", "전자계약서 내용을 확인했습니다."],
                       ["route", "운행 정보와 견적 내용을 확인했습니다."],
                       ["deposit", "예약금 및 취소/노쇼 정책을 확인했습니다."],
                       [
@@ -444,6 +504,16 @@ export default function ClientDashboardPage() {
                 </Link>
               </div>
             </div>
+            {contractPreviewOpen && contractPreviewData ? (
+              <div className="fixed inset-0 z-[130] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8 backdrop-blur-[2px]">
+                <div className="w-full max-w-3xl">
+                  <ContractPreview
+                    data={contractPreviewData}
+                    onClose={() => setContractPreviewOpen(false)}
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-3">
               {quotes.map((quote) => {
                 const selected =

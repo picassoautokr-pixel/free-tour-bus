@@ -11,6 +11,10 @@ import {
 
 import * as XLSX from "xlsx";
 
+import {
+  ContractPreview,
+  type ContractPreviewData,
+} from "@/components/ContractPreview";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -991,7 +995,13 @@ function StatusChangeSection({
   );
 }
 
-function DriverQuotesSection({ applicationId }: { applicationId: string }) {
+function DriverQuotesSection({
+  applicationId,
+  applicationDetail,
+}: {
+  applicationId: string;
+  applicationDetail: ApplicationDetail;
+}) {
   const [quotes, setQuotes] = useState<DriverQuoteDetail[]>([]);
   const [guestQuotes, setGuestQuotes] = useState<GuestDriverQuoteDetail[]>([]);
   const [notificationLogs, setNotificationLogs] = useState<NotificationLogDetail[]>([]);
@@ -1002,6 +1012,7 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [guestBusyId, setGuestBusyId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [contractPreviewOpen, setContractPreviewOpen] = useState(false);
 
   const loadQuotes = useCallback(async () => {
     if (!isPersistableApplicationId(applicationId)) return;
@@ -1137,6 +1148,71 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
     onRefresh: loadQuotes,
   });
 
+  const selectedMemberQuote = application
+    ? quotes.find((quote) => quote.id === application.final_selected_quote_id) ?? null
+    : null;
+  const selectedGuestQuote = application
+    ? guestQuotes.find((quote) => quote.id === application.final_selected_quote_id) ?? null
+    : null;
+  const selectedContractQuote = selectedMemberQuote ?? selectedGuestQuote;
+  const contractPreviewData: ContractPreviewData | null =
+    application && selectedContractQuote
+      ? {
+          contractStatus: application.contract_status || "pending",
+          clientName: applicationDetail.applicant_name,
+          clientPhone: applicationDetail.phone,
+          receiptNumber: applicationDetail.receipt_number,
+          driverCompanyName:
+            "company_name" in selectedContractQuote
+              ? selectedContractQuote.company_name
+              : selectedContractQuote.guest_company_name,
+          driverManagerName:
+            "manager_name" in selectedContractQuote
+              ? selectedContractQuote.manager_name
+              : selectedContractQuote.guest_driver_name,
+          driverPhone:
+            "phone" in selectedContractQuote
+              ? selectedContractQuote.phone
+              : selectedContractQuote.guest_phone,
+          vehicleType: selectedContractQuote.vehicle_type,
+          departure: applicationDetail.departure,
+          stopovers: applicationDetail.stopovers,
+          destination: applicationDetail.destination,
+          departureDateTime: formatDepartureDateTimeLine(
+            applicationDetail.departure_date,
+            applicationDetail.departure_time,
+          ),
+          tripType: applicationDetail.trip_type,
+          busGrade: applicationDetail.bus_grade,
+          passengerCount: applicationDetail.passenger_count,
+          requestMessage: applicationDetail.request_message,
+          normalPrice: selectedContractQuote.price,
+          memberPrice:
+            "member_price" in selectedContractQuote
+              ? selectedContractQuote.member_price ??
+                selectedContractQuote.sponsor_discounted_price ??
+                null
+              : null,
+          estimatedSupportAmount:
+            "estimated_support_amount" in selectedContractQuote
+              ? selectedContractQuote.estimated_support_amount ?? null
+              : null,
+          supportDiscountAmount:
+            "support_discount_amount" in selectedContractQuote
+              ? selectedContractQuote.support_discount_amount ?? null
+              : null,
+          driverSupportAmount:
+            "driver_support_amount" in selectedContractQuote
+              ? selectedContractQuote.driver_support_amount ?? null
+              : null,
+          clientRewardAmount:
+            "client_reward_amount" in selectedContractQuote
+              ? selectedContractQuote.client_reward_amount ?? null
+              : null,
+          depositAmount: application.deposit_amount,
+        }
+      : null;
+
   return (
     <section className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm ring-1 ring-indigo-100/80">
       <div className="flex items-center justify-between gap-3">
@@ -1242,7 +1318,17 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
             </div>
           </dl>
           <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
-            <p className="text-xs font-black text-emerald-950">계약 / 예약금</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-black text-emerald-950">계약 / 예약금</p>
+              <button
+                type="button"
+                disabled={!contractPreviewData}
+                onClick={() => setContractPreviewOpen(true)}
+                className="min-h-9 rounded-lg border border-emerald-200 bg-white px-3 text-xs font-black text-emerald-900 disabled:opacity-50"
+              >
+                전자계약서 미리보기
+              </button>
+            </div>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
               <div className="rounded-lg bg-white p-2">
                 <dt className="font-bold text-emerald-600">계약 상태</dt>
@@ -1308,6 +1394,16 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
               </button>
             </div>
           </div>
+          {contractPreviewOpen && contractPreviewData ? (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8 backdrop-blur-[2px]">
+              <div className="w-full max-w-3xl">
+                <ContractPreview
+                  data={contractPreviewData}
+                  onClose={() => setContractPreviewOpen(false)}
+                />
+              </div>
+            </div>
+          ) : null}
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"
@@ -2127,7 +2223,7 @@ function DetailSlidePanel({
             </div>
           </dl>
 
-          <DriverQuotesSection applicationId={row.id} />
+          <DriverQuotesSection applicationId={row.id} applicationDetail={row} />
 
           <div className="mt-4">
             <button

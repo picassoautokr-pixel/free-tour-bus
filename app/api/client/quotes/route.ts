@@ -40,7 +40,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   const { data, error } = await admin
     .from("applications")
     .select(
-      `receipt_number, applicant_name, phone, departure, destination, passenger_count, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
+      `receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -59,14 +59,14 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     admin
       .from("applications")
       .select(
-        `receipt_number, applicant_name, phone, departure, destination, passenger_count, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
+        `receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
       )
       .eq("id", applicationId)
       .maybeSingle(),
     admin
       .from("driver_quotes")
       .select(
-        "id, created_at, price, member_price, sponsor_discounted_price, sponsor_quote_enabled, vehicle_type, available_time, message, status, partner_driver_id, partner_drivers(company_name, manager_name, phone)",
+        "id, created_at, price, estimated_support_amount, support_discount_amount, member_price, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount, vehicle_type, available_time, message, status, partner_driver_id, partner_drivers(company_name, manager_name, phone)",
       )
       .eq("application_id", applicationId)
       .order("created_at", { ascending: false }),
@@ -101,8 +101,12 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
             ? safeText(partner?.phone)
             : "",
         price: parseInteger(row.price),
+        estimated_support_amount: parseInteger(row.estimated_support_amount),
+        support_discount_amount: parseInteger(row.support_discount_amount),
         member_price:
           parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price),
+        driver_support_amount: parseInteger(row.driver_support_amount),
+        client_reward_amount: parseInteger(row.client_reward_amount),
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
@@ -135,6 +139,17 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       receipt_number: safeText(current.receipt_number),
       departure: safeText(current.departure),
       destination: safeText(current.destination),
+      stopovers: Array.isArray(current.stopovers)
+        ? current.stopovers.map((item) => safeText(item)).filter(Boolean)
+        : [],
+      departure_date: safeText(current.departure_date),
+      departure_time: safeText(current.departure_time),
+      trip_type: safeText(current.trip_type),
+      bus_grade: safeText(current.bus_grade),
+      passenger_count: parseInteger(current.passenger_count),
+      applicant_name: safeText(current.applicant_name),
+      phone: safeText(current.phone),
+      request_message: safeText(current.request_message),
       quote_status: safeText(current.quote_status, "collecting"),
         quote_deadline_at: safeText(current.quote_deadline_at),
         quote_limit_count: parseInteger(current.quote_limit_count),

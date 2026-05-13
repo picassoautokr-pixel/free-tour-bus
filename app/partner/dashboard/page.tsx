@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  ContractPreview,
+  type ContractPreviewData,
+} from "@/components/ContractPreview";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -225,6 +229,37 @@ function canRevealCustomerInfo(call: PartnerCall): boolean {
   );
 }
 
+function contractPreviewDataForCall(call: PartnerCall): ContractPreviewData | null {
+  if (!call.my_quote) return null;
+  return {
+    contractStatus: call.contract_status || "pending",
+    clientName: call.customer_name ?? "",
+    clientPhone: call.customer_phone ?? "",
+    receiptNumber: call.receipt_number,
+    driverCompanyName: "내 견적",
+    driverManagerName: "제휴기사",
+    driverPhone: "",
+    vehicleType: call.my_quote.vehicle_type,
+    departure: call.departure,
+    stopovers: call.stopovers,
+    destination: call.destination,
+    departureDateTime: formatDeparture(call),
+    tripType: call.trip_type,
+    busGrade: call.bus_grade,
+    passengerCount: call.passenger_count,
+    requestMessage: call.request_message ?? "",
+    normalPrice: call.my_quote.price,
+    memberPrice: call.my_quote.member_price ?? call.my_quote.sponsor_discounted_price ?? null,
+    estimatedSupportAmount:
+      call.my_quote.estimated_support_amount ?? call.my_quote.sponsor_support_amount ?? null,
+    supportDiscountAmount:
+      call.my_quote.support_discount_amount ?? call.my_quote.sponsor_support_amount ?? null,
+    driverSupportAmount: call.my_quote.driver_support_amount ?? null,
+    clientRewardAmount: call.my_quote.client_reward_amount ?? null,
+    depositAmount: call.deposit_amount,
+  };
+}
+
 function quoteStatusLabel(call: PartnerCall): string {
   if (isMatchedCall(call)) {
     return call.final_selected_quote_id.trim() !== ""
@@ -412,10 +447,14 @@ export default function PartnerDashboardPage() {
     null,
   );
   const [contractChecks, setContractChecks] = useState({
+    preview: false,
     route: false,
     deposit: false,
     support: false,
   });
+  const [contractPreviewCall, setContractPreviewCall] = useState<PartnerCall | null>(
+    null,
+  );
   const [contractBusy, setContractBusy] = useState(false);
   const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
   const [referralForm, setReferralForm] =
@@ -990,7 +1029,7 @@ export default function PartnerDashboardPage() {
       }
       setQuoteMessage("기사 계약 확인이 완료되었습니다.");
       setContractDetailCall(null);
-      setContractChecks({ route: false, deposit: false, support: false });
+      setContractChecks({ preview: false, route: false, deposit: false, support: false });
       void loadCalls();
     } catch (e) {
       setQuoteMessage(e instanceof Error ? e.message : String(e));
@@ -1529,6 +1568,13 @@ export default function PartnerDashboardPage() {
                 <h2 id="partner-contract-title" className="text-lg font-black text-slate-950">
                   전자계약 진행
                 </h2>
+                <button
+                  type="button"
+                  onClick={() => setContractPreviewCall(contractDetailCall)}
+                  className="mt-3 min-h-10 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-black text-indigo-900"
+                >
+                  전자계약서 보기
+                </button>
                 <div className="mt-4 space-y-2 text-sm font-semibold text-slate-700">
                   <p>고객: {contractDetailCall.customer_name || "—"}</p>
                   <p>전화: {contractDetailCall.customer_phone || "—"}</p>
@@ -1559,6 +1605,7 @@ export default function PartnerDashboardPage() {
                 </div>
                 <div className="mt-4 space-y-2">
                   {[
+                    ["preview", "전자계약서 내용을 확인했습니다."],
                     ["route", "운행 정보와 고객 정보를 확인했습니다."],
                     ["deposit", "예약금/노쇼 정책을 확인했습니다."],
                     ["support", "후원업체 지원금은 심사 결과에 따라 변동될 수 있음을 확인했습니다."],
@@ -1583,6 +1630,7 @@ export default function PartnerDashboardPage() {
                   disabled={
                     contractBusy ||
                     !contractChecks.route ||
+                    !contractChecks.preview ||
                     !contractChecks.deposit ||
                     !contractChecks.support ||
                     contractDetailCall.driver_contract_confirmed_at !== ""
@@ -1597,6 +1645,19 @@ export default function PartnerDashboardPage() {
                       ? "처리 중…"
                       : "기사 계약 확인"}
                 </button>
+              </div>
+            </div>
+          ) : null}
+
+          {contractPreviewCall ? (
+            <div className="fixed inset-0 z-[140] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8 backdrop-blur-[2px]">
+              <div className="w-full max-w-3xl">
+                {contractPreviewDataForCall(contractPreviewCall) ? (
+                  <ContractPreview
+                    data={contractPreviewDataForCall(contractPreviewCall)!}
+                    onClose={() => setContractPreviewCall(null)}
+                  />
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -1870,7 +1931,7 @@ export default function PartnerDashboardPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                setContractChecks({ route: false, deposit: false, support: false });
+                                setContractChecks({ preview: false, route: false, deposit: false, support: false });
                                 setContractDetailCall(call);
                               }}
                               disabled={!customerInfoVisible}
@@ -1878,6 +1939,15 @@ export default function PartnerDashboardPage() {
                               style={tapStyle}
                             >
                               전자계약 진행
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setContractPreviewCall(call)}
+                              disabled={!customerInfoVisible}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-indigo-200 bg-white px-4 text-sm font-black text-indigo-900 shadow-sm transition hover:bg-indigo-50 disabled:opacity-50"
+                              style={tapStyle}
+                            >
+                              전자계약서 보기
                             </button>
                             <button
                               type="button"
