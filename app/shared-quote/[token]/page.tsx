@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import { formatStopovers, parseStopovers } from "@/lib/stopovers";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 type PageProps = {
@@ -11,6 +12,7 @@ type PageProps = {
 type SharedApplication = {
   departure: string;
   destination: string;
+  stopovers: string[];
   departure_date: string | null;
   departure_time: string;
   passenger_count: number | null;
@@ -116,7 +118,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const { data: referral, error } = await admin
     .from("quote_referrals")
     .select(
-      "id, token, status, expires_at, applications(id, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at)",
+      "id, token, status, expires_at, applications(id, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at)",
     )
     .eq("token", cleanToken)
     .maybeSingle();
@@ -167,6 +169,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const app: SharedApplication = {
     departure: safeText(appRow.departure),
     destination: safeText(appRow.destination),
+    stopovers: parseStopovers(appRow.stopovers),
     departure_date:
       appRow.departure_date == null ? null : safeText(appRow.departure_date, ""),
     departure_time: safeText(appRow.departure_time, ""),
@@ -199,6 +202,9 @@ export default async function SharedQuotePage({ params }: PageProps) {
 
         <dl className="mt-6 grid gap-3 sm:grid-cols-2">
           <InfoCard label="출발지" value={app.departure} />
+          {app.stopovers.length > 0 ? (
+            <InfoCard label="경유지" value={formatStopovers(app.stopovers)} />
+          ) : null}
           <InfoCard label="도착지" value={app.destination} />
           <InfoCard label="출발일시" value={formatDeparture(app)} />
           <InfoCard label="인원수" value={app.passenger_count ?? "—"} />

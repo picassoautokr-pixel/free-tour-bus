@@ -1,4 +1,5 @@
 import { GuestQuotesClient } from "@/components/guest/GuestQuotesClient";
+import { parseStopovers } from "@/lib/stopovers";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
@@ -30,6 +31,7 @@ export default async function GuestQuotesPage() {
     departure_region: string;
     departure: string;
     destination: string;
+    stopovers?: string[];
     departure_date: string;
     departure_time: string;
     passenger_count: number | null;
@@ -50,7 +52,7 @@ export default async function GuestQuotesPage() {
     const { data } = await admin
       .from("applications")
       .select(
-        "id, departure_region, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
+        "id, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
       )
       .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
       .order("created_at", { ascending: false })
@@ -80,6 +82,7 @@ export default async function GuestQuotesPage() {
         departure_region: safeText(row.departure_region),
         departure: safeText(row.departure),
         destination: safeText(row.destination),
+        stopovers: parseStopovers(row.stopovers),
         departure_date: safeText(row.departure_date),
         departure_time: safeText(row.departure_time),
         passenger_count: parseInteger(row.passenger_count),

@@ -17,6 +17,7 @@ import {
   type ServiceRegion,
 } from "@/lib/regions";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
+import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -52,6 +53,7 @@ type PartnerCall = {
   departure: string;
   departure_region: string;
   destination: string;
+  stopovers?: string[];
   departure_date: string;
   departure_time: string;
   return_date: string;
@@ -260,11 +262,12 @@ function referralStatusLabel(status: ReferralResult["status"]): string {
 }
 
 function buildReferralPreview(call: PartnerCall): string {
+  const stopoverText = formatStopovers(call.stopovers);
   return `[무료관광버스]
 전세버스 견적요청이 전달되었습니다.
 
 출발: ${call.departure}
-도착: ${call.destination}
+${stopoverText ? `경유: ${stopoverText}\n` : ""}도착: ${call.destination}
 일시: ${formatDeparture(call)}
 인원: ${call.passenger_count ?? "미정"}
 
@@ -923,7 +926,11 @@ export default function PartnerDashboardPage() {
                   내 견적 상세
                 </h2>
                 <p className="mt-1 text-xs font-bold text-slate-500">
-                  {quoteDetailCall.departure} → {quoteDetailCall.destination}
+                  {formatRouteWithStopovers(
+                    quoteDetailCall.departure,
+                    quoteDetailCall.stopovers,
+                    quoteDetailCall.destination,
+                  )}
                 </p>
                 <dl className="mt-4 space-y-3 text-sm">
                   <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
@@ -1266,11 +1273,20 @@ export default function PartnerDashboardPage() {
                           {call.receipt_number || "신규 콜"}
                         </p>
                         <h2 className="mt-1 text-lg font-black tracking-[-0.03em] text-slate-900">
-                          {call.departure} → {call.destination}
+                          {formatRouteWithStopovers(
+                            call.departure,
+                            call.stopovers,
+                            call.destination,
+                          )}
                         </h2>
                         <p className="mt-1 text-sm font-semibold text-slate-500">
                           {formatDeparture(call)}
                         </p>
+                        {formatStopovers(call.stopovers) ? (
+                          <p className="mt-1 text-sm font-semibold text-slate-600">
+                            경유지: {formatStopovers(call.stopovers)}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex flex-col gap-2 sm:items-end">
                         {activeTab === "matched" ? (
@@ -1386,6 +1402,16 @@ export default function PartnerDashboardPage() {
                           {call.departure_region || "—"}
                         </dd>
                       </div>
+                      {formatStopovers(call.stopovers) ? (
+                        <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+                          <dt className="text-[11px] font-bold text-slate-400">
+                            경유지
+                          </dt>
+                          <dd className="mt-1 font-black text-slate-900">
+                            {formatStopovers(call.stopovers)}
+                          </dd>
+                        </div>
+                      ) : null}
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
                           예상 지원금

@@ -9,12 +9,14 @@ import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
 } from "@/hooks/useSupabaseRealtimeRefresh";
+import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
 
 type GuestCall = {
   id: string;
   departure_region: string;
   departure: string;
   destination: string;
+  stopovers?: string[];
   departure_date: string;
   departure_time: string;
   passenger_count: number | null;
@@ -133,11 +135,20 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
                     {call.departure_region || "지역 미정"}
                   </span>
                   <h3 className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">
-                    {call.departure} → {call.destination}
+                    {formatRouteWithStopovers(
+                      call.departure,
+                      call.stopovers,
+                      call.destination,
+                    )}
                   </h3>
                   <p className="mt-1 text-sm font-semibold text-slate-500">
                     {departureLine(call)}
                   </p>
+                  {formatStopovers(call.stopovers) ? (
+                    <p className="mt-1 text-sm font-semibold text-slate-600">
+                      경유지: {formatStopovers(call.stopovers)}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   type="button"
@@ -174,6 +185,14 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
                   <dt className="text-[11px] font-bold text-slate-400">등급</dt>
                   <dd className="mt-1 font-black text-slate-900">{call.bus_grade}</dd>
                 </div>
+                {formatStopovers(call.stopovers) ? (
+                  <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+                    <dt className="text-[11px] font-bold text-slate-400">경유지</dt>
+                    <dd className="mt-1 font-black text-slate-900">
+                      {formatStopovers(call.stopovers)}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
               <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">
                 {call.request_message || "요청사항 없음"}

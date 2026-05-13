@@ -1848,22 +1848,16 @@ function DetailSlidePanel({
               {row.departure_region.trim() === "" ? "—" : row.departure_region}
             </DetailField>
             <DetailField label="도착지">{row.destination}</DetailField>
-            <div className="border-b border-slate-100 py-3 last:border-b-0">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                경유지
-              </dt>
-              <dd className="mt-1">
-                {row.stopovers.length === 0 ? (
-                  <span className="text-sm font-medium text-slate-400">—</span>
-                ) : (
-                  <ol className="list-inside list-decimal space-y-1 text-sm font-medium text-slate-900">
-                    {row.stopovers.map((s, i) => (
-                      <li key={`${row.id}-stop-${i}`}>{s}</li>
-                    ))}
-                  </ol>
-                )}
-              </dd>
-            </div>
+            {row.stopovers.length > 0 ? (
+              <div className="border-b border-slate-100 py-3 last:border-b-0">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  경유지
+                </dt>
+                <dd className="mt-1 text-sm font-medium text-slate-900">
+                  {row.stopovers.join(", ")}
+                </dd>
+              </div>
+            ) : null}
             <DetailField label="출발일시">
               {formatDepartureDateTimeLine(
                 row.departure_date,

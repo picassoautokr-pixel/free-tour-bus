@@ -5,6 +5,7 @@ import { SolapiMessageService } from "solapi";
 
 import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
+import { formatStopovers } from "@/lib/stopovers";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -238,7 +239,7 @@ export async function POST(request: Request) {
   const { data: application, error: applicationError } = await admin
     .from("applications")
     .select(
-      "id, application_type, departure, destination, departure_date, departure_time, passenger_count, quote_status, quote_closed_at, final_selected_quote_id",
+      "id, application_type, departure, destination, stopovers, departure_date, departure_time, passenger_count, quote_status, quote_closed_at, final_selected_quote_id",
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -259,7 +260,7 @@ export async function POST(request: Request) {
   const { data: latestApplication, error: latestApplicationError } = await admin
     .from("applications")
     .select(
-      "id, application_type, departure, destination, departure_date, departure_time, passenger_count, quote_status, quote_closed_at, final_selected_quote_id",
+      "id, application_type, departure, destination, stopovers, departure_date, departure_time, passenger_count, quote_status, quote_closed_at, final_selected_quote_id",
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -378,6 +379,7 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join(" ");
   const passengerCount = parseInteger(activeApp.passenger_count);
+  const stopoverText = formatStopovers(activeApp.stopovers);
   const insertedByPhone = new Map<string, string>();
   for (const inserted of Array.isArray(insertedRows) ? insertedRows : []) {
     const row = inserted as { referred_phone?: unknown; token?: unknown };
@@ -400,7 +402,7 @@ export async function POST(request: Request) {
 전세버스 견적요청이 전달되었습니다.
 
 출발: ${safeText(activeApp.departure, "미정")}
-도착: ${safeText(activeApp.destination, "미정")}
+${stopoverText ? `경유: ${stopoverText}\n` : ""}도착: ${safeText(activeApp.destination, "미정")}
 일시: ${dateTime || "미정"}
 인원: ${passengerCount == null ? "미정" : passengerCount}
 

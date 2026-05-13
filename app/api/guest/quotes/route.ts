@@ -6,6 +6,7 @@ import {
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
 import { SERVICE_REGIONS, normalizeRegion } from "@/lib/regions";
+import { parseStopovers } from "@/lib/stopovers";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
   let query = admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, departure_date, departure_time, passenger_count, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -111,6 +112,7 @@ export async function GET(request: Request) {
       departure_region: safeText(row.departure_region),
       departure: safeText(row.departure),
       destination: safeText(row.destination),
+      stopovers: parseStopovers(row.stopovers),
       departure_date: safeText(row.departure_date),
       departure_time: safeText(row.departure_time),
       passenger_count: parseInteger(row.passenger_count),

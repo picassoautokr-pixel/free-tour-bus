@@ -58,6 +58,7 @@ type ApplicationInsertPayload = {
   departure_region: string | null;
   destination: string;
   destination_detail: string;
+  stopovers?: string[] | null;
   departure_date: string | null;
   departure_time: string;
   return_date: string | null;
@@ -418,6 +419,9 @@ export default function Home() {
         formData.quoteLimitOption === "custom"
           ? parsePositiveIntegerText(formData.quoteLimitCustomCount)
           : Number.parseInt(formData.quoteLimitOption, 10);
+      const stopovers = formData.stopovers
+        .map((stopover) => stopover.trim())
+        .filter((stopover) => stopover !== "");
 
       const insertPayload: ApplicationInsertPayload = {
         receipt_number: receiptNumber,
@@ -429,6 +433,7 @@ export default function Home() {
         departure_region: finalDepartureRegion,
         destination: destTrim,
         destination_detail: "",
+        stopovers: stopovers.length > 0 ? stopovers : null,
         departure_date: departureDateValue === "" ? null : departureDateValue,
         departure_time: departureTimeValue,
         return_date: returnDateValue === "" ? null : returnDateValue,
