@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { ensureContractNumber } from "@/lib/contract-deposit";
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
 import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
@@ -143,7 +144,7 @@ export async function GET() {
   const { data: applications, error: applicationsError } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo",
+      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_number, contract_pdf_generated_at, contract_pdf_url",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -325,7 +326,7 @@ export async function GET() {
     }
   }
 
-  const calls = rows.map((raw) => {
+  const calls = await Promise.all(rows.map(async (raw) => {
     const row = raw as Record<string, unknown>;
     const id = safeText(row.id, "");
     const quote = quotedByApplication.get(id) ?? null;
@@ -351,10 +352,17 @@ export async function GET() {
       quote.id === finalSelectedQuoteId &&
       contactRevealedAt !== "" &&
       revealStatuses.has(safeText(row.quote_status, "collecting"));
+    const contractNumber =
+      quote != null && finalSelectedQuoteId !== "" && quote.id === finalSelectedQuoteId
+        ? await ensureContractNumber(admin, row)
+        : safeText(row.contract_number, "");
     return {
       id,
       created_at: safeText(row.created_at, ""),
       receipt_number: safeText(row.receipt_number, ""),
+      contract_number: contractNumber,
+      contract_pdf_generated_at: safeText(row.contract_pdf_generated_at, ""),
+      contract_pdf_url: safeText(row.contract_pdf_url, ""),
       application_type: safeText(row.application_type),
       trip_type: safeText(row.trip_type),
       bus_grade: safeText(row.bus_grade),
@@ -397,7 +405,7 @@ export async function GET() {
       customer_phone: customerInfoVisible ? safeText(row.phone) : "",
       my_quote: quote,
     };
-  });
+  }));
 
   return NextResponse.json({
     ok: true,

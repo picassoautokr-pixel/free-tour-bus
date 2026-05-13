@@ -59,6 +59,9 @@ type PartnerCall = {
   id: string;
   created_at: string;
   receipt_number: string;
+  contract_number: string;
+  contract_pdf_generated_at: string;
+  contract_pdf_url: string;
   application_type: string;
   trip_type: string;
   bus_grade: string;
@@ -232,7 +235,13 @@ function canRevealCustomerInfo(call: PartnerCall): boolean {
 function contractPreviewDataForCall(call: PartnerCall): ContractPreviewData | null {
   if (!call.my_quote) return null;
   return {
+    applicationId: call.id,
+    contractNumber: call.contract_number,
+    contractPdfGeneratedAt: call.contract_pdf_generated_at,
     contractStatus: call.contract_status || "pending",
+    clientContractConfirmedAt: call.client_contract_confirmed_at,
+    driverContractConfirmedAt: call.driver_contract_confirmed_at,
+    depositStatus: call.deposit_status,
     clientName: call.customer_name ?? "",
     clientPhone: call.customer_phone ?? "",
     receiptNumber: call.receipt_number,
@@ -385,6 +394,9 @@ function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
     id,
     created_at: safeText(row.created_at, new Date().toISOString()),
     receipt_number: safeText(row.receipt_number),
+    contract_number: safeText(row.contract_number),
+    contract_pdf_generated_at: safeText(row.contract_pdf_generated_at),
+    contract_pdf_url: safeText(row.contract_pdf_url),
     application_type: safeText(row.application_type),
     trip_type: safeText(row.trip_type),
     bus_grade: safeText(row.bus_grade),

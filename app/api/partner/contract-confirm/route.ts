@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  ensureContractNumber,
   logContractNotification,
   maybeStartDepositWaiting,
   safeText,
@@ -102,6 +103,11 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
+  const contractStartedAt = safeText(app.contract_started_at) || now;
+  const contractNumber = await ensureContractNumber(admin, {
+    ...app,
+    contract_started_at: contractStartedAt,
+  });
   const patchedApp = { ...app, driver_contract_confirmed_at: now };
   const depositPatch = await maybeStartDepositWaiting(admin, patchedApp);
   const nextStatus =
@@ -114,7 +120,8 @@ export async function POST(request: Request) {
     .from("applications")
     .update({
       driver_contract_confirmed_at: now,
-      contract_started_at: safeText(app.contract_started_at) || now,
+      contract_started_at: contractStartedAt,
+      contract_number: contractNumber,
       contract_status: nextStatus,
       ...depositPatch,
     })

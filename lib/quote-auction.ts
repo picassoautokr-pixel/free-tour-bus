@@ -4,6 +4,7 @@ import {
   sendNotificationSms,
   siteBaseUrl,
 } from "@/lib/notification-service";
+import { generateContractNumber } from "@/lib/contract-deposit";
 
 export const DEFAULT_BUSINESS_START_TIME = "09:00";
 export const DEFAULT_BUSINESS_END_TIME = "18:00";
@@ -302,6 +303,7 @@ export function quoteLifecycleSelectColumns(): string {
     "support_driver_ratio",
     "contract_status",
     "contract_started_at",
+    "contract_number",
     "passenger_count",
   ].join(", ");
 }
@@ -841,6 +843,13 @@ async function autoFinalConfirmIfDue(
   const now = new Date().toISOString();
   const contractStatus = safeText(application.contract_status) || "pending";
   const contractStartedAt = safeText(application.contract_started_at) || now;
+  const contractNumber =
+    safeText(application.contract_number) ||
+    generateContractNumber({
+      ...application,
+      final_selected_at: now,
+      contract_started_at: contractStartedAt,
+    });
   await admin
     .from("applications")
     .update({
@@ -850,6 +859,7 @@ async function autoFinalConfirmIfDue(
       quote_status: "final_selected",
       contract_status: contractStatus,
       contract_started_at: contractStartedAt,
+      contract_number: contractNumber,
       contact_revealed_at: now,
     })
     .eq("id", safeText(application.id));

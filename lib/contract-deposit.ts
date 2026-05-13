@@ -26,6 +26,47 @@ export function calculateDepositAmount(price: number | null): number {
   return Math.min(Math.max(Math.round(price * 0.1), 50_000), 200_000);
 }
 
+function dateKey(value: unknown): string {
+  const date = new Date(safeText(value) || Date.now());
+  const usable = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = usable.getFullYear();
+  const month = String(usable.getMonth() + 1).padStart(2, "0");
+  const day = String(usable.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+export function generateContractNumber(application: Record<string, unknown>): string {
+  const receiptDigits = safeText(application.receipt_number).replace(/\D/g, "");
+  const suffix =
+    receiptDigits.slice(-4) ||
+    safeText(application.id).replace(/-/g, "").slice(0, 4).toUpperCase() ||
+    "0000";
+  return `FB-CON-${dateKey(
+    application.final_selected_at ||
+      application.contract_started_at ||
+      application.created_at,
+  )}-${suffix}`;
+}
+
+export async function ensureContractNumber(
+  admin: SupabaseLike,
+  application: Record<string, unknown>,
+): Promise<string> {
+  const existing = safeText(application.contract_number);
+  if (existing !== "") return existing;
+
+  const next = generateContractNumber(application);
+  const applicationId = safeText(application.id);
+  if (applicationId !== "") {
+    await admin
+      .from("applications")
+      .update({ contract_number: next })
+      .eq("id", applicationId)
+      .is("contract_number", null);
+  }
+  return next;
+}
+
 export async function selectedQuotePrice(
   admin: SupabaseLike,
   quoteId: string,
@@ -53,13 +94,20 @@ export async function ensureContractStarted(
 ) {
   const { data } = await admin
     .from("applications")
-    .select("contract_status, contract_started_at")
+    .select("id, receipt_number, created_at, final_selected_at, contract_status, contract_started_at, contract_number")
     .eq("id", applicationId)
     .maybeSingle();
   const row = data as Record<string, unknown> | null;
   const patch: Record<string, unknown> = {};
   if (safeText(row?.contract_status) === "") patch.contract_status = "pending";
   if (safeText(row?.contract_started_at) === "") patch.contract_started_at = now;
+  if (safeText(row?.contract_number) === "") {
+    patch.contract_number = generateContractNumber({
+      ...row,
+      id: applicationId,
+      contract_started_at: safeText(row?.contract_started_at) || now,
+    });
+  }
   if (Object.keys(patch).length > 0) {
     await admin.from("applications").update(patch).eq("id", applicationId);
   }

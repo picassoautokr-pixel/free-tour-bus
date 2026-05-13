@@ -86,6 +86,9 @@ type DriverQuoteDetail = {
 
 type ApplicationQuoteLifecycle = {
   id: string;
+  contract_number: string;
+  contract_pdf_generated_at: string;
+  contract_pdf_url: string;
   quote_status: string;
   quote_deadline_at: string;
   quote_limit_count: number | null;
@@ -1158,7 +1161,13 @@ function DriverQuotesSection({
   const contractPreviewData: ContractPreviewData | null =
     application && selectedContractQuote
       ? {
+          applicationId: application.id,
+          contractNumber: application.contract_number,
+          contractPdfGeneratedAt: application.contract_pdf_generated_at,
           contractStatus: application.contract_status || "pending",
+          clientContractConfirmedAt: application.client_contract_confirmed_at,
+          driverContractConfirmedAt: application.driver_contract_confirmed_at,
+          depositStatus: application.deposit_status,
           clientName: applicationDetail.applicant_name,
           clientPhone: applicationDetail.phone,
           receiptNumber: applicationDetail.receipt_number,
@@ -1330,6 +1339,24 @@ function DriverQuotesSection({
               </button>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">계약번호</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.contract_number || "미발급"}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">PDF 생성</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.contract_pdf_generated_at ? "생성됨" : "미생성"}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">PDF 생성 시각</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {formatCreatedAt(application.contract_pdf_generated_at || null)}
+                </dd>
+              </div>
               <div className="rounded-lg bg-white p-2">
                 <dt className="font-bold text-emerald-600">계약 상태</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">

@@ -6,6 +6,7 @@ import {
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
+import { ensureContractNumber } from "@/lib/contract-deposit";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -40,7 +41,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   const { data, error } = await admin
     .from("applications")
     .select(
-      `receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -59,7 +60,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     admin
       .from("applications")
       .select(
-        `receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
+        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
       )
       .eq("id", applicationId)
       .maybeSingle(),
@@ -77,6 +78,10 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       .order("created_at", { ascending: false }),
   ]);
   const current = (latest as Record<string, unknown> | null) ?? app;
+  const contractNumber =
+    safeText(current.final_selected_quote_id) !== ""
+      ? await ensureContractNumber(admin, current)
+      : safeText(current.contract_number);
   const contactRevealed = safeText(current.contact_revealed_at) !== "";
   const revealStatuses = new Set(["final_selected", "contract_pending", "completed"]);
   const finalSelectedQuoteId = safeText(current.final_selected_quote_id);
@@ -137,6 +142,9 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     application: {
       id: applicationId,
       receipt_number: safeText(current.receipt_number),
+      contract_number: contractNumber,
+      contract_pdf_generated_at: safeText(current.contract_pdf_generated_at),
+      contract_pdf_url: safeText(current.contract_pdf_url),
       departure: safeText(current.departure),
       destination: safeText(current.destination),
       stopovers: Array.isArray(current.stopovers)
@@ -232,6 +240,21 @@ export async function POST(request: Request) {
         auto_selected_quote_source: null,
         auto_selected_at: null,
         auto_final_confirm_at: null,
+        final_selected_quote_id: null,
+        final_selected_quote_source: null,
+        final_selected_at: null,
+        contact_revealed_at: null,
+        contract_status: "pending",
+        contract_started_at: null,
+        client_contract_confirmed_at: null,
+        driver_contract_confirmed_at: null,
+        deposit_amount: 0,
+        deposit_status: "unpaid",
+        deposit_confirmed_at: null,
+        contract_memo: null,
+        contract_number: null,
+        contract_pdf_generated_at: null,
+        contract_pdf_url: null,
       })
       .eq("id", applicationId);
     return NextResponse.json({ ok: true, ...(await loadPayload(admin, app)) });
@@ -262,6 +285,13 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const contractStatus = safeText(app.contract_status) || "pending";
     const contractStartedAt = safeText(app.contract_started_at) || now;
+    const contractNumber =
+      safeText(app.contract_number) ||
+      (await ensureContractNumber(admin, {
+        ...app,
+        final_selected_at: now,
+        contract_started_at: contractStartedAt,
+      }));
     await admin
       .from("applications")
       .update({
@@ -272,6 +302,7 @@ export async function POST(request: Request) {
         contact_revealed_at: now,
         contract_status: contractStatus,
         contract_started_at: contractStartedAt,
+        contract_number: contractNumber,
       })
       .eq("id", applicationId);
     await admin

@@ -34,7 +34,11 @@ type ClientQuote = {
 };
 
 type ClientApplication = {
+  id: string;
   receipt_number: string;
+  contract_number: string;
+  contract_pdf_generated_at: string;
+  contract_pdf_url: string;
   applicant_name: string;
   phone: string;
   departure: string;
@@ -230,7 +234,13 @@ export default function ClientDashboardPage() {
   const contractPreviewData: ContractPreviewData | null =
     application && selectedQuote
       ? {
+          applicationId: application.id,
+          contractNumber: application.contract_number,
+          contractPdfGeneratedAt: application.contract_pdf_generated_at,
           contractStatus: application.contract_status || "pending",
+          clientContractConfirmedAt: application.client_contract_confirmed_at,
+          driverContractConfirmedAt: application.driver_contract_confirmed_at,
+          depositStatus: application.deposit_status,
           clientName: application.applicant_name,
           clientPhone: application.phone,
           receiptNumber: application.receipt_number,

@@ -1,7 +1,15 @@
 "use client";
 
+import { useMemo, useRef, useState } from "react";
+
 export type ContractPreviewData = {
+  applicationId?: string;
+  contractNumber?: string;
+  contractPdfGeneratedAt?: string;
   contractStatus: string;
+  clientContractConfirmedAt?: string;
+  driverContractConfirmedAt?: string;
+  depositStatus?: string;
   clientName: string;
   clientPhone: string;
   receiptNumber: string;
@@ -62,6 +70,8 @@ export function ContractPreview({
   data: ContractPreviewData;
   onClose?: () => void;
 }) {
+  const contractRef = useRef<HTMLElement | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const route = [data.departure, ...(data.stopovers ?? []), data.destination]
     .map((item) => item.trim())
     .filter(Boolean)
@@ -72,9 +82,60 @@ export function ContractPreview({
       : data.normalPrice != null
         ? Math.max(data.normalPrice - (data.depositAmount ?? 0), 0)
         : null;
+  const generatedAt = useMemo(() => new Date().toLocaleString("ko-KR"), []);
+  const contractNumber = text(data.contractNumber);
+
+  async function downloadPdf() {
+    if (!contractRef.current || downloading) return;
+    setDownloading(true);
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+      const canvas = await html2canvas(contractRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+      const imageData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imageWidth = pageWidth;
+      const imageHeight = (canvas.height * imageWidth) / canvas.width;
+      let heightLeft = imageHeight;
+      let position = 0;
+
+      pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imageHeight;
+        pdf.addPage();
+        pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
+        heightLeft -= pageHeight;
+      }
+
+      if (data.applicationId) {
+        await fetch("/api/contract-pdf-generated", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            applicationId: data.applicationId,
+            receiptNumber: data.receiptNumber,
+            phone: data.clientPhone,
+          }),
+        }).catch(() => null);
+      }
+
+      pdf.save(`무료전세버스_전자계약서_${data.contractNumber || "미발급"}.pdf`);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 text-left shadow-2xl ring-1 ring-slate-200 print:shadow-none print:ring-0 sm:p-7">
+    <section ref={contractRef} className="rounded-[1.75rem] bg-white p-5 text-left shadow-2xl ring-1 ring-slate-200 print:shadow-none print:ring-0 sm:p-7">
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600">
@@ -86,10 +147,20 @@ export function ContractPreview({
           <p className="mt-1 text-xs font-semibold text-slate-500">
             신청번호 {text(data.receiptNumber)}
           </p>
+          <p className="mt-1 text-xs font-black text-slate-700">
+            계약번호: {contractNumber}
+          </p>
         </div>
-        <span className="inline-flex min-h-9 items-center rounded-full bg-indigo-50 px-3 text-xs font-black text-indigo-700 ring-1 ring-indigo-100">
-          {statusLabels[data.contractStatus] ?? text(data.contractStatus)}
-        </span>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <span className="inline-flex min-h-9 items-center rounded-full bg-indigo-50 px-3 text-xs font-black text-indigo-700 ring-1 ring-indigo-100">
+            계약상태: {statusLabels[data.contractStatus] ?? text(data.contractStatus)}
+          </span>
+          {data.contractPdfGeneratedAt ? (
+            <span className="text-[11px] font-bold text-slate-400">
+              PDF 생성 {new Date(data.contractPdfGeneratedAt).toLocaleString("ko-KR")}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -128,13 +199,34 @@ export function ContractPreview({
       </div>
 
       <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-xs font-semibold leading-6 text-amber-950 ring-1 ring-amber-100">
+        <p>본 계약서는 무료전세버스 플랫폼에서 생성된 전자계약 확인서입니다.</p>
         <p>후원업체 지원금은 심사 결과에 따라 변동 또는 거절될 수 있습니다.</p>
         <p>최종 운행 조건은 갑과 을이 상호 확인해야 합니다.</p>
         <p>예약금 입금 후 배차가 확정됩니다.</p>
         <p>노쇼 및 취소 정책은 플랫폼 운영정책을 따릅니다.</p>
       </div>
+      <div className="mt-5">
+        <p className="text-sm font-black text-slate-950">계약 확인 상태</p>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Row label="계약상태" value={statusLabels[data.contractStatus] ?? text(data.contractStatus)} />
+          <Row label="클라이언트 확인" value={data.clientContractConfirmedAt ? "완료" : "대기"} />
+          <Row label="기사 확인" value={data.driverContractConfirmedAt ? "완료" : "대기"} />
+          <Row label="예약금 상태" value={text(data.depositStatus)} />
+        </dl>
+      </div>
+      <div className="mt-4 text-right text-[11px] font-semibold text-slate-400">
+        생성일시 {generatedAt}
+      </div>
 
       <div className="mt-5 flex gap-2 print:hidden">
+        <button
+          type="button"
+          onClick={downloadPdf}
+          disabled={downloading}
+          className="min-h-11 flex-1 rounded-xl bg-blue-600 px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {downloading ? "PDF 생성 중..." : "PDF 다운로드"}
+        </button>
         <button
           type="button"
           onClick={() => window.print()}

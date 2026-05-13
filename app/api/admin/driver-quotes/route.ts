@@ -7,6 +7,7 @@ import {
   quoteLifecycleSelectColumns,
   supportRewardAmounts,
 } from "@/lib/quote-auction";
+import { ensureContractNumber } from "@/lib/contract-deposit";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
   const { data: applicationRaw, error: applicationError } = await admin
     .from("applications")
     .select(
-      `${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
+      `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -333,6 +334,10 @@ export async function GET(request: Request) {
     passengerCount: application?.passenger_count,
     extensionRound: application?.extension_round,
   });
+  const contractNumber =
+    application && safeText(application.final_selected_quote_id) !== ""
+      ? await ensureContractNumber(admin, application)
+      : safeText(application?.contract_number);
   const { data: notificationRows } = await admin
     .from("notification_logs")
     .select(
@@ -346,6 +351,9 @@ export async function GET(request: Request) {
     application: application
       ? {
           id: safeText(application.id),
+          contract_number: contractNumber,
+          contract_pdf_generated_at: safeText(application.contract_pdf_generated_at),
+          contract_pdf_url: safeText(application.contract_pdf_url),
           quote_status: safeText(application.quote_status, "collecting"),
           quote_deadline_at: safeText(application.quote_deadline_at),
           quote_limit_count: parseInteger(application.quote_limit_count),
@@ -477,6 +485,9 @@ export async function PATCH(request: Request) {
           deposit_status: "unpaid",
           deposit_confirmed_at: null,
           contract_memo: null,
+          contract_number: null,
+          contract_pdf_generated_at: null,
+          contract_pdf_url: null,
         })
         .eq("id", actionApplicationId);
       if (updateError) {
@@ -514,7 +525,7 @@ export async function PATCH(request: Request) {
     const { data: app, error: appError } = await admin
       .from("applications")
       .select(
-        "auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, contract_status, contract_started_at",
+        "id, created_at, receipt_number, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, contract_status, contract_started_at, contract_number",
       )
       .eq("id", actionApplicationId)
       .maybeSingle();
@@ -533,6 +544,13 @@ export async function PATCH(request: Request) {
       );
     }
     const now = new Date().toISOString();
+    const contractStartedAt = safeText(row?.contract_started_at) || now;
+    const contractNumber = await ensureContractNumber(admin, {
+      ...row,
+      id: actionApplicationId,
+      final_selected_at: now,
+      contract_started_at: contractStartedAt,
+    });
     const { error: finalError } = await admin
       .from("applications")
       .update({
@@ -542,7 +560,8 @@ export async function PATCH(request: Request) {
         quote_status: "final_selected",
         contact_revealed_at: now,
         contract_status: safeText(row?.contract_status) || "pending",
-        contract_started_at: safeText(row?.contract_started_at) || now,
+        contract_started_at: contractStartedAt,
+        contract_number: contractNumber,
       })
       .eq("id", actionApplicationId);
     if (finalError) {
