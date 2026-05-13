@@ -1,4 +1,9 @@
 import { estimateSponsorSupport } from "@/lib/support-estimate";
+import {
+  formatWon,
+  sendNotificationSms,
+  siteBaseUrl,
+} from "@/lib/notification-service";
 
 export const DEFAULT_BUSINESS_START_TIME = "09:00";
 export const DEFAULT_BUSINESS_END_TIME = "18:00";
@@ -38,6 +43,18 @@ type QuoteCandidate = {
   price: number | null;
   memberPrice: number | null;
   isSupportQuote: boolean;
+};
+
+type ApplicationNotificationContext = {
+  id: string;
+  applicantName: string;
+  phone: string;
+  departure: string;
+  destination: string;
+  departureDateTime: string;
+  passengerCount: string;
+  quoteDeadlineAt: string;
+  extensionRound: number;
 };
 
 function safeText(value: unknown, emptyLabel = ""): string {
@@ -248,6 +265,20 @@ function isQuoteOpenStatus(status: string): boolean {
   return status === "" || status === "collecting" || status === "extended_no_quotes";
 }
 
+function formatDateTimeKorean(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || "미정";
+  return date.toLocaleString("ko-KR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function effectiveQuotePrice(quote: QuoteCandidate): number | null {
+  if (quote.source === "member" && quote.isSupportQuote) return quote.memberPrice;
+  return quote.price;
+}
+
 export function quoteLifecycleSelectColumns(): string {
   return [
     "id",
@@ -422,11 +453,276 @@ async function markNotSelectedQuotes(
     .neq("id", selected.source === "guest" ? selected.id : "");
 }
 
+async function getApplicationNotificationContext(
+  admin: SupabaseLike,
+  applicationId: string,
+): Promise<ApplicationNotificationContext | null> {
+  const { data } = await admin
+    .from("applications")
+    .select(
+      "id, applicant_name, phone, departure, destination, departure_date, departure_time, passenger_count, quote_deadline_at, extension_round",
+    )
+    .eq("id", applicationId)
+    .maybeSingle();
+  const row = data as Record<string, unknown> | null | undefined;
+  if (!row) return null;
+  const dateTime = [safeText(row.departure_date, "미정"), safeText(row.departure_time, "")]
+    .filter(Boolean)
+    .join(" ");
+  return {
+    id: safeText(row.id),
+    applicantName: safeText(row.applicant_name, "고객"),
+    phone: safeText(row.phone),
+    departure: safeText(row.departure, "미정"),
+    destination: safeText(row.destination, "미정"),
+    departureDateTime: dateTime || "미정",
+    passengerCount: safeText(row.passenger_count, "미정"),
+    quoteDeadlineAt: safeText(row.quote_deadline_at),
+    extensionRound: parseInteger(row.extension_round) ?? 0,
+  };
+}
+
+async function getSelectedQuoteContact(
+  admin: SupabaseLike,
+  quote: QuoteCandidate,
+): Promise<{ phone: string; name: string } | null> {
+  if (quote.source === "member") {
+    const { data } = await admin
+      .from("driver_quotes")
+      .select("partner_driver_id")
+      .eq("id", quote.id)
+      .maybeSingle();
+    const partnerDriverId = safeText(
+      (data as { partner_driver_id?: unknown } | null)?.partner_driver_id,
+    );
+    if (partnerDriverId === "") return null;
+    const { data: driver } = await admin
+      .from("partner_drivers")
+      .select("company_name, manager_name, phone")
+      .eq("id", partnerDriverId)
+      .maybeSingle();
+    const row = driver as Record<string, unknown> | null | undefined;
+    if (!row) return null;
+    return {
+      phone: safeText(row.phone),
+      name: safeText(row.company_name, safeText(row.manager_name, "기사")),
+    };
+  }
+
+  const { data } = await admin
+    .from("guest_driver_quotes")
+    .select("guest_company_name, guest_driver_name, guest_phone")
+    .eq("id", quote.id)
+    .maybeSingle();
+  const row = data as Record<string, unknown> | null | undefined;
+  if (!row) return null;
+  return {
+    phone: safeText(row.guest_phone),
+    name: safeText(row.guest_company_name, safeText(row.guest_driver_name, "기사")),
+  };
+}
+
+function quoteMetrics(candidates: QuoteCandidate[]): {
+  quoteCount: number;
+  lowestPrice: number | null;
+  averagePrice: number | null;
+} {
+  const prices = candidates
+    .map(effectiveQuotePrice)
+    .filter((value): value is number => value != null && value >= 0);
+  return {
+    quoteCount: candidates.length,
+    lowestPrice: prices.length === 0 ? null : Math.min(...prices),
+    averagePrice:
+      prices.length === 0
+        ? null
+        : Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length),
+  };
+}
+
+async function notifyQuoteClosed(
+  admin: SupabaseLike,
+  applicationId: string,
+  candidates: QuoteCandidate[],
+) {
+  const app = await getApplicationNotificationContext(admin, applicationId);
+  if (!app) return;
+  const metrics = quoteMetrics(candidates);
+  await sendNotificationSms(admin, {
+    target_type: "customer",
+    target_phone: app.phone,
+    target_name: app.applicantName,
+    notification_type: "quote_closed",
+    application_id: applicationId,
+    message: `[무료관광버스]
+견적 접수가 마감되었습니다.
+
+총 접수 견적: ${metrics.quoteCount}건
+최저 견적: ${formatWon(metrics.lowestPrice)}
+
+견적 확인:
+${siteBaseUrl()}/client/dashboard`,
+  });
+}
+
+async function notifyAutoSelected(
+  admin: SupabaseLike,
+  applicationId: string,
+  selected: QuoteCandidate,
+  candidates: QuoteCandidate[],
+  autoFinalConfirmAt: string,
+) {
+  const app = await getApplicationNotificationContext(admin, applicationId);
+  if (!app) return;
+  const metrics = quoteMetrics(candidates);
+  const driver = await getSelectedQuoteContact(admin, selected);
+  if (driver) {
+    await sendNotificationSms(admin, {
+      target_type: selected.source === "guest" ? "guest_driver" : "driver",
+      target_phone: driver.phone,
+      target_name: driver.name,
+      notification_type: "auto_selected_driver",
+      application_id: applicationId,
+      quote_id: selected.id,
+      quote_source: selected.source,
+      message: `[무료관광버스]
+최저가 자동매칭 후보로 선정되었습니다.
+
+최종 확정 시 고객 연락처가 공개됩니다.
+* 확정매칭은 변경될 수 있습니다.
+
+콜 확인:
+${siteBaseUrl()}/partner/dashboard`,
+    });
+  }
+  await sendNotificationSms(admin, {
+    target_type: "customer",
+    target_phone: app.phone,
+    target_name: app.applicantName,
+    notification_type: "auto_selected_customer",
+    application_id: applicationId,
+    quote_id: selected.id,
+    quote_source: selected.source,
+    message: `[무료관광버스]
+최저가 자동매칭이 완료되었습니다.
+
+총 견적: ${metrics.quoteCount}건
+최저가: ${formatWon(metrics.lowestPrice)}
+
+최종확정 예정시간:
+${formatDateTimeKorean(autoFinalConfirmAt)}
+
+직접 확정 또는 다른 견적 선택이 가능합니다.
+${siteBaseUrl()}/client/dashboard`,
+  });
+}
+
+async function notifyFinalSelected(
+  admin: SupabaseLike,
+  applicationId: string,
+  selected: QuoteCandidate,
+) {
+  const app = await getApplicationNotificationContext(admin, applicationId);
+  if (!app) return;
+  const driver = await getSelectedQuoteContact(admin, selected);
+  if (driver) {
+    await sendNotificationSms(admin, {
+      target_type: selected.source === "guest" ? "guest_driver" : "driver",
+      target_phone: driver.phone,
+      target_name: driver.name,
+      notification_type: "final_selected_driver",
+      application_id: applicationId,
+      quote_id: selected.id,
+      quote_source: selected.source,
+      message: `[무료관광버스]
+최종 매칭이 확정되었습니다.
+
+고객 연락처와 운행 정보를 확인해주세요.
+
+확인:
+${siteBaseUrl()}/partner/dashboard`,
+    });
+  }
+  await sendNotificationSms(admin, {
+    target_type: "customer",
+    target_phone: app.phone,
+    target_name: app.applicantName,
+    notification_type: "final_selected_customer",
+    application_id: applicationId,
+    quote_id: selected.id,
+    quote_source: selected.source,
+    message: `[무료관광버스]
+전세버스 매칭이 최종확정되었습니다.
+
+예약금 및 전자계약 절차를 진행해주세요.
+
+확인:
+${siteBaseUrl()}/client/dashboard`,
+  });
+}
+
+async function notifyGuestNotSelected(
+  admin: SupabaseLike,
+  applicationId: string,
+  selected: QuoteCandidate,
+  averagePrice: number | null,
+) {
+  const { data } = await admin
+    .from("guest_driver_quotes")
+    .select("id, guest_phone, guest_company_name, guest_driver_name")
+    .eq("application_id", applicationId)
+    .neq("id", selected.source === "guest" ? selected.id : "");
+  for (const raw of Array.isArray(data) ? data : []) {
+    const row = raw as Record<string, unknown>;
+    const phone = safeText(row.guest_phone);
+    await sendNotificationSms(admin, {
+      target_type: "guest_driver",
+      target_phone: phone,
+      target_name: safeText(row.guest_company_name, safeText(row.guest_driver_name, "기사")),
+      notification_type: "guest_not_selected",
+      application_id: applicationId,
+      quote_id: safeText(row.id),
+      quote_source: "guest",
+      message: `[무료관광버스]
+아쉽게도 이번 견적은 선택되지 않았습니다.
+
+이번 콜의 평균 견적가는 ${formatWon(averagePrice)}입니다.
+다음 콜부터 실시간으로 참여하려면 제휴기사로 가입해주세요.
+
+가입하기:
+${siteBaseUrl()}/partner/register?invitePhone=${phone.replace(/\D/g, "")}`,
+    });
+  }
+}
+
+async function notifyExtendedNoQuotes(admin: SupabaseLike, applicationId: string) {
+  const app = await getApplicationNotificationContext(admin, applicationId);
+  if (!app) return;
+  await sendNotificationSms(admin, {
+    target_type: "customer",
+    target_phone: app.phone,
+    target_name: app.applicantName,
+    notification_type: "extended_no_quotes",
+    application_id: applicationId,
+    message: `[무료관광버스]
+현재 접수된 견적이 없어 동일 조건으로 견적요청이 자동 연장되었습니다.
+
+연장 회차: ${app.extensionRound}회차
+다음 마감: ${formatDateTimeKorean(app.quoteDeadlineAt)}
+
+견적유지 감사지원금 혜택이 적용될 수 있습니다.
+
+확인:
+${siteBaseUrl()}/client/dashboard`,
+  });
+}
+
 async function closeApplication(
   admin: SupabaseLike,
   applicationId: string,
   status: QuoteStatus,
   reason: string,
+  candidates: QuoteCandidate[] = [],
 ) {
   const now = new Date().toISOString();
   await admin
@@ -437,6 +733,16 @@ async function closeApplication(
       quote_closed_reason: reason,
     })
     .eq("id", applicationId);
+  if (
+    [
+      "closed_by_time",
+      "closed_by_quote_count",
+      "closed_by_price",
+      "manually_closed",
+    ].includes(status)
+  ) {
+    await notifyQuoteClosed(admin, applicationId, candidates);
+  }
 }
 
 async function autoExtendNoQuotes(
@@ -450,6 +756,7 @@ async function autoExtendNoQuotes(
       safeText(application.id),
       "closed_by_time",
       "no_quotes_extension_limit",
+      [],
     );
     return;
   }
@@ -469,6 +776,7 @@ async function autoExtendNoQuotes(
       ...ratios,
     })
     .eq("id", safeText(application.id));
+  await notifyExtendedNoQuotes(admin, safeText(application.id));
 }
 
 async function autoSelectIfNeeded(
@@ -484,17 +792,25 @@ async function autoSelectIfNeeded(
 
   const now = new Date().toISOString();
   const settings = await getQuoteAutomationSettings(admin);
+  const autoFinalConfirmAt = calculateAutoFinalConfirmAt(new Date(now), settings);
   await admin
     .from("applications")
     .update({
       auto_selected_quote_id: selected.id,
       auto_selected_quote_source: selected.source,
       auto_selected_at: now,
-      auto_final_confirm_at: calculateAutoFinalConfirmAt(new Date(now), settings),
+      auto_final_confirm_at: autoFinalConfirmAt,
       quote_status: "auto_selected",
     })
     .eq("id", safeText(application.id));
   await markSelectedQuote(admin, selected, "provisional_selected");
+  await notifyAutoSelected(
+    admin,
+    safeText(application.id),
+    selected,
+    candidates,
+    autoFinalConfirmAt,
+  );
 }
 
 async function autoFinalConfirmIfDue(
@@ -534,6 +850,15 @@ async function autoFinalConfirmIfDue(
     .eq("id", safeText(application.id));
   await markSelectedQuote(admin, selected, "final_selected");
   await markNotSelectedQuotes(admin, safeText(application.id), selected);
+  const candidates = await fetchQuoteCandidates(admin, safeText(application.id));
+  const metrics = quoteMetrics(candidates);
+  await notifyFinalSelected(admin, safeText(application.id), selected);
+  await notifyGuestNotSelected(
+    admin,
+    safeText(application.id),
+    selected,
+    metrics.averagePrice,
+  );
 }
 
 function closingReasonFor(
@@ -620,7 +945,7 @@ export async function processApplicationQuoteLifecycle(
     return;
   }
 
-  await closeApplication(admin, applicationId, close.status, close.reason);
+  await closeApplication(admin, applicationId, close.status, close.reason, candidates);
   await autoSelectIfNeeded(admin, application, candidates);
 }
 

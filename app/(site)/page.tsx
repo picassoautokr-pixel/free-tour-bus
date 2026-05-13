@@ -485,6 +485,14 @@ export default function Home() {
         return;
       }
 
+      void fetch("/api/notifications/new-application", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receipt_number: receiptNumber }),
+      }).catch(() => {
+        /* 신청 저장 성공 후 알림 로그 실패는 사용자 흐름을 막지 않습니다. */
+      });
+
       setSuccessSummary({
         receiptNumber,
         applicationType: formData.applicationType,

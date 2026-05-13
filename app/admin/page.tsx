@@ -126,6 +126,20 @@ type GuestDriverQuoteDetail = {
   linked_partner_phone?: string;
 };
 
+type NotificationLogDetail = {
+  id: string;
+  created_at: string;
+  target_type: string;
+  target_phone: string;
+  target_name: string;
+  notification_type: string;
+  quote_id: string;
+  quote_source: string;
+  status: string;
+  error: string;
+  sent_at: string;
+};
+
 type QuoteAutomationSettingsForm = {
   business_start_time: string;
   business_end_time: string;
@@ -970,6 +984,7 @@ function StatusChangeSection({
 function DriverQuotesSection({ applicationId }: { applicationId: string }) {
   const [quotes, setQuotes] = useState<DriverQuoteDetail[]>([]);
   const [guestQuotes, setGuestQuotes] = useState<GuestDriverQuoteDetail[]>([]);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLogDetail[]>([]);
   const [application, setApplication] = useState<ApplicationQuoteLifecycle | null>(
     null,
   );
@@ -992,22 +1007,28 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
         application?: ApplicationQuoteLifecycle | null;
         quotes?: DriverQuoteDetail[];
         guest_quotes?: GuestDriverQuoteDetail[];
+        notification_logs?: NotificationLogDetail[];
       };
       if (!res.ok) {
         setError(json.error ?? "견적 목록을 불러오지 못했습니다.");
         setApplication(null);
         setQuotes([]);
         setGuestQuotes([]);
+        setNotificationLogs([]);
         return;
       }
       setApplication(json.application ?? null);
       setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
       setGuestQuotes(Array.isArray(json.guest_quotes) ? json.guest_quotes : []);
+      setNotificationLogs(
+        Array.isArray(json.notification_logs) ? json.notification_logs : [],
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setQuotes([]);
       setGuestQuotes([]);
       setApplication(null);
+      setNotificationLogs([]);
     } finally {
       setLoading(false);
     }
@@ -1208,6 +1229,48 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
           ) : null}
         </div>
       ) : null}
+
+      <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-100">
+        <p className="text-xs font-black text-slate-900">문자 발송 로그</p>
+        <p className="mt-1 text-xs font-semibold text-slate-500">
+          상태 변화에 따라 자동 발송된 고객/기사 안내 내역입니다.
+        </p>
+        {notificationLogs.length === 0 ? (
+          <p className="mt-3 rounded-lg bg-slate-50 px-3 py-4 text-center text-xs font-semibold text-slate-500">
+            발송 로그가 없습니다.
+          </p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {notificationLogs.map((log) => (
+              <div
+                key={log.id}
+                className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-black text-slate-900">
+                    {log.notification_type}
+                    <span className="ml-2 rounded-full bg-white px-2 py-0.5 font-bold text-slate-600 ring-1 ring-slate-200">
+                      {log.status}
+                    </span>
+                  </p>
+                  <p className="font-semibold text-slate-500">
+                    {formatCreatedAt(log.sent_at || log.created_at)}
+                  </p>
+                </div>
+                <p className="mt-1 font-semibold text-slate-700">
+                  대상: {log.target_name || "—"} / {log.target_phone || "—"} (
+                  {log.target_type || "—"})
+                </p>
+                {log.error ? (
+                  <p className="mt-1 font-semibold text-red-700">
+                    실패 사유: {log.error}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="mt-3 space-y-3">
         {loading && quotes.length === 0 ? (

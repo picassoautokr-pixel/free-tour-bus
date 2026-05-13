@@ -331,6 +331,13 @@ export async function GET(request: Request) {
     passengerCount: application?.passenger_count,
     extensionRound: application?.extension_round,
   });
+  const { data: notificationRows } = await admin
+    .from("notification_logs")
+    .select(
+      "id, created_at, target_type, target_phone, target_name, notification_type, quote_id, quote_source, status, error, sent_at",
+    )
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
 
   return NextResponse.json({
     ok: true,
@@ -367,6 +374,24 @@ export async function GET(request: Request) {
       : null,
     quotes: normalized,
     guest_quotes,
+    notification_logs: (Array.isArray(notificationRows) ? notificationRows : []).map(
+      (raw) => {
+        const row = raw as Record<string, unknown>;
+        return {
+          id: safeText(row.id),
+          created_at: safeText(row.created_at),
+          target_type: safeText(row.target_type),
+          target_phone: safeText(row.target_phone),
+          target_name: safeText(row.target_name),
+          notification_type: safeText(row.notification_type),
+          quote_id: safeText(row.quote_id),
+          quote_source: safeText(row.quote_source),
+          status: safeText(row.status),
+          error: safeText(row.error),
+          sent_at: safeText(row.sent_at),
+        };
+      },
+    ),
   });
 }
 
