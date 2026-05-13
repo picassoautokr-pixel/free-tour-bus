@@ -13,12 +13,18 @@ import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import {
   SERVICE_REGIONS,
+  normalizeRegion,
   normalizeServiceRegions,
   type ServiceRegion,
 } from "@/lib/regions";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
-import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
+import {
+  formatRouteWithStopovers,
+  formatStopovers,
+  parseStopovers,
+} from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
+import { estimateSponsorSupport } from "@/lib/support-estimate";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -112,6 +118,7 @@ const emptyReferralForm: ReferralForm = {
 };
 
 const PARTNER_NOTIFICATION_SOUND_PREF_KEY = "partnerDashboardSoundEnabled";
+const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 
 const DASHBOARD_TABS: Array<{
   id: DashboardTab;
@@ -232,6 +239,26 @@ function parsePriceInput(value: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function safeText(value: unknown, emptyLabel = ""): string {
+  if (value == null) return emptyLabel;
+  const text = String(value).trim();
+  return text === "" ? emptyLabel : text;
+}
+
+function parseInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const digits = value.replace(/[^\d-]/g, "");
+    if (digits !== "") {
+      const parsed = Number.parseInt(digits, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
 function supportDiscountFor(call: PartnerCall, value: string): number {
   const parsed = parsePriceInput(value);
   return parsed ?? call.estimated_support_amount;
@@ -284,6 +311,54 @@ function logRealtime(message: string, payload?: unknown) {
   else console.log(message, payload);
 }
 
+function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
+  const id = safeText(row.id);
+  if (id === "") return null;
+  if (safeText(row.application_type) !== APPLICATION_TYPE_NEW_BOOKING) return null;
+
+  const passengerCount = parseInteger(row.passenger_count);
+  const estimatedSupportAmount = estimateSponsorSupport({
+    passengerCount,
+    price: 0,
+  }).supportAmount;
+
+  return {
+    id,
+    created_at: safeText(row.created_at, new Date().toISOString()),
+    receipt_number: safeText(row.receipt_number),
+    application_type: safeText(row.application_type),
+    trip_type: safeText(row.trip_type),
+    bus_grade: safeText(row.bus_grade),
+    departure: safeText(row.departure),
+    departure_region: safeText(row.departure_region),
+    destination: safeText(row.destination),
+    stopovers: parseStopovers(row.stopovers),
+    departure_date: safeText(row.departure_date),
+    departure_time: safeText(row.departure_time),
+    return_date: safeText(row.return_date),
+    passenger_count: passengerCount,
+    estimated_support_amount: estimatedSupportAmount,
+    quote_status: safeText(row.quote_status, "collecting"),
+    quote_deadline_at: safeText(row.quote_deadline_at),
+    quote_limit_count: parseInteger(row.quote_limit_count),
+    quote_count: 0,
+    call_category: "new",
+    target_normal_price: parseInteger(row.target_normal_price),
+    target_member_price: parseInteger(row.target_member_price),
+    quote_closed_at: safeText(row.quote_closed_at),
+    extension_round: parseInteger(row.extension_round) ?? 0,
+    support_client_reward_ratio: parseInteger(row.support_client_reward_ratio) ?? 0,
+    support_driver_ratio: parseInteger(row.support_driver_ratio) ?? 100,
+    auto_selected_quote_id: safeText(row.auto_selected_quote_id),
+    auto_selected_quote_source: safeText(row.auto_selected_quote_source),
+    final_selected_quote_id: safeText(row.final_selected_quote_id),
+    final_selected_quote_source: safeText(row.final_selected_quote_source),
+    auto_final_confirm_at: safeText(row.auto_final_confirm_at),
+    contract_status: safeText(row.contract_status),
+    my_quote: null,
+  };
+}
+
 export default function PartnerDashboardPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -310,11 +385,30 @@ export default function PartnerDashboardPage() {
   const [serviceRegionMessage, setServiceRegionMessage] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [newCallNoticeId, setNewCallNoticeId] = useState<string | null>(null);
+  const [highlightedNewCallIds, setHighlightedNewCallIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | "unsupported"
+  >("unsupported");
   const knownCallIdsRef = useRef<Set<string>>(new Set());
+  const notifiedCallIdsRef = useRef<Set<string>>(new Set());
   const callsInitializedRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const pendingApplicationInsertIdRef = useRef<string | null>(null);
   const realtimeSubscribedLoggedRef = useRef(false);
+  const savedServiceRegionsRef = useRef<ServiceRegion[]>([]);
+  const highlightTimersRef = useRef<Map<string, number>>(new Map());
+
+  function scrollToCall(id: string) {
+    setActiveTab("new");
+    window.setTimeout(() => {
+      document.getElementById(`partner-call-${id}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+  }
 
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled || !audioContextRef.current) return;
@@ -333,6 +427,64 @@ export default function PartnerDashboardPage() {
       /* ignore */
     }
   }, [soundEnabled]);
+
+  const highlightNewCall = useCallback((id: string) => {
+    setHighlightedNewCallIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+
+    const previousTimer = highlightTimersRef.current.get(id);
+    if (previousTimer != null) {
+      window.clearTimeout(previousTimer);
+    }
+
+    const timer = window.setTimeout(() => {
+      highlightTimersRef.current.delete(id);
+      setHighlightedNewCallIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 3000);
+    highlightTimersRef.current.set(id, timer);
+  }, []);
+
+  const showBrowserNotification = useCallback((call: PartnerCall) => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (window.Notification.permission !== "granted") return;
+
+    const title = `🔔 ${formatRouteWithStopovers(
+      call.departure,
+      call.stopovers,
+      call.destination,
+    )} 신규 견적`;
+    const body = `${call.passenger_count ?? "미정"}인 / ${call.trip_type || "미정"} / ${
+      call.bus_grade || "미정"
+    }`;
+    const notification = new window.Notification(title, {
+      body,
+      tag: `partner-new-call-${call.id}`,
+    });
+    notification.onclick = () => {
+      window.focus();
+      scrollToCall(call.id);
+      notification.close();
+    };
+  }, []);
+
+  const handleNewCallArrived = useCallback(
+    (call: PartnerCall) => {
+      if (notifiedCallIdsRef.current.has(call.id)) return;
+      notifiedCallIdsRef.current.add(call.id);
+      setNewCallNoticeId(call.id);
+      highlightNewCall(call.id);
+      playNotificationSound();
+      showBrowserNotification(call);
+    },
+    [highlightNewCall, playNotificationSound, showBrowserNotification],
+  );
 
   const loadCalls = useCallback(async () => {
     setCallsLoading(true);
@@ -363,8 +515,7 @@ export default function PartnerDashboardPage() {
             (call) => !knownCallIdsRef.current.has(call.id) && isNewCall(call),
           );
         if (newCall) {
-          setNewCallNoticeId(newCall.id);
-          playNotificationSound();
+          handleNewCallArrived(newCall);
         }
         pendingApplicationInsertIdRef.current = null;
       } else {
@@ -381,7 +532,7 @@ export default function PartnerDashboardPage() {
     } finally {
       setCallsLoading(false);
     }
-  }, [playNotificationSound]);
+  }, [handleNewCallArrived]);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,6 +626,22 @@ export default function PartnerDashboardPage() {
         const insertedId =
           typeof payload.new?.id === "string" ? payload.new.id : null;
         pendingApplicationInsertIdRef.current = insertedId;
+        const optimisticCall = payload.new ? buildOptimisticCall(payload.new) : null;
+        if (optimisticCall && isNewCall(optimisticCall)) {
+          const selectedRegions = savedServiceRegionsRef.current;
+          const callRegion = normalizeRegion(optimisticCall.departure_region);
+          if (
+            selectedRegions.length === 0 ||
+            (callRegion !== "" && selectedRegions.includes(callRegion))
+          ) {
+            setCalls((prev) => {
+              if (prev.some((call) => call.id === optimisticCall.id)) return prev;
+              return [optimisticCall, ...prev];
+            });
+            knownCallIdsRef.current.add(optimisticCall.id);
+            handleNewCallArrived(optimisticCall);
+          }
+        }
       } else if (table === "applications" && eventType === "UPDATE") {
         logRealtime("[realtime] applications UPDATE", payload);
       } else if (
@@ -493,13 +660,29 @@ export default function PartnerDashboardPage() {
   }, [realtimeStatus]);
 
   useEffect(() => {
+    savedServiceRegionsRef.current = savedServiceRegions;
+  }, [savedServiceRegions]);
+
+  useEffect(() => {
     try {
       setSoundEnabled(
         window.localStorage.getItem(PARTNER_NOTIFICATION_SOUND_PREF_KEY) === "1",
       );
+      setNotificationPermission(
+        "Notification" in window ? window.Notification.permission : "unsupported",
+      );
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of highlightTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      highlightTimersRef.current.clear();
+    };
   }, []);
 
   const toggleSound = async () => {
@@ -527,14 +710,13 @@ export default function PartnerDashboardPage() {
     }
   };
 
-  const scrollToCall = (id: string) => {
-    setActiveTab("new");
-    window.setTimeout(() => {
-      document.getElementById(`partner-call-${id}`)?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }, 80);
+  const requestBrowserNotifications = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+    const nextPermission = await window.Notification.requestPermission();
+    setNotificationPermission(nextPermission);
   };
 
   const handleLogout = async () => {
@@ -757,6 +939,21 @@ export default function PartnerDashboardPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-5 pb-16 pt-10">
+      <style>{`
+        @keyframes partner-new-call-glow {
+          0% {
+            box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45), 0 18px 45px rgba(15, 23, 42, 0.08);
+            transform: translateY(-2px);
+          }
+          45% {
+            box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.18), 0 22px 55px rgba(37, 99, 235, 0.16);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(37, 99, 235, 0), 0 1px 3px rgba(15, 23, 42, 0.08);
+            transform: translateY(0);
+          }
+        }
+      `}</style>
       <div className="mx-auto max-w-3xl">
         <div className="rounded-[2rem] border border-slate-200/90 bg-white px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.1)] sm:px-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -786,6 +983,26 @@ export default function PartnerDashboardPage() {
                 style={tapStyle}
               >
                 {soundEnabled ? "알림음 끄기" : "알림음 켜기"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void requestBrowserNotifications()}
+                disabled={
+                  notificationPermission === "granted" ||
+                  notificationPermission === "unsupported"
+                }
+                className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 text-sm font-black shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  notificationPermission === "granted"
+                    ? "border-blue-200 bg-blue-50 text-blue-900"
+                    : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                }`}
+                style={tapStyle}
+              >
+                {notificationPermission === "granted"
+                  ? "브라우저 알림 켜짐"
+                  : notificationPermission === "unsupported"
+                    ? "브라우저 알림 미지원"
+                    : "브라우저 알림 켜기"}
               </button>
               <button
                 type="button"
@@ -1124,6 +1341,7 @@ export default function PartnerDashboardPage() {
                 const formOpen = activeQuoteCallId === call.id;
                 const referralOpen = activeReferralCallId === call.id;
                 const quoteClosed = isQuoteClosed(call);
+                const highlightedNewCall = highlightedNewCallIds.has(call.id);
                 const driverSupportAmount = Math.round(
                   (call.estimated_support_amount * call.support_driver_ratio) / 100,
                 );
@@ -1154,7 +1372,16 @@ export default function PartnerDashboardPage() {
                   <article
                     key={call.id}
                     id={`partner-call-${call.id}`}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
+                    className={`rounded-2xl border bg-white p-4 shadow-sm ring-1 transition ${
+                      highlightedNewCall
+                        ? "border-blue-300 ring-blue-200"
+                        : "border-slate-200 ring-slate-100"
+                    }`}
+                    style={
+                      highlightedNewCall
+                        ? { animation: "partner-new-call-glow 3s ease-out" }
+                        : undefined
+                    }
                   >
                     <div
                       className={`mb-4 rounded-2xl border px-4 py-3 ${
@@ -1278,6 +1505,11 @@ export default function PartnerDashboardPage() {
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
                           {call.receipt_number || "신규 콜"}
+                          {highlightedNewCall ? (
+                            <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
+                              NEW
+                            </span>
+                          ) : null}
                         </p>
                         <h2 className="mt-1 text-lg font-black tracking-[-0.03em] text-slate-900">
                           {formatRouteWithStopovers(
