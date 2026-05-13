@@ -11,6 +11,7 @@ import {
 
 import * as XLSX from "xlsx";
 
+import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   fetchProfileForAuthUser,
   resolveAdminRoleAccess,
@@ -1102,6 +1103,17 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
 
       {application ? (
         <div className="mt-3 rounded-xl border border-white bg-white p-3 shadow-sm ring-1 ring-indigo-100">
+          <QuoteStatusSummary
+            quoteStatus={application.quote_status}
+            quoteDeadlineAt={application.quote_deadline_at}
+            autoFinalConfirmAt={application.auto_final_confirm_at}
+            quoteClosedReason={application.quote_closed_reason}
+            quoteCount={quotes.length + guestQuotes.length}
+            quoteLimitCount={application.quote_limit_count}
+            targetNormalPrice={application.target_normal_price}
+            targetMemberPrice={application.target_member_price}
+            compact
+          />
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-black text-indigo-950">자동 경매 상태</p>

@@ -69,7 +69,7 @@ export async function GET(request: Request) {
   let query = admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, departure_date, departure_time, passenger_count, request_message, quote_status, quote_closed_at",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, departure_date, departure_time, passenger_count, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -80,6 +80,25 @@ export async function GET(request: Request) {
   const { data, error } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 502 });
+  }
+
+  const ids = (Array.isArray(data) ? data : [])
+    .map((raw) => safeText((raw as { id?: unknown }).id))
+    .filter(Boolean);
+  const quoteCountByApplication = new Map<string, number>();
+  if (ids.length > 0) {
+    const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
+      admin.from("driver_quotes").select("application_id").in("application_id", ids),
+      admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
+    ]);
+    for (const raw of Array.isArray(memberRows) ? memberRows : []) {
+      const id = safeText((raw as { application_id?: unknown }).application_id);
+      quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
+    }
+    for (const raw of Array.isArray(guestRows) ? guestRows : []) {
+      const id = safeText((raw as { application_id?: unknown }).application_id);
+      quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
+    }
   }
 
   const quotes = (Array.isArray(data) ? data : []).map((raw) => {
@@ -98,6 +117,14 @@ export async function GET(request: Request) {
       trip_type: safeText(row.trip_type),
       bus_grade: safeText(row.bus_grade),
       request_message: clipRequestMessage(row.request_message),
+      quote_status: safeText(row.quote_status, "collecting"),
+      quote_deadline_at: safeText(row.quote_deadline_at, ""),
+      quote_limit_count: parseInteger(row.quote_limit_count),
+      quote_count: quoteCountByApplication.get(safeText(row.id)) ?? 0,
+      target_normal_price: parseInteger(row.target_normal_price),
+      target_member_price: parseInteger(row.target_member_price),
+      quote_closed_at: safeText(row.quote_closed_at, ""),
+      auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
     };
   }).filter((quote): quote is NonNullable<typeof quote> => quote != null);
 

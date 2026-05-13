@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
+import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 type PageProps = {
@@ -17,7 +18,13 @@ type SharedApplication = {
   bus_grade: string;
   request_message: string;
   quote_status: string;
+  quote_deadline_at: string;
+  quote_limit_count: number | null;
+  quote_count: number;
+  target_normal_price: number | null;
+  target_member_price: number | null;
   quote_closed_at: string;
+  auto_final_confirm_at: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -109,7 +116,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const { data: referral, error } = await admin
     .from("quote_referrals")
     .select(
-      "id, token, status, expires_at, applications(id, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_closed_at)",
+      "id, token, status, expires_at, applications(id, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at)",
     )
     .eq("token", cleanToken)
     .maybeSingle();
@@ -145,6 +152,18 @@ export default async function SharedQuotePage({ params }: PageProps) {
     return <MessageCard title="견적요청을 찾을 수 없습니다" message="삭제되었거나 더 이상 확인할 수 없는 요청입니다." />;
   }
 
+  const applicationId = safeText(appRow.id, "");
+  let quoteCount = 0;
+  if (applicationId !== "") {
+    const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
+      admin.from("driver_quotes").select("id").eq("application_id", applicationId),
+      admin.from("guest_driver_quotes").select("id").eq("application_id", applicationId),
+    ]);
+    quoteCount =
+      (Array.isArray(memberRows) ? memberRows.length : 0) +
+      (Array.isArray(guestRows) ? guestRows.length : 0);
+  }
+
   const app: SharedApplication = {
     departure: safeText(appRow.departure),
     destination: safeText(appRow.destination),
@@ -156,9 +175,14 @@ export default async function SharedQuotePage({ params }: PageProps) {
     bus_grade: safeText(appRow.bus_grade),
     request_message: safeText(appRow.request_message),
     quote_status: safeText(appRow.quote_status, "collecting"),
+    quote_deadline_at: safeText(appRow.quote_deadline_at, ""),
+    quote_limit_count: parseInteger(appRow.quote_limit_count),
+    quote_count: quoteCount,
+    target_normal_price: parseInteger(appRow.target_normal_price),
+    target_member_price: parseInteger(appRow.target_member_price),
     quote_closed_at: safeText(appRow.quote_closed_at, ""),
+    auto_final_confirm_at: safeText(appRow.auto_final_confirm_at, ""),
   };
-  const applicationId = safeText(appRow.id, "");
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-5 py-10">
@@ -181,6 +205,18 @@ export default async function SharedQuotePage({ params }: PageProps) {
           <InfoCard label="왕복/편도" value={app.trip_type} />
           <InfoCard label="일반/프리미엄" value={app.bus_grade} />
         </dl>
+
+        <div className="mt-4">
+          <QuoteStatusSummary
+            quoteStatus={app.quote_status}
+            quoteDeadlineAt={app.quote_deadline_at}
+            autoFinalConfirmAt={app.auto_final_confirm_at}
+            quoteCount={app.quote_count}
+            quoteLimitCount={app.quote_limit_count}
+            targetNormalPrice={app.target_normal_price}
+            targetMemberPrice={app.target_member_price}
+          />
+        </div>
 
         <div className="mt-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
           <p className="text-xs font-black text-slate-400">요청사항 일부</p>

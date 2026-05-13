@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
+import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 
 type GuestCall = {
   id: string;
@@ -17,7 +18,13 @@ type GuestCall = {
   bus_grade: string;
   request_message: string;
   quote_status?: string;
+  quote_deadline_at?: string;
+  quote_limit_count?: number | null;
+  quote_count?: number;
+  target_normal_price?: number | null;
+  target_member_price?: number | null;
   quote_closed_at?: string;
+  auto_final_confirm_at?: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -127,6 +134,18 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
                 >
                   {call.quote_closed_at ? "견적 마감됨" : "견적 제출"}
                 </button>
+              </div>
+              <div className="mt-4">
+                <QuoteStatusSummary
+                  quoteStatus={call.quote_status ?? "collecting"}
+                  quoteDeadlineAt={call.quote_deadline_at}
+                  autoFinalConfirmAt={call.auto_final_confirm_at}
+                  quoteCount={call.quote_count}
+                  quoteLimitCount={call.quote_limit_count}
+                  targetNormalPrice={call.target_normal_price}
+                  targetMemberPrice={call.target_member_price}
+                  compact
+                />
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                 <div className="rounded-xl bg-slate-50 p-3">

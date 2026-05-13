@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
 type ClientQuote = {
@@ -24,6 +26,10 @@ type ClientApplication = {
   departure: string;
   destination: string;
   quote_status: string;
+  quote_deadline_at: string;
+  quote_limit_count: number | null;
+  target_normal_price: number | null;
+  target_member_price: number | null;
   quote_closed_at: string;
   auto_selected_quote_id: string;
   auto_final_confirm_at: string;
@@ -36,15 +42,6 @@ type ClientApplication = {
 
 function formatPrice(value: number | null): string {
   return value == null ? "금액 확인 중" : `${value.toLocaleString("ko-KR")}원`;
-}
-
-function formatRemaining(iso: string): string {
-  const time = new Date(iso).getTime();
-  if (!Number.isFinite(time)) return "확인 중";
-  const diff = time - Date.now();
-  if (diff <= 0) return "곧 자동 최종확정";
-  const hours = Math.ceil(diff / (60 * 60 * 1000));
-  return `${hours}시간 후 자동 최종확정 예정`;
 }
 
 export default function ClientDashboardPage() {
@@ -185,18 +182,24 @@ export default function ClientDashboardPage() {
               <p className="mt-2 text-sm font-semibold text-blue-900">
                 총 견적 {application.quote_count}건
               </p>
+              <div className="mt-3">
+                <QuoteStatusSummary
+                  quoteStatus={application.quote_status}
+                  quoteDeadlineAt={application.quote_deadline_at}
+                  autoFinalConfirmAt={application.auto_final_confirm_at}
+                  quoteCount={application.quote_count}
+                  quoteLimitCount={application.quote_limit_count}
+                  targetNormalPrice={application.target_normal_price}
+                  targetMemberPrice={application.target_member_price}
+                  compact
+                />
+              </div>
               {selectedQuote ? (
                 <p className="mt-2 text-lg font-black text-blue-950">
                   최저가{" "}
                   {formatPrice(
                     selectedQuote.member_price ?? selectedQuote.price,
                   )}
-                </p>
-              ) : null}
-              {application.auto_final_confirm_at &&
-              !application.final_selected_quote_id ? (
-                <p className="mt-2 text-sm font-bold text-blue-900">
-                  {formatRemaining(application.auto_final_confirm_at)}
                 </p>
               ) : null}
               <p className="mt-3 text-xs font-semibold leading-5 text-blue-800">

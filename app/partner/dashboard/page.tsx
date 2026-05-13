@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import {
@@ -1025,6 +1026,18 @@ export default function PartnerDashboardPage() {
                           </span>
                         ) : null}
                       </div>
+                    </div>
+                    <div className="mb-4">
+                      <QuoteStatusSummary
+                        quoteStatus={call.quote_status}
+                        quoteDeadlineAt={call.quote_deadline_at}
+                        autoFinalConfirmAt={call.auto_final_confirm_at}
+                        quoteCount={call.quote_count}
+                        quoteLimitCount={call.quote_limit_count}
+                        targetNormalPrice={call.target_normal_price}
+                        targetMemberPrice={call.target_member_price}
+                        compact
+                      />
                     </div>
                     {provisionalSelected ? (
                       <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-950">

@@ -37,22 +37,46 @@ export default async function GuestQuotesPage() {
     bus_grade: string;
     request_message: string;
     quote_status?: string;
+    quote_deadline_at?: string;
+    quote_limit_count?: number | null;
+    quote_count?: number;
+    target_normal_price?: number | null;
+    target_member_price?: number | null;
     quote_closed_at?: string;
+    auto_final_confirm_at?: string;
   }> = [];
 
   if (admin) {
     const { data } = await admin
       .from("applications")
       .select(
-        "id, departure_region, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_closed_at",
+        "id, departure_region, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
       )
       .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
       .order("created_at", { ascending: false })
       .limit(80);
-    initialQuotes = (Array.isArray(data) ? data : []).map((raw) => {
+    const rows = Array.isArray(data) ? data : [];
+    const ids = rows.map((raw) => safeText((raw as { id?: unknown }).id)).filter(Boolean);
+    const quoteCountByApplication = new Map<string, number>();
+    if (ids.length > 0) {
+      const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
+        admin.from("driver_quotes").select("application_id").in("application_id", ids),
+        admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
+      ]);
+      for (const raw of Array.isArray(memberRows) ? memberRows : []) {
+        const id = safeText((raw as { application_id?: unknown }).application_id);
+        quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
+      }
+      for (const raw of Array.isArray(guestRows) ? guestRows : []) {
+        const id = safeText((raw as { application_id?: unknown }).application_id);
+        quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
+      }
+    }
+    initialQuotes = rows.map((raw) => {
       const row = raw as Record<string, unknown>;
+      const id = safeText(row.id);
       return {
-        id: safeText(row.id),
+        id,
         departure_region: safeText(row.departure_region),
         departure: safeText(row.departure),
         destination: safeText(row.destination),
@@ -63,7 +87,13 @@ export default async function GuestQuotesPage() {
         bus_grade: safeText(row.bus_grade),
         request_message: clip(row.request_message),
         quote_status: safeText(row.quote_status, "collecting"),
+        quote_deadline_at: safeText(row.quote_deadline_at, ""),
+        quote_limit_count: parseInteger(row.quote_limit_count),
+        quote_count: quoteCountByApplication.get(id) ?? 0,
+        target_normal_price: parseInteger(row.target_normal_price),
+        target_member_price: parseInteger(row.target_member_price),
         quote_closed_at: safeText(row.quote_closed_at, ""),
+        auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
       };
     });
   }
