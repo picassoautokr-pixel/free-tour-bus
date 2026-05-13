@@ -9,7 +9,7 @@ import {
   inferDepartureRegion,
   type ServiceRegion,
 } from "@/lib/regions";
-import { formatStopovers } from "@/lib/stopovers";
+import { parseStopovers } from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 고객 폼에 노출되는 유형만 (업체용 등은 렌더링하지 않음 — 기존 DB 값은 관리자에서 표시) */
@@ -59,7 +59,7 @@ type ApplicationInsertPayload = {
   departure_region: string | null;
   destination: string;
   destination_detail: string;
-  stopovers?: string | null;
+  stopovers?: string[] | null;
   departure_date: string | null;
   departure_time: string;
   return_date: string | null;
@@ -398,7 +398,7 @@ export default function Home() {
         formData.quoteLimitOption === "custom"
           ? parsePositiveIntegerText(formData.quoteLimitCustomCount)
           : Number.parseInt(formData.quoteLimitOption, 10);
-      const stopovers = formatStopovers(formData.stopovers);
+      const stopovers = parseStopovers(formData.stopovers);
 
       const insertPayload: ApplicationInsertPayload = {
         receipt_number: receiptNumber,
@@ -410,7 +410,7 @@ export default function Home() {
         departure_region: finalDepartureRegion,
         destination: destTrim,
         destination_detail: "",
-        stopovers: stopovers === "" ? null : stopovers,
+        stopovers: stopovers.length > 0 ? stopovers : null,
         departure_date: departureDateValue === "" ? null : departureDateValue,
         departure_time: departureTimeValue,
         return_date: returnDateValue === "" ? null : returnDateValue,
