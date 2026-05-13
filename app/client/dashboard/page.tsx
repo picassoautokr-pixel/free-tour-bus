@@ -41,6 +41,13 @@ type ClientApplication = {
   final_selected_at: string;
   contact_revealed_at: string;
   contract_status: string;
+  contract_started_at: string;
+  client_contract_confirmed_at: string;
+  driver_contract_confirmed_at: string;
+  deposit_amount: number;
+  deposit_status: string;
+  deposit_confirmed_at: string;
+  contract_memo: string;
   quote_count: number;
 };
 
@@ -55,6 +62,11 @@ export default function ClientDashboardPage() {
   const [quotes, setQuotes] = useState<ClientQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [contractChecks, setContractChecks] = useState({
+    route: false,
+    deposit: false,
+    support: false,
+  });
   const quoteCountRef = useRef(0);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
@@ -148,6 +160,30 @@ export default function ClientDashboardPage() {
     }
   };
 
+  const confirmClientContract = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/client/contract-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receipt_number: receiptNumber, phone }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setMessage(json.error ?? "계약 확인에 실패했습니다.");
+        return;
+      }
+      setMessage("클라이언트 계약 확인이 완료되었습니다.");
+      setContractChecks({ route: false, deposit: false, support: false });
+      await load({ silent: true });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const selectedQuote =
     application == null
       ? null
@@ -161,6 +197,14 @@ export default function ClientDashboardPage() {
     ["final_selected", "contract_pending", "completed"].includes(
       application.quote_status,
     );
+  const canShowContract =
+    contactRevealed && selectedQuote != null && application != null;
+  const contractCheckComplete =
+    contractChecks.route && contractChecks.deposit && contractChecks.support;
+  const rideConfirmed =
+    application?.contract_status === "ride_confirmed" ||
+    application?.deposit_status === "paid" ||
+    application?.deposit_status === "waived";
 
   return (
     <main className="min-h-screen bg-[#f3f8fb] px-5 py-10">
@@ -303,6 +347,76 @@ export default function ClientDashboardPage() {
                 <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-900">
                   예약금 및 전자계약 절차가 진행됩니다.
                 </p>
+              ) : null}
+              {rideConfirmed ? (
+                <p className="mt-3 rounded-xl bg-emerald-100 px-3 py-3 text-sm font-black text-emerald-950">
+                  배차 확정 완료 · 운행일 전 기사와 최종 확인을 진행해주세요.
+                </p>
+              ) : null}
+              {canShowContract && selectedQuote ? (
+                <div className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-black text-indigo-950">
+                    전자계약 및 예약금 안내
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
+                    <p>운행: {application.departure} → {application.destination}</p>
+                    <p>
+                      매칭: {selectedQuote.company_name} · {selectedQuote.vehicle_type}
+                    </p>
+                    <p>견적금액: {formatPrice(selectedQuote.price)}</p>
+                    {selectedQuote.member_price != null ? (
+                      <p>지원금 적용 예상가: {formatPrice(selectedQuote.member_price)}</p>
+                    ) : null}
+                    {application.contract_status === "deposit_waiting" ? (
+                      <p className="rounded-xl bg-amber-50 px-3 py-2 font-black text-amber-900">
+                        예약금 입금 대기 · 예약금:{" "}
+                        {application.deposit_amount.toLocaleString("ko-KR")}원
+                      </p>
+                    ) : null}
+                    <p className="text-xs leading-5 text-slate-500">
+                      관리자가 확인 후 예약금 입금 완료 처리합니다. 취소/노쇼 정책은
+                      관리자 안내 기준을 따릅니다.
+                    </p>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {[
+                      ["route", "운행 정보와 견적 내용을 확인했습니다."],
+                      ["deposit", "예약금 및 취소/노쇼 정책을 확인했습니다."],
+                      [
+                        "support",
+                        "후원업체 지원금은 심사 결과에 따라 변동 또는 거절될 수 있음을 확인했습니다.",
+                      ],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex gap-2 text-xs font-bold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={contractChecks[key as keyof typeof contractChecks]}
+                          onChange={(event) =>
+                            setContractChecks((prev) => ({
+                              ...prev,
+                              [key]: event.target.checked,
+                            }))
+                          }
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={
+                      loading ||
+                      !contractCheckComplete ||
+                      application.client_contract_confirmed_at !== ""
+                    }
+                    onClick={() => void confirmClientContract()}
+                    className="mt-4 min-h-11 w-full rounded-xl bg-indigo-600 px-4 text-sm font-black text-white disabled:opacity-50"
+                  >
+                    {application.client_contract_confirmed_at
+                      ? "클라이언트 확인 완료"
+                      : "클라이언트 계약 확인"}
+                  </button>
+                </div>
               ) : null}
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <button

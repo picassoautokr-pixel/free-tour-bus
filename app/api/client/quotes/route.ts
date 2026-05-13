@@ -40,7 +40,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   const { data, error } = await admin
     .from("applications")
     .select(
-      `receipt_number, applicant_name, phone, departure, destination, passenger_count, ${quoteLifecycleSelectColumns()}, contract_status, contact_revealed_at`,
+      `receipt_number, applicant_name, phone, departure, destination, passenger_count, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -59,7 +59,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     admin
       .from("applications")
       .select(
-        `receipt_number, applicant_name, phone, departure, destination, passenger_count, ${quoteLifecycleSelectColumns()}, contract_status, contact_revealed_at`,
+        `receipt_number, applicant_name, phone, departure, destination, passenger_count, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
       )
       .eq("id", applicationId)
       .maybeSingle(),
@@ -150,6 +150,13 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       final_selected_at: safeText(current.final_selected_at),
       contact_revealed_at: safeText(current.contact_revealed_at),
       contract_status: safeText(current.contract_status),
+      contract_started_at: safeText(current.contract_started_at),
+      client_contract_confirmed_at: safeText(current.client_contract_confirmed_at),
+      driver_contract_confirmed_at: safeText(current.driver_contract_confirmed_at),
+      deposit_amount: parseInteger(current.deposit_amount) ?? 0,
+      deposit_status: safeText(current.deposit_status, "unpaid"),
+      deposit_confirmed_at: safeText(current.deposit_confirmed_at),
+      contract_memo: safeText(current.contract_memo),
       quote_count: quotes.length,
     },
     quotes,
@@ -238,6 +245,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "확정할 견적이 없습니다." }, { status: 400 });
     }
     const now = new Date().toISOString();
+    const contractStatus = safeText(app.contract_status) || "pending";
+    const contractStartedAt = safeText(app.contract_started_at) || now;
     await admin
       .from("applications")
       .update({
@@ -246,7 +255,8 @@ export async function POST(request: Request) {
         final_selected_at: now,
         quote_status: "final_selected",
         contact_revealed_at: now,
-        contract_status: "contract_pending",
+        contract_status: contractStatus,
+        contract_started_at: contractStartedAt,
       })
       .eq("id", applicationId);
     await admin

@@ -300,6 +300,8 @@ export function quoteLifecycleSelectColumns(): string {
     "extension_started_at",
     "support_client_reward_ratio",
     "support_driver_ratio",
+    "contract_status",
+    "contract_started_at",
     "passenger_count",
   ].join(", ");
 }
@@ -837,6 +839,8 @@ async function autoFinalConfirmIfDue(
     isSupportQuote: false,
   };
   const now = new Date().toISOString();
+  const contractStatus = safeText(application.contract_status) || "pending";
+  const contractStartedAt = safeText(application.contract_started_at) || now;
   await admin
     .from("applications")
     .update({
@@ -844,7 +848,8 @@ async function autoFinalConfirmIfDue(
       final_selected_quote_source: source,
       final_selected_at: now,
       quote_status: "final_selected",
-      contract_status: "contract_pending",
+      contract_status: contractStatus,
+      contract_started_at: contractStartedAt,
       contact_revealed_at: now,
     })
     .eq("id", safeText(application.id));

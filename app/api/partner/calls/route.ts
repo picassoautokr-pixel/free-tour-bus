@@ -143,7 +143,7 @@ export async function GET() {
   const { data: applications, error: applicationsError } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status",
+      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -186,6 +186,8 @@ export async function GET() {
     sponsor_support_amount?: number | null;
     sponsor_discounted_price?: number | null;
     sponsor_quote_enabled?: boolean;
+    driver_support_amount?: number | null;
+    client_reward_amount?: number | null;
     vehicle_type: string;
     available_time: string;
     message: string;
@@ -220,7 +222,7 @@ export async function GET() {
     const { data: memberQuotes, error: memberQuotesError } = await admin
       .from("driver_quotes")
       .select(
-        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
       )
       .in("application_id", ids)
       .or(orFilter)
@@ -251,6 +253,8 @@ export async function GET() {
         sponsor_support_amount: parseInteger(row.sponsor_support_amount),
         sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
+        driver_support_amount: parseInteger(row.driver_support_amount),
+        client_reward_amount: parseInteger(row.client_reward_amount),
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
         message: safeText(row.message),
@@ -382,6 +386,13 @@ export async function GET() {
       auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
       contact_revealed_at: contactRevealedAt,
       contract_status: safeText(row.contract_status, ""),
+      contract_started_at: safeText(row.contract_started_at, ""),
+      client_contract_confirmed_at: safeText(row.client_contract_confirmed_at, ""),
+      driver_contract_confirmed_at: safeText(row.driver_contract_confirmed_at, ""),
+      deposit_amount: parseInteger(row.deposit_amount) ?? 0,
+      deposit_status: safeText(row.deposit_status, "unpaid"),
+      deposit_confirmed_at: safeText(row.deposit_confirmed_at, ""),
+      contract_memo: safeText(row.contract_memo, ""),
       customer_name: customerInfoVisible ? safeText(row.applicant_name) : "",
       customer_phone: customerInfoVisible ? safeText(row.phone) : "",
       my_quote: quote,

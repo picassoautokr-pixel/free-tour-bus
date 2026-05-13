@@ -12,7 +12,12 @@ export type NotificationType =
   | "final_selected_customer"
   | "final_selected_driver"
   | "extended_no_quotes"
-  | "guest_not_selected";
+  | "guest_not_selected"
+  | "contract_client_confirmed"
+  | "contract_driver_confirmed"
+  | "deposit_waiting"
+  | "deposit_paid"
+  | "ride_confirmed";
 
 type NotificationInput = {
   target_type: "customer" | "driver" | "guest_driver" | "admin";

@@ -97,6 +97,13 @@ type ApplicationQuoteLifecycle = {
   final_selected_quote_source: string;
   final_selected_at: string;
   contact_revealed_at: string;
+  contract_started_at: string;
+  client_contract_confirmed_at: string;
+  driver_contract_confirmed_at: string;
+  deposit_amount: number;
+  deposit_status: string;
+  deposit_confirmed_at: string;
+  contract_memo: string;
   extension_round: number;
   support_client_reward_ratio: number;
   support_driver_ratio: number;
@@ -1091,6 +1098,33 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
     }
   };
 
+  const runDepositAction = async (action: "paid" | "waived" | "cancelled") => {
+    setActionBusy(action);
+    setError(null);
+    try {
+      const endpoint =
+        action === "cancelled"
+          ? "/api/admin/contract-cancel"
+          : "/api/admin/deposit-confirm";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: applicationId, action }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(json.error ?? "계약/예약금 상태 변경에 실패했습니다.");
+        return;
+      }
+      void loadQuotes();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   useEffect(() => {
     void loadQuotes();
   }, [loadQuotes]);
@@ -1207,6 +1241,73 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
               </dd>
             </div>
           </dl>
+          <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+            <p className="text-xs font-black text-emerald-950">계약 / 예약금</p>
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">계약 상태</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.contract_status || "pending"}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">클라이언트 확인</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.client_contract_confirmed_at ? "완료" : "대기"}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">기사 확인</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.driver_contract_confirmed_at ? "완료" : "대기"}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">예약금</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.deposit_amount.toLocaleString("ko-KR")}원
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">예약금 상태</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {application.deposit_status || "unpaid"}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <dt className="font-bold text-emerald-600">입금 확인</dt>
+                <dd className="mt-1 font-semibold text-emerald-950">
+                  {formatCreatedAt(application.deposit_confirmed_at || null)}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                disabled={actionBusy != null}
+                onClick={() => void runDepositAction("paid")}
+                className="min-h-9 rounded-lg bg-emerald-600 px-2 text-xs font-black text-white disabled:opacity-50"
+              >
+                예약금 입금확인
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy != null}
+                onClick={() => void runDepositAction("waived")}
+                className="min-h-9 rounded-lg border border-emerald-200 bg-white px-2 text-xs font-black text-emerald-900 disabled:opacity-50"
+              >
+                예약금 면제
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy != null}
+                onClick={() => void runDepositAction("cancelled")}
+                className="min-h-9 rounded-lg border border-red-200 bg-red-50 px-2 text-xs font-black text-red-800 disabled:opacity-50"
+              >
+                계약 취소
+              </button>
+            </div>
+          </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"

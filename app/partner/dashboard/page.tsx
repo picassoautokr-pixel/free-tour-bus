@@ -41,6 +41,8 @@ type PartnerMyQuote = {
   sponsor_support_amount?: number | null;
   sponsor_discounted_price?: number | null;
   sponsor_quote_enabled?: boolean;
+  driver_support_amount?: number | null;
+  client_reward_amount?: number | null;
   vehicle_type: string;
   available_time: string;
   message: string;
@@ -84,6 +86,13 @@ type PartnerCall = {
   auto_final_confirm_at: string;
   contact_revealed_at: string;
   contract_status: string;
+  contract_started_at: string;
+  client_contract_confirmed_at: string;
+  driver_contract_confirmed_at: string;
+  deposit_amount: number;
+  deposit_status: string;
+  deposit_confirmed_at: string;
+  contract_memo: string;
   customer_name?: string;
   customer_phone?: string;
   my_quote: PartnerMyQuote | null;
@@ -371,6 +380,13 @@ function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
     auto_final_confirm_at: safeText(row.auto_final_confirm_at),
     contact_revealed_at: safeText(row.contact_revealed_at),
     contract_status: safeText(row.contract_status),
+    contract_started_at: safeText(row.contract_started_at),
+    client_contract_confirmed_at: safeText(row.client_contract_confirmed_at),
+    driver_contract_confirmed_at: safeText(row.driver_contract_confirmed_at),
+    deposit_amount: parseInteger(row.deposit_amount) ?? 0,
+    deposit_status: safeText(row.deposit_status, "unpaid"),
+    deposit_confirmed_at: safeText(row.deposit_confirmed_at),
+    contract_memo: safeText(row.contract_memo),
     my_quote: null,
   };
 }
@@ -392,6 +408,15 @@ export default function PartnerDashboardPage() {
   const [customerDetailCall, setCustomerDetailCall] = useState<PartnerCall | null>(
     null,
   );
+  const [contractDetailCall, setContractDetailCall] = useState<PartnerCall | null>(
+    null,
+  );
+  const [contractChecks, setContractChecks] = useState({
+    route: false,
+    deposit: false,
+    support: false,
+  });
+  const [contractBusy, setContractBusy] = useState(false);
   const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
   const [referralForm, setReferralForm] =
     useState<ReferralForm>(emptyReferralForm);
@@ -948,6 +973,32 @@ export default function PartnerDashboardPage() {
     }
   };
 
+  const confirmDriverContract = async (call: PartnerCall) => {
+    setContractBusy(true);
+    setQuoteMessage(null);
+    try {
+      const res = await fetch("/api/partner/contract-confirm", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: call.id }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setQuoteMessage(json.error ?? "계약 확인에 실패했습니다.");
+        return;
+      }
+      setQuoteMessage("기사 계약 확인이 완료되었습니다.");
+      setContractDetailCall(null);
+      setContractChecks({ route: false, deposit: false, support: false });
+      void loadCalls();
+    } catch (e) {
+      setQuoteMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setContractBusy(false);
+    }
+  };
+
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f3f8fb] text-sm font-semibold text-slate-500">
@@ -1461,6 +1512,95 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
+          {contractDetailCall?.my_quote ? (
+            <div
+              className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="partner-contract-title"
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                aria-label="닫기"
+                onClick={() => setContractDetailCall(null)}
+              />
+              <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
+                <h2 id="partner-contract-title" className="text-lg font-black text-slate-950">
+                  전자계약 진행
+                </h2>
+                <div className="mt-4 space-y-2 text-sm font-semibold text-slate-700">
+                  <p>고객: {contractDetailCall.customer_name || "—"}</p>
+                  <p>전화: {contractDetailCall.customer_phone || "—"}</p>
+                  <p>
+                    운행:{" "}
+                    {formatRouteWithStopovers(
+                      contractDetailCall.departure,
+                      contractDetailCall.stopovers,
+                      contractDetailCall.destination,
+                    )}
+                  </p>
+                  <p>출발일시: {formatDeparture(contractDetailCall)}</p>
+                  <p>내 견적금액: {formatPrice(contractDetailCall.my_quote.price)}</p>
+                  {contractDetailCall.my_quote.member_price != null ? (
+                    <p>지원금 적용가: {formatPrice(contractDetailCall.my_quote.member_price)}</p>
+                  ) : null}
+                  <p>
+                    기사 지원금 예상액:{" "}
+                    {formatPrice(contractDetailCall.my_quote.driver_support_amount ?? null)}
+                  </p>
+                  <p>
+                    고객 감사지원금 예상액:{" "}
+                    {formatPrice(contractDetailCall.my_quote.client_reward_amount ?? null)}
+                  </p>
+                  <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                    예약금/노쇼 정책은 관리자 확인 기준으로 진행됩니다. 양측 확인 완료 후 예약금 입금 대기 상태로 전환됩니다.
+                  </p>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {[
+                    ["route", "운행 정보와 고객 정보를 확인했습니다."],
+                    ["deposit", "예약금/노쇼 정책을 확인했습니다."],
+                    ["support", "후원업체 지원금은 심사 결과에 따라 변동될 수 있음을 확인했습니다."],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex gap-2 text-xs font-bold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={contractChecks[key as keyof typeof contractChecks]}
+                        onChange={(event) =>
+                          setContractChecks((prev) => ({
+                            ...prev,
+                            [key]: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  disabled={
+                    contractBusy ||
+                    !contractChecks.route ||
+                    !contractChecks.deposit ||
+                    !contractChecks.support ||
+                    contractDetailCall.driver_contract_confirmed_at !== ""
+                  }
+                  onClick={() => void confirmDriverContract(contractDetailCall)}
+                  className="mt-5 flex min-h-12 w-full items-center justify-center rounded-2xl bg-indigo-600 text-sm font-black text-white shadow-sm disabled:opacity-50"
+                  style={tapStyle}
+                >
+                  {contractDetailCall.driver_contract_confirmed_at
+                    ? "기사 확인 완료"
+                    : contractBusy
+                      ? "처리 중…"
+                      : "기사 계약 확인"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-6">
             <div className="-mx-1 overflow-x-auto px-1 pb-2">
               <div className="flex min-w-max gap-2">
@@ -1512,6 +1652,10 @@ export default function PartnerDashboardPage() {
                 const referralOpen = activeReferralCallId === call.id;
                 const quoteClosed = isQuoteClosed(call);
                 const customerInfoVisible = canRevealCustomerInfo(call);
+                const rideConfirmed =
+                  call.contract_status === "ride_confirmed" ||
+                  call.deposit_status === "paid" ||
+                  call.deposit_status === "waived";
                 const highlightedNewCall = highlightedNewCallIds.has(call.id);
                 const driverSupportAmount = Math.round(
                   (call.estimated_support_amount * call.support_driver_ratio) / 100,
@@ -1609,6 +1753,12 @@ export default function PartnerDashboardPage() {
                         <p className="text-xs text-emerald-800">
                           확정매칭은 고객 또는 관리자 선택에 따라 변경될 수 있습니다.
                         </p>
+                      </div>
+                    ) : null}
+                    {rideConfirmed ? (
+                      <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-950">
+                        <p className="font-black">배차 확정 완료</p>
+                        <p>운행 준비를 진행해주세요.</p>
                       </div>
                     ) : null}
                     {activeTab === "quoted" ? (
@@ -1719,6 +1869,11 @@ export default function PartnerDashboardPage() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => {
+                                setContractChecks({ route: false, deposit: false, support: false });
+                                setContractDetailCall(call);
+                              }}
+                              disabled={!customerInfoVisible}
                               className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-900 shadow-sm transition hover:bg-blue-100"
                               style={tapStyle}
                             >

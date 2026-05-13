@@ -79,7 +79,9 @@ export async function GET(request: Request) {
 
   const { data: applicationRaw, error: applicationError } = await admin
     .from("applications")
-    .select(`${quoteLifecycleSelectColumns()}, contract_status, contact_revealed_at`)
+    .select(
+      `${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo`,
+    )
     .eq("id", applicationId)
     .maybeSingle();
   if (applicationError) {
@@ -359,6 +361,13 @@ export async function GET(request: Request) {
           final_selected_quote_source: safeText(application.final_selected_quote_source),
           final_selected_at: safeText(application.final_selected_at),
           contact_revealed_at: safeText(application.contact_revealed_at),
+          contract_started_at: safeText(application.contract_started_at),
+          client_contract_confirmed_at: safeText(application.client_contract_confirmed_at),
+          driver_contract_confirmed_at: safeText(application.driver_contract_confirmed_at),
+          deposit_amount: parseInteger(application.deposit_amount) ?? 0,
+          deposit_status: safeText(application.deposit_status, "unpaid"),
+          deposit_confirmed_at: safeText(application.deposit_confirmed_at),
+          contract_memo: safeText(application.contract_memo),
           extension_round: parseInteger(application.extension_round) ?? 0,
           support_client_reward_ratio:
             parseInteger(application.support_client_reward_ratio) ??
@@ -460,7 +469,14 @@ export async function PATCH(request: Request) {
           final_selected_quote_source: null,
           final_selected_at: null,
           contact_revealed_at: null,
-          contract_status: null,
+          contract_status: "pending",
+          contract_started_at: null,
+          client_contract_confirmed_at: null,
+          driver_contract_confirmed_at: null,
+          deposit_amount: 0,
+          deposit_status: "unpaid",
+          deposit_confirmed_at: null,
+          contract_memo: null,
         })
         .eq("id", actionApplicationId);
       if (updateError) {
@@ -498,7 +514,7 @@ export async function PATCH(request: Request) {
     const { data: app, error: appError } = await admin
       .from("applications")
       .select(
-        "auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id",
+        "auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, contract_status, contract_started_at",
       )
       .eq("id", actionApplicationId)
       .maybeSingle();
@@ -525,7 +541,8 @@ export async function PATCH(request: Request) {
         final_selected_at: now,
         quote_status: "final_selected",
         contact_revealed_at: now,
-        contract_status: "contract_pending",
+        contract_status: safeText(row?.contract_status) || "pending",
+        contract_started_at: safeText(row?.contract_started_at) || now,
       })
       .eq("id", actionApplicationId);
     if (finalError) {
