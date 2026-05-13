@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import {
+  calculateAutoFinalConfirmAt,
+  getQuoteAutomationSettings,
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
@@ -25,10 +27,6 @@ function parseInteger(value: unknown): number | null {
     if (Number.isFinite(n)) return n;
   }
   return null;
-}
-
-function addHours(hours: number): string {
-  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 }
 
 async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupabase>, request: Request) {
@@ -202,13 +200,15 @@ export async function POST(request: Request) {
   }
 
   if (action === "select_quote" && quoteId !== "") {
+    const now = new Date();
+    const settings = await getQuoteAutomationSettings(admin);
     await admin
       .from("applications")
       .update({
         auto_selected_quote_id: quoteId,
         auto_selected_quote_source: quoteSource,
-        auto_selected_at: new Date().toISOString(),
-        auto_final_confirm_at: addHours(12),
+        auto_selected_at: now.toISOString(),
+        auto_final_confirm_at: calculateAutoFinalConfirmAt(now, settings),
         quote_status: "auto_selected",
       })
       .eq("id", applicationId);

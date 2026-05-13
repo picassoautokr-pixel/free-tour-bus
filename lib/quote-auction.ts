@@ -1,6 +1,9 @@
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 
-export const QUOTE_FINAL_CONFIRM_DELAY_HOURS = 12;
+export const DEFAULT_BUSINESS_START_TIME = "09:00";
+export const DEFAULT_BUSINESS_END_TIME = "18:00";
+export const DEFAULT_AUTO_FINAL_CONFIRM_DELAY_MINUTES = 30;
+export const DEFAULT_QUOTE_AUTOMATION_TIMEZONE = "Asia/Seoul";
 export const QUOTE_NO_QUOTES_EXTENSION_HOURS = 12;
 export const QUOTE_MAX_EXTENSION_ROUNDS = 6;
 
@@ -20,6 +23,13 @@ export type QuoteSource = "member" | "guest";
 
 type SupabaseLike = {
   from: (table: string) => any;
+};
+
+export type QuoteAutomationSettings = {
+  business_start_time: string;
+  business_end_time: string;
+  auto_final_confirm_delay_minutes: number;
+  timezone: string;
 };
 
 type QuoteCandidate = {
@@ -49,6 +59,189 @@ function addHours(isoOrDate: string | Date, hours: number): string {
   const base = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
   const time = Number.isNaN(base.getTime()) ? Date.now() : base.getTime();
   return new Date(time + hours * 60 * 60 * 1000).toISOString();
+}
+
+function defaultQuoteAutomationSettings(): QuoteAutomationSettings {
+  return {
+    business_start_time: DEFAULT_BUSINESS_START_TIME,
+    business_end_time: DEFAULT_BUSINESS_END_TIME,
+    auto_final_confirm_delay_minutes: DEFAULT_AUTO_FINAL_CONFIRM_DELAY_MINUTES,
+    timezone: DEFAULT_QUOTE_AUTOMATION_TIMEZONE,
+  };
+}
+
+function parseTimeToMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = Number.parseInt(match[1] ?? "", 10);
+  const minutes = Number.parseInt(match[2] ?? "", 10);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function timeParts(value: string): { hours: number; minutes: number } {
+  const parsed = parseTimeToMinutes(value) ?? parseTimeToMinutes(DEFAULT_BUSINESS_START_TIME) ?? 540;
+  return {
+    hours: Math.floor(parsed / 60),
+    minutes: parsed % 60,
+  };
+}
+
+function zonedParts(date: Date, timezone: string): {
+  year: number;
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+} {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  const rawHours = Number.parseInt(parts.hour ?? "0", 10);
+  return {
+    year: Number.parseInt(parts.year ?? "1970", 10),
+    month: Number.parseInt(parts.month ?? "1", 10),
+    day: Number.parseInt(parts.day ?? "1", 10),
+    hours: rawHours === 24 ? 0 : rawHours,
+    minutes: Number.parseInt(parts.minute ?? "0", 10),
+  };
+}
+
+function zonedLocalTimeToUtc(params: {
+  year: number;
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+  timezone: string;
+}): Date {
+  let utcMs = Date.UTC(
+    params.year,
+    params.month - 1,
+    params.day,
+    params.hours,
+    params.minutes,
+  );
+  for (let i = 0; i < 2; i += 1) {
+    const actual = zonedParts(new Date(utcMs), params.timezone);
+    const actualAsUtc = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hours,
+      actual.minutes,
+    );
+    const targetAsUtc = Date.UTC(
+      params.year,
+      params.month - 1,
+      params.day,
+      params.hours,
+      params.minutes,
+    );
+    utcMs += targetAsUtc - actualAsUtc;
+  }
+  return new Date(utcMs);
+}
+
+function normalizedSettings(settings?: Partial<QuoteAutomationSettings> | null): QuoteAutomationSettings {
+  const defaults = defaultQuoteAutomationSettings();
+  const delay =
+    typeof settings?.auto_final_confirm_delay_minutes === "number" &&
+    Number.isFinite(settings.auto_final_confirm_delay_minutes) &&
+    settings.auto_final_confirm_delay_minutes > 0
+      ? Math.trunc(settings.auto_final_confirm_delay_minutes)
+      : defaults.auto_final_confirm_delay_minutes;
+  return {
+    business_start_time:
+      parseTimeToMinutes(settings?.business_start_time ?? "") == null
+        ? defaults.business_start_time
+        : settings?.business_start_time ?? defaults.business_start_time,
+    business_end_time:
+      parseTimeToMinutes(settings?.business_end_time ?? "") == null
+        ? defaults.business_end_time
+        : settings?.business_end_time ?? defaults.business_end_time,
+    auto_final_confirm_delay_minutes: delay,
+    timezone: settings?.timezone?.trim() || defaults.timezone,
+  };
+}
+
+export async function getQuoteAutomationSettings(
+  admin: SupabaseLike,
+): Promise<QuoteAutomationSettings> {
+  const defaults = defaultQuoteAutomationSettings();
+  try {
+    const { data, error } = await admin
+      .from("admin_settings")
+      .select(
+        "business_start_time, business_end_time, auto_final_confirm_delay_minutes, timezone",
+      )
+      .eq("id", "quote_automation")
+      .maybeSingle();
+    if (error || !data) return defaults;
+    return normalizedSettings(data as Partial<QuoteAutomationSettings>);
+  } catch {
+    return defaults;
+  }
+}
+
+export function isWithinBusinessHours(
+  date: Date,
+  settings: QuoteAutomationSettings,
+): boolean {
+  const normalized = normalizedSettings(settings);
+  const start = parseTimeToMinutes(normalized.business_start_time);
+  const end = parseTimeToMinutes(normalized.business_end_time);
+  if (start == null || end == null || start >= end) return true;
+  const parts = zonedParts(date, normalized.timezone);
+  const current = parts.hours * 60 + parts.minutes;
+  return start <= current && current < end;
+}
+
+export function nextBusinessStartAt(
+  date: Date,
+  settings: QuoteAutomationSettings,
+): Date {
+  const normalized = normalizedSettings(settings);
+  const start = parseTimeToMinutes(normalized.business_start_time);
+  const end = parseTimeToMinutes(normalized.business_end_time);
+  if (start == null || end == null || start >= end) return date;
+
+  const parts = zonedParts(date, normalized.timezone);
+  const current = parts.hours * 60 + parts.minutes;
+  const startParts = timeParts(normalized.business_start_time);
+  const dayOffset = current < start ? 0 : 1;
+  return zonedLocalTimeToUtc({
+    year: parts.year,
+    month: parts.month,
+    day: parts.day + dayOffset,
+    hours: startParts.hours,
+    minutes: startParts.minutes,
+    timezone: normalized.timezone,
+  });
+}
+
+export function calculateAutoFinalConfirmAt(
+  matchedAt: Date,
+  settings: QuoteAutomationSettings,
+): string {
+  const normalized = normalizedSettings(settings);
+  const candidate = new Date(
+    matchedAt.getTime() +
+      normalized.auto_final_confirm_delay_minutes * 60 * 1000,
+  );
+  if (isWithinBusinessHours(candidate, normalized)) {
+    return candidate.toISOString();
+  }
+  return nextBusinessStartAt(candidate, normalized).toISOString();
 }
 
 function isQuoteOpenStatus(status: string): boolean {
@@ -290,13 +483,14 @@ async function autoSelectIfNeeded(
   if (!selected) return;
 
   const now = new Date().toISOString();
+  const settings = await getQuoteAutomationSettings(admin);
   await admin
     .from("applications")
     .update({
       auto_selected_quote_id: selected.id,
       auto_selected_quote_source: selected.source,
       auto_selected_at: now,
-      auto_final_confirm_at: addHours(now, QUOTE_FINAL_CONFIRM_DELAY_HOURS),
+      auto_final_confirm_at: calculateAutoFinalConfirmAt(new Date(now), settings),
       quote_status: "auto_selected",
     })
     .eq("id", safeText(application.id));
