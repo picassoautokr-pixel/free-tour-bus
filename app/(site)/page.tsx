@@ -940,6 +940,157 @@ export default function Home() {
             </div>
           </div>
 
+          {formData.applicationType === APPLICATION_TYPE_NEW_BOOKING ? (
+            <div className="mt-9 border-t border-slate-100 pt-8">
+              <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
+                견적 마감 설정
+              </h2>
+              <p className="mt-3 text-sm font-semibold leading-6 tracking-[-0.02em] text-slate-500">
+                설정한 목표 금액 이하 견적이 도착하면 자동 마감됩니다.
+              </p>
+
+              <div className="mt-5 space-y-5">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
+                    시간 마감
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {(["12", "24", "36", "48", "custom"] as const).map((option) => {
+                      const selected = formData.quoteDeadlineOption === option;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              quoteDeadlineOption: option,
+                            }))
+                          }
+                          className={`min-h-11 rounded-full border px-3 text-sm font-black transition ${
+                            selected
+                              ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                          style={tapStyle}
+                        >
+                          {option === "custom" ? "직접지정" : `${option}시간`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {formData.quoteDeadlineOption === "custom" ? (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={formData.quoteDeadlineCustomHours}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          quoteDeadlineCustomHours: event.target.value,
+                        }))
+                      }
+                      placeholder="마감까지 시간 입력"
+                      className="mt-3 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
+                    />
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
+                    견적 수 마감
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {(["5", "10", "15", "custom"] as const).map((option) => {
+                      const selected = formData.quoteLimitOption === option;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              quoteLimitOption: option,
+                            }))
+                          }
+                          className={`min-h-11 rounded-full border px-3 text-sm font-black transition ${
+                            selected
+                              ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                          style={tapStyle}
+                        >
+                          {option === "custom" ? "직접지정" : `${option}건`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {formData.quoteLimitOption === "custom" ? (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={formData.quoteLimitCustomCount}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          quoteLimitCustomCount: event.target.value,
+                        }))
+                      }
+                      placeholder="마감 견적 수 입력"
+                      className="mt-3 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-emerald-500"
+                    />
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
+                    목표 금액 마감
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
+                        일반견적 목표가
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.targetNormalPrice}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            targetNormalPrice: event.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                        placeholder="선택 입력"
+                        className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
+                        지원금 적용 견적 목표가
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.targetMemberPrice}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            targetMemberPrice: event.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                        placeholder="선택 입력"
+                        className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-9 border-t border-slate-100 pt-8">
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
               신청자 정보
@@ -1069,7 +1220,7 @@ export default function Home() {
             </div>
           ) : null}
 
-          {formData.applicationType === APPLICATION_TYPE_NEW_BOOKING ? (
+          {false && formData.applicationType === APPLICATION_TYPE_NEW_BOOKING ? (
             <div className="mt-9 border-t border-slate-100 pt-8">
               <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
                 견적 마감 설정

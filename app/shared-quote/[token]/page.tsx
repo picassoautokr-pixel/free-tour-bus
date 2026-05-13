@@ -16,6 +16,8 @@ type SharedApplication = {
   trip_type: string;
   bus_grade: string;
   request_message: string;
+  quote_status: string;
+  quote_closed_at: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -107,7 +109,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const { data: referral, error } = await admin
     .from("quote_referrals")
     .select(
-      "id, token, status, expires_at, applications(id, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message)",
+      "id, token, status, expires_at, applications(id, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_closed_at)",
     )
     .eq("token", cleanToken)
     .maybeSingle();
@@ -153,6 +155,8 @@ export default async function SharedQuotePage({ params }: PageProps) {
     trip_type: safeText(appRow.trip_type),
     bus_grade: safeText(appRow.bus_grade),
     request_message: safeText(appRow.request_message),
+    quote_status: safeText(appRow.quote_status, "collecting"),
+    quote_closed_at: safeText(appRow.quote_closed_at, ""),
   };
   const applicationId = safeText(appRow.id, "");
 
@@ -201,6 +205,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
               referralToken={cleanToken}
               passengerCount={app.passenger_count}
               registerHref={`/partner/register?ref=${encodeURIComponent(cleanToken)}`}
+              quoteClosed={app.quote_closed_at !== ""}
               compact
             />
           </div>

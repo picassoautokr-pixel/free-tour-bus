@@ -36,13 +36,15 @@ export default async function GuestQuotesPage() {
     trip_type: string;
     bus_grade: string;
     request_message: string;
+    quote_status?: string;
+    quote_closed_at?: string;
   }> = [];
 
   if (admin) {
     const { data } = await admin
       .from("applications")
       .select(
-        "id, departure_region, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message",
+        "id, departure_region, departure, destination, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_closed_at",
       )
       .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
       .order("created_at", { ascending: false })
@@ -60,6 +62,8 @@ export default async function GuestQuotesPage() {
         trip_type: safeText(row.trip_type),
         bus_grade: safeText(row.bus_grade),
         request_message: clip(row.request_message),
+        quote_status: safeText(row.quote_status, "collecting"),
+        quote_closed_at: safeText(row.quote_closed_at, ""),
       };
     });
   }

@@ -16,6 +16,8 @@ type GuestCall = {
   trip_type: string;
   bus_grade: string;
   request_message: string;
+  quote_status?: string;
+  quote_closed_at?: string;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -118,11 +120,12 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
                 </div>
                 <button
                   type="button"
+                  disabled={call.quote_closed_at != null && call.quote_closed_at !== ""}
                   onClick={() => setOpenId((prev) => (prev === call.id ? null : call.id))}
-                  className="min-h-10 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm"
+                  className="min-h-10 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm disabled:bg-slate-300"
                   style={tapStyle}
                 >
-                  견적 제출
+                  {call.quote_closed_at ? "견적 마감됨" : "견적 제출"}
                 </button>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -152,6 +155,7 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
                     compact
                     passengerCount={call.passenger_count}
                     registerHref="/partner/register"
+                    quoteClosed={call.quote_closed_at != null && call.quote_closed_at !== ""}
                   />
                 </div>
               ) : null}

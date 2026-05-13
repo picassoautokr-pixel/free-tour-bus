@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  isApplicationQuoteAccepting,
+  processApplicationQuoteLifecycle,
+  quoteLifecycleSelectColumns,
+} from "@/lib/quote-auction";
 import { SERVICE_REGIONS, normalizeRegion } from "@/lib/regions";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -64,7 +69,7 @@ export async function GET(request: Request) {
   let query = admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, departure_date, departure_time, passenger_count, request_message",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, departure_date, departure_time, passenger_count, request_message, quote_status, quote_closed_at",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -79,6 +84,7 @@ export async function GET(request: Request) {
 
   const quotes = (Array.isArray(data) ? data : []).map((raw) => {
     const row = raw as Record<string, unknown>;
+    if (!isApplicationQuoteAccepting(row)) return null;
     return {
       id: safeText(row.id),
       created_at: safeText(row.created_at),
@@ -93,7 +99,7 @@ export async function GET(request: Request) {
       bus_grade: safeText(row.bus_grade),
       request_message: clipRequestMessage(row.request_message),
     };
-  });
+  }).filter((quote): quote is NonNullable<typeof quote> => quote != null);
 
   return NextResponse.json({ ok: true, regions: SERVICE_REGIONS, quotes });
 }
@@ -160,7 +166,7 @@ export async function POST(request: Request) {
 
   const { data: application, error: applicationError } = await admin
     .from("applications")
-    .select("id, application_type")
+    .select(`application_type, ${quoteLifecycleSelectColumns()}`)
     .eq("id", applicationId)
     .maybeSingle();
   if (applicationError) {
@@ -174,6 +180,24 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "견적 제출 대상 신청이 아닙니다." },
       { status: 400 },
+    );
+  }
+  await processApplicationQuoteLifecycle(admin, applicationId);
+  const { data: latestApplication, error: latestApplicationError } = await admin
+    .from("applications")
+    .select(`application_type, ${quoteLifecycleSelectColumns()}`)
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (latestApplicationError) {
+    return NextResponse.json({ error: latestApplicationError.message }, { status: 502 });
+  }
+  const activeApplication =
+    (latestApplication as unknown as Record<string, unknown> | null) ??
+    (application as unknown as Record<string, unknown>);
+  if (!isApplicationQuoteAccepting(activeApplication)) {
+    return NextResponse.json(
+      { error: "견적이 마감되어 새 견적을 제출할 수 없습니다." },
+      { status: 409 },
     );
   }
 
@@ -231,6 +255,8 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ error: insertError.message }, { status: 502 });
   }
+
+  await processApplicationQuoteLifecycle(admin, applicationId);
 
   return NextResponse.json({
     ok: true,

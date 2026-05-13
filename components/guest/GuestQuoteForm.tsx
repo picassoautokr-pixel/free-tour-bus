@@ -20,6 +20,7 @@ type Props = {
   compact?: boolean;
   passengerCount?: number | null;
   registerHref?: string;
+  quoteClosed?: boolean;
 };
 
 export function GuestQuoteForm({
@@ -28,6 +29,7 @@ export function GuestQuoteForm({
   compact,
   passengerCount = null,
   registerHref = "/partner/register",
+  quoteClosed = false,
 }: Props) {
   const [companyName, setCompanyName] = useState("");
   const [driverName, setDriverName] = useState("");
@@ -46,6 +48,7 @@ export function GuestQuoteForm({
   });
 
   const submit = async () => {
+    if (quoteClosed) return;
     setBusy(true);
     setError(null);
     setInviteUrl(null);
@@ -213,14 +216,19 @@ export function GuestQuoteForm({
           {error}
         </div>
       ) : null}
+      {quoteClosed ? (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+          이 견적요청은 자동마감되어 새 견적을 제출할 수 없습니다.
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => void submit()}
-        disabled={busy}
+        disabled={busy || quoteClosed}
         className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
         style={tapStyle}
       >
-        {busy ? "제출 중…" : "비회원 견적 제출"}
+        {quoteClosed ? "견적 마감됨" : busy ? "제출 중…" : "비회원 견적 제출"}
       </button>
       <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4">
         <p className="text-sm font-black text-blue-950">
