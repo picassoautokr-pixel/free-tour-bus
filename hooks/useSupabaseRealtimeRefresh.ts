@@ -29,7 +29,7 @@ type Params = {
 export function realtimeStatusLabel(status: RealtimeConnectionStatus): string {
   if (status === "connected") return "실시간 연결됨";
   if (status === "connecting") return "실시간 연결 중";
-  if (status === "reconnecting") return "재연결 중";
+  if (status === "reconnecting") return "실시간 재연결 중";
   return "실시간 연결 끊김";
 }
 
@@ -82,10 +82,12 @@ export function useSupabaseRealtimeRefresh({
 
     channel.subscribe((nextStatus) => {
       if (nextStatus === "SUBSCRIBED") setStatus("connected");
-      else if (nextStatus === "CHANNEL_ERROR" || nextStatus === "TIMED_OUT") {
+      else if (
+        nextStatus === "CHANNEL_ERROR" ||
+        nextStatus === "TIMED_OUT" ||
+        nextStatus === "CLOSED"
+      ) {
         setStatus("reconnecting");
-      } else if (nextStatus === "CLOSED") {
-        setStatus("disconnected");
       }
     });
 

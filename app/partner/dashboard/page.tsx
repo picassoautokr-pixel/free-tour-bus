@@ -275,6 +275,12 @@ https://www.free-bus.co.kr/shared-quote/{전달 후 생성}
 https://www.free-bus.co.kr/partner/register?ref={전달 후 생성}`;
 }
 
+function logRealtime(message: string, payload?: unknown) {
+  if (process.env.NODE_ENV !== "development") return;
+  if (payload === undefined) console.log(message);
+  else console.log(message, payload);
+}
+
 export default function PartnerDashboardPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -304,6 +310,8 @@ export default function PartnerDashboardPage() {
   const knownCallIdsRef = useRef<Set<string>>(new Set());
   const callsInitializedRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const pendingApplicationInsertIdRef = useRef<string | null>(null);
+  const realtimeSubscribedLoggedRef = useRef(false);
 
   const playNotificationSound = useCallback(() => {
     if (!soundEnabled || !audioContextRef.current) return;
@@ -343,13 +351,19 @@ export default function PartnerDashboardPage() {
       const nextCalls = Array.isArray(json.calls) ? json.calls : [];
       const nextIds = new Set(nextCalls.map((call) => call.id));
       if (callsInitializedRef.current) {
-        const newCall = nextCalls.find(
-          (call) => !knownCallIdsRef.current.has(call.id) && isNewCall(call),
-        );
+        const pendingInsertId = pendingApplicationInsertIdRef.current;
+        const newCall =
+          (pendingInsertId
+            ? nextCalls.find((call) => call.id === pendingInsertId && isNewCall(call))
+            : undefined) ??
+          nextCalls.find(
+            (call) => !knownCallIdsRef.current.has(call.id) && isNewCall(call),
+          );
         if (newCall) {
           setNewCallNoticeId(newCall.id);
           playNotificationSound();
         }
+        pendingApplicationInsertIdRef.current = null;
       } else {
         callsInitializedRef.current = true;
       }
@@ -438,13 +452,42 @@ export default function PartnerDashboardPage() {
     };
   }, [loadCalls, router]);
 
+  const handleRealtimeRefresh = useCallback(() => {
+    logRealtime("[realtime] reload calls");
+    return loadCalls();
+  }, [loadCalls]);
+
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "partner-dashboard-live",
+    // Supabase Realtime 수신을 위해 public.applications도 supabase_realtime publication에 포함되어야 합니다.
     tables: ["applications", "driver_quotes", "guest_driver_quotes"],
     enabled: !checking,
     debounceMs: 800,
-    onRefresh: loadCalls,
+    onRefresh: handleRealtimeRefresh,
+    onEvent: (payload) => {
+      const table = String(payload.table ?? "");
+      const eventType = String(payload.eventType ?? "");
+      if (table === "applications" && eventType === "INSERT") {
+        logRealtime("[realtime] applications INSERT", payload);
+        const insertedId =
+          typeof payload.new?.id === "string" ? payload.new.id : null;
+        pendingApplicationInsertIdRef.current = insertedId;
+      } else if (table === "applications" && eventType === "UPDATE") {
+        logRealtime("[realtime] applications UPDATE", payload);
+      } else if (
+        (table === "driver_quotes" || table === "guest_driver_quotes") &&
+        (eventType === "INSERT" || eventType === "UPDATE")
+      ) {
+        logRealtime(`[realtime] ${table} ${eventType}`, payload);
+      }
+    },
   });
+
+  useEffect(() => {
+    if (realtimeStatus !== "connected" || realtimeSubscribedLoggedRef.current) return;
+    realtimeSubscribedLoggedRef.current = true;
+    logRealtime("[realtime] partner-dashboard subscribed");
+  }, [realtimeStatus]);
 
   useEffect(() => {
     try {
