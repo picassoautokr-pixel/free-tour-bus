@@ -151,9 +151,16 @@ export default function ClientDashboardPage() {
   const selectedQuote =
     application == null
       ? null
-      : quotes.find((quote) => quote.id === application.auto_selected_quote_id) ??
-        quotes.find((quote) => quote.id === application.final_selected_quote_id) ??
+      : quotes.find((quote) => quote.id === application.final_selected_quote_id) ??
+        quotes.find((quote) => quote.id === application.auto_selected_quote_id) ??
         null;
+  const contactRevealed =
+    application != null &&
+    application.contact_revealed_at.trim() !== "" &&
+    application.final_selected_quote_id.trim() !== "" &&
+    ["final_selected", "contract_pending", "completed"].includes(
+      application.quote_status,
+    );
 
   return (
     <main className="min-h-screen bg-[#f3f8fb] px-5 py-10">
@@ -222,15 +229,75 @@ export default function ClientDashboardPage() {
                 />
               </div>
               {selectedQuote ? (
-                <p className="mt-2 text-lg font-black text-blue-950">
-                  최저가{" "}
-                  {formatPrice(
-                    selectedQuote.member_price ?? selectedQuote.price,
-                  )}
-                </p>
+                <div className="mt-4 rounded-2xl border border-white/70 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-black text-blue-500">
+                    선택된 기사 정보
+                  </p>
+                  <p className="mt-2 text-lg font-black text-blue-950">
+                    {selectedQuote.company_name}
+                    {selectedQuote.driver_name !== "—" ? (
+                      <span className="ml-2 text-sm font-bold text-blue-700">
+                        {selectedQuote.driver_name}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-600">
+                    {selectedQuote.vehicle_type} · {selectedQuote.available_time}
+                  </p>
+                  <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-[11px] font-bold text-slate-400">
+                        견적금액
+                      </p>
+                      <p className="mt-1 font-black text-slate-900">
+                        {formatPrice(selectedQuote.price)}
+                      </p>
+                    </div>
+                    {selectedQuote.member_price != null ? (
+                      <div className="rounded-xl bg-blue-50 p-3">
+                        <p className="text-[11px] font-bold text-blue-500">
+                          지원금 적용가
+                        </p>
+                        <p className="mt-1 font-black text-blue-900">
+                          {formatPrice(selectedQuote.member_price)}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                  {contactRevealed && selectedQuote.phone ? (
+                    <div className="mt-3 rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                      <p className="text-[11px] font-bold text-emerald-600">
+                        기사 연락처
+                      </p>
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <p className="font-black text-emerald-950">
+                          {selectedQuote.phone}
+                        </p>
+                        <div className="flex gap-2">
+                          <a
+                            href={`tel:${selectedQuote.phone}`}
+                            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-600 px-3 text-sm font-black text-white"
+                            style={tapStyle}
+                          >
+                            전화하기
+                          </a>
+                          <a
+                            href={`sms:${selectedQuote.phone}`}
+                            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-white px-3 text-sm font-black text-emerald-900"
+                            style={tapStyle}
+                          >
+                            문자보내기
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               <p className="mt-3 text-xs font-semibold leading-5 text-blue-800">
-                최종확정 시 기사 연락처가 공개됩니다.
+                {contactRevealed
+                  ? "최종확정되어 기사 연락처가 공개되었습니다."
+                  : "최종확정 시 기사 연락처가 공개됩니다."}
               </p>
               {application.contract_status === "contract_pending" ? (
                 <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-900">

@@ -143,7 +143,7 @@ export async function GET() {
   const { data: applications, error: applicationsError } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contract_status",
+      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -328,6 +328,8 @@ export async function GET() {
     const autoSelectedQuoteId = safeText(row.auto_selected_quote_id, "");
     const finalSelectedQuoteId = safeText(row.final_selected_quote_id, "");
     const selectedQuoteId = finalSelectedQuoteId || autoSelectedQuoteId;
+    const contactRevealedAt = safeText(row.contact_revealed_at, "");
+    const revealStatuses = new Set(["final_selected", "contract_pending", "completed"]);
     const callCategory =
       quote != null && selectedQuoteId !== "" && quote.id === selectedQuoteId
         ? "matched"
@@ -339,6 +341,12 @@ export async function GET() {
       passengerCount,
       price: 0,
     });
+    const customerInfoVisible =
+      quote != null &&
+      finalSelectedQuoteId !== "" &&
+      quote.id === finalSelectedQuoteId &&
+      contactRevealedAt !== "" &&
+      revealStatuses.has(safeText(row.quote_status, "collecting"));
     return {
       id,
       created_at: safeText(row.created_at, ""),
@@ -354,6 +362,7 @@ export async function GET() {
       departure_time: safeText(row.departure_time),
       return_date: safeText(row.return_date, ""),
       passenger_count: passengerCount,
+      request_message: safeText(row.request_message),
       estimated_support_amount: supportEstimate.supportAmount,
       quote_status: safeText(row.quote_status, "collecting"),
       quote_deadline_at: safeText(row.quote_deadline_at, ""),
@@ -371,7 +380,10 @@ export async function GET() {
       final_selected_quote_id: finalSelectedQuoteId,
       final_selected_quote_source: safeText(row.final_selected_quote_source, ""),
       auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
+      contact_revealed_at: contactRevealedAt,
       contract_status: safeText(row.contract_status, ""),
+      customer_name: customerInfoVisible ? safeText(row.applicant_name) : "",
+      customer_phone: customerInfoVisible ? safeText(row.phone) : "",
       my_quote: quote,
     };
   });

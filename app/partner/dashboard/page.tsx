@@ -64,6 +64,7 @@ type PartnerCall = {
   departure_time: string;
   return_date: string;
   passenger_count: number | null;
+  request_message?: string;
   estimated_support_amount: number;
   quote_status: string;
   quote_deadline_at: string;
@@ -81,7 +82,10 @@ type PartnerCall = {
   final_selected_quote_id: string;
   final_selected_quote_source: string;
   auto_final_confirm_at: string;
+  contact_revealed_at: string;
   contract_status: string;
+  customer_name?: string;
+  customer_phone?: string;
   my_quote: PartnerMyQuote | null;
 };
 
@@ -198,6 +202,17 @@ function isQuotedCall(call: PartnerCall): boolean {
     call.my_quote != null &&
     call.final_selected_quote_id.trim() === "" &&
     !isMatchedCall(call)
+  );
+}
+
+function canRevealCustomerInfo(call: PartnerCall): boolean {
+  if (call.my_quote == null) return false;
+  const revealStatuses = new Set(["final_selected", "contract_pending", "completed"]);
+  return (
+    call.contact_revealed_at.trim() !== "" &&
+    call.final_selected_quote_id.trim() !== "" &&
+    call.my_quote.id === call.final_selected_quote_id &&
+    revealStatuses.has(call.quote_status)
   );
 }
 
@@ -354,6 +369,7 @@ function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
     final_selected_quote_id: safeText(row.final_selected_quote_id),
     final_selected_quote_source: safeText(row.final_selected_quote_source),
     auto_final_confirm_at: safeText(row.auto_final_confirm_at),
+    contact_revealed_at: safeText(row.contact_revealed_at),
     contract_status: safeText(row.contract_status),
     my_quote: null,
   };
@@ -371,6 +387,9 @@ export default function PartnerDashboardPage() {
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
   const [quoteDetailCall, setQuoteDetailCall] = useState<PartnerCall | null>(
+    null,
+  );
+  const [customerDetailCall, setCustomerDetailCall] = useState<PartnerCall | null>(
     null,
   );
   const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
@@ -1291,6 +1310,157 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
+          {customerDetailCall ? (
+            <div
+              className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="partner-customer-detail-title"
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                aria-label="닫기"
+                onClick={() => setCustomerDetailCall(null)}
+              />
+              <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
+                <h2
+                  id="partner-customer-detail-title"
+                  className="text-lg font-black tracking-[-0.04em] text-slate-950"
+                >
+                  고객정보 확인
+                </h2>
+                <p className="mt-1 text-xs font-bold text-slate-500">
+                  {customerDetailCall.receipt_number || "신청번호 미정"}
+                </p>
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                    <dt className="text-[11px] font-bold text-emerald-600">
+                      고객명
+                    </dt>
+                    <dd className="mt-1 font-black text-emerald-950">
+                      {customerDetailCall.customer_name || "—"}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                    <dt className="text-[11px] font-bold text-emerald-600">
+                      고객 전화번호
+                    </dt>
+                    <dd className="mt-2">
+                      {customerDetailCall.customer_phone ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="font-black text-emerald-950">
+                            {customerDetailCall.customer_phone}
+                          </p>
+                          <div className="flex gap-2">
+                            <a
+                              href={`tel:${customerDetailCall.customer_phone}`}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-600 px-3 text-sm font-black text-white"
+                              style={tapStyle}
+                            >
+                              전화하기
+                            </a>
+                            <a
+                              href={`sms:${customerDetailCall.customer_phone}`}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-white px-3 text-sm font-black text-emerald-900"
+                              style={tapStyle}
+                            >
+                              문자보내기
+                            </a>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="font-semibold text-slate-400">—</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">출발지</dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {customerDetailCall.departure}
+                    </dd>
+                  </div>
+                  {formatStopovers(customerDetailCall.stopovers) ? (
+                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                      <dt className="text-[11px] font-bold text-slate-400">
+                        경유지
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {formatStopovers(customerDetailCall.stopovers)}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">도착지</dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {customerDetailCall.destination}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      출발일시
+                    </dt>
+                    <dd className="mt-1 font-semibold text-slate-800">
+                      {formatDeparture(customerDetailCall)}
+                    </dd>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                      <dt className="text-[11px] font-bold text-slate-400">
+                        인원수
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {customerDetailCall.passenger_count ?? "—"}
+                      </dd>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                      <dt className="text-[11px] font-bold text-slate-400">
+                        왕복/편도
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {customerDetailCall.trip_type}
+                      </dd>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                      <dt className="text-[11px] font-bold text-slate-400">
+                        일반/프리미엄
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {customerDetailCall.bus_grade}
+                      </dd>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                      <dt className="text-[11px] font-bold text-slate-400">
+                        계약상태
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {customerDetailCall.contract_status || "—"}
+                      </dd>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      요청사항
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">
+                      {customerDetailCall.request_message?.trim()
+                        ? customerDetailCall.request_message
+                        : "—"}
+                    </dd>
+                  </div>
+                </dl>
+                <button
+                  type="button"
+                  className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-black text-white shadow-sm"
+                  style={tapStyle}
+                  onClick={() => setCustomerDetailCall(null)}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-6">
             <div className="-mx-1 overflow-x-auto px-1 pb-2">
               <div className="flex min-w-max gap-2">
@@ -1341,6 +1511,7 @@ export default function PartnerDashboardPage() {
                 const formOpen = activeQuoteCallId === call.id;
                 const referralOpen = activeReferralCallId === call.id;
                 const quoteClosed = isQuoteClosed(call);
+                const customerInfoVisible = canRevealCustomerInfo(call);
                 const highlightedNewCall = highlightedNewCallIds.has(call.id);
                 const driverSupportAmount = Math.round(
                   (call.estimated_support_amount * call.support_driver_ratio) / 100,
@@ -1532,11 +1703,19 @@ export default function PartnerDashboardPage() {
                           <>
                             <button
                               type="button"
-                              onClick={() => setQuoteDetailCall(call)}
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900"
+                              onClick={() => setCustomerDetailCall(call)}
+                              disabled={!customerInfoVisible}
+                              title={
+                                customerInfoVisible
+                                  ? undefined
+                                  : "최종확정 후 고객정보가 공개됩니다."
+                              }
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:bg-slate-300"
                               style={tapStyle}
                             >
-                              고객정보 확인
+                              {customerInfoVisible
+                                ? "고객정보 확인"
+                                : "최종확정 후 고객정보가 공개됩니다."}
                             </button>
                             <button
                               type="button"

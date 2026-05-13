@@ -78,6 +78,12 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   ]);
   const current = (latest as Record<string, unknown> | null) ?? app;
   const contactRevealed = safeText(current.contact_revealed_at) !== "";
+  const revealStatuses = new Set(["final_selected", "contract_pending", "completed"]);
+  const finalSelectedQuoteId = safeText(current.final_selected_quote_id);
+  const canRevealSelectedContact =
+    contactRevealed &&
+    finalSelectedQuoteId !== "" &&
+    revealStatuses.has(safeText(current.quote_status, "collecting"));
   const quotes = [
     ...(Array.isArray(memberRows) ? memberRows : []).map((raw) => {
       const row = raw as Record<string, unknown>;
@@ -90,7 +96,10 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         id: safeText(row.id),
         company_name: safeText(partner?.company_name, "회원 기사"),
         driver_name: safeText(partner?.manager_name, "—"),
-        phone: contactRevealed ? safeText(partner?.phone, "—") : "",
+        phone:
+          canRevealSelectedContact && safeText(row.id) === finalSelectedQuoteId
+            ? safeText(partner?.phone)
+            : "",
         price: parseInteger(row.price),
         member_price:
           parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price),
@@ -107,7 +116,10 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         id: safeText(row.id),
         company_name: safeText(row.guest_company_name, "비회원 기사"),
         driver_name: safeText(row.guest_driver_name, "—"),
-        phone: contactRevealed ? safeText(row.guest_phone, "—") : "",
+        phone:
+          canRevealSelectedContact && safeText(row.id) === finalSelectedQuoteId
+            ? safeText(row.guest_phone)
+            : "",
         price: parseInteger(row.price),
         member_price: null,
         sponsor_quote_enabled: false,
