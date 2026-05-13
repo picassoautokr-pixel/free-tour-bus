@@ -56,6 +56,7 @@ type PartnerCall = {
   quote_deadline_at: string;
   quote_limit_count: number | null;
   quote_count: number;
+  call_category: "new" | "quoted" | "matched";
   target_normal_price: number | null;
   target_member_price: number | null;
   quote_closed_at: string;
@@ -67,6 +68,7 @@ type PartnerCall = {
   final_selected_quote_id: string;
   final_selected_quote_source: string;
   auto_final_confirm_at: string;
+  contract_status: string;
   my_quote: PartnerMyQuote | null;
 };
 
@@ -88,6 +90,8 @@ type ReferralResult = {
   error?: string;
 };
 
+type DashboardTab = "new" | "quoted" | "matched";
+
 const emptyQuoteForm: QuoteForm = {
   price: "",
   supportDiscountAmount: "",
@@ -99,6 +103,16 @@ const emptyQuoteForm: QuoteForm = {
 const emptyReferralForm: ReferralForm = {
   phones: "",
 };
+
+const DASHBOARD_TABS: Array<{
+  id: DashboardTab;
+  label: string;
+  empty: string;
+}> = [
+  { id: "new", label: "신규 견적요청", empty: "현재 신규 견적이 없습니다." },
+  { id: "quoted", label: "내가 제출한 견적", empty: "제출한 견적이 없습니다." },
+  { id: "matched", label: "내가 매칭된 견적", empty: "매칭된 견적이 없습니다." },
+];
 
 function formatDate(value: string): string {
   const t = value.trim();
@@ -148,6 +162,47 @@ function isQuoteClosed(call: PartnerCall): boolean {
     call.final_selected_quote_id.trim() !== "" ||
     closedStatuses.has(call.quote_status)
   );
+}
+
+function isMatchedCall(call: PartnerCall): boolean {
+  if (call.call_category === "matched") return true;
+  if (call.my_quote == null) return false;
+  const selectedQuoteId =
+    call.final_selected_quote_id.trim() || call.auto_selected_quote_id.trim();
+  return selectedQuoteId !== "" && call.my_quote.id === selectedQuoteId;
+}
+
+function isNewCall(call: PartnerCall): boolean {
+  return call.call_category === "new" && call.my_quote == null && !isQuoteClosed(call);
+}
+
+function isQuotedCall(call: PartnerCall): boolean {
+  return (
+    call.call_category === "quoted" &&
+    call.my_quote != null &&
+    call.final_selected_quote_id.trim() === "" &&
+    !isMatchedCall(call)
+  );
+}
+
+function quoteStatusLabel(call: PartnerCall): string {
+  if (isMatchedCall(call)) {
+    return call.final_selected_quote_id.trim() !== ""
+      ? "최종 확정"
+      : "자동선정 후보";
+  }
+  if (call.my_quote != null) return "견적 검토중";
+  return "제출 전";
+}
+
+function averageStatusLabel(call: PartnerCall): string {
+  const myPrice =
+    call.my_quote?.member_price ??
+    call.my_quote?.sponsor_discounted_price ??
+    call.my_quote?.price ??
+    null;
+  if (myPrice == null || call.quote_count <= 1) return "평균가 산정 전";
+  return "평균가 대비 상태 확인 중";
 }
 
 function formatSubmittedAt(iso: string): string {
@@ -217,6 +272,7 @@ export default function PartnerDashboardPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [calls, setCalls] = useState<PartnerCall[]>([]);
+  const [activeTab, setActiveTab] = useState<DashboardTab>("new");
   const [callsLoading, setCallsLoading] = useState(false);
   const [callsError, setCallsError] = useState<string | null>(null);
   const [activeQuoteCallId, setActiveQuoteCallId] = useState<string | null>(null);
@@ -381,6 +437,23 @@ export default function PartnerDashboardPage() {
 
   const serviceRegionsChanged =
     serviceRegions.join("|") !== savedServiceRegions.join("|");
+
+  const newCalls = calls.filter(isNewCall);
+  const quotedCalls = calls.filter(isQuotedCall);
+  const matchedCalls = calls.filter(isMatchedCall);
+  const visibleCalls =
+    activeTab === "new"
+      ? newCalls
+      : activeTab === "quoted"
+        ? quotedCalls
+        : matchedCalls;
+  const activeTabMeta =
+    DASHBOARD_TABS.find((tab) => tab.id === activeTab) ?? DASHBOARD_TABS[0];
+  const tabCounts: Record<DashboardTab, number> = {
+    new: newCalls.length,
+    quoted: quotedCalls.length,
+    matched: matchedCalls.length,
+  };
 
   const saveServiceRegions = async () => {
     setServiceRegionBusy(true);
@@ -843,31 +916,55 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-6">
+            <div className="-mx-1 overflow-x-auto px-1 pb-2">
+              <div className="flex min-w-max gap-2">
+                {DASHBOARD_TABS.map((tab) => {
+                  const selected = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveTab(tab.id);
+                        setActiveQuoteCallId(null);
+                        setActiveReferralCallId(null);
+                      }}
+                      className={`min-h-11 shrink-0 rounded-2xl border px-4 text-sm font-black transition ${
+                        selected
+                          ? "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-900/20"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                      style={tapStyle}
+                    >
+                      {tab.label} ({tabCounts[tab.id]})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4">
             {callsLoading && calls.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
                 대기중인 콜을 불러오는 중…
               </div>
-            ) : calls.length === 0 ? (
+            ) : visibleCalls.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
                 <p className="text-sm font-black text-slate-700">
-                  현재 대기중인 콜이 없습니다.
+                  {activeTabMeta.empty}
                 </p>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
                   새 신청이 들어오면 새로고침으로 확인할 수 있습니다.
                 </p>
               </div>
             ) : (
-              calls.map((call) => {
-                const alreadyQuoted = call.my_quote != null;
+              visibleCalls.map((call) => {
                 const memberQuoted = call.my_quote?.source === "member";
                 const guestOnlyQuoted = call.my_quote?.source === "guest";
                 const formOpen = activeQuoteCallId === call.id;
                 const referralOpen = activeReferralCallId === call.id;
-                const quoteSourceLabel =
-                  call.my_quote?.source === "guest"
-                    ? "비회원 견적"
-                    : "회원 견적";
                 const quoteClosed = isQuoteClosed(call);
                 const driverSupportAmount = Math.round(
                   (call.estimated_support_amount * call.support_driver_ratio) / 100,
@@ -938,6 +1035,67 @@ export default function PartnerDashboardPage() {
                         </p>
                       </div>
                     ) : null}
+                    {activeTab === "quoted" ? (
+                      <div className="mb-4 grid gap-2 rounded-2xl border border-blue-100 bg-blue-50/70 p-3 text-xs sm:grid-cols-3">
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-blue-100">
+                          <p className="font-bold text-blue-500">제출 상태</p>
+                          <p className="mt-1 font-black text-blue-950">제출 완료</p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-blue-100">
+                          <p className="font-bold text-blue-500">선정 상태</p>
+                          <p className="mt-1 font-black text-blue-950">
+                            {quoteStatusLabel(call)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-blue-100">
+                          <p className="font-bold text-blue-500">평균가 대비</p>
+                          <p className="mt-1 font-black text-blue-950">
+                            {averageStatusLabel(call)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                    {activeTab === "matched" ? (
+                      <div className="mb-4 grid gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-3 text-xs sm:grid-cols-3">
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
+                          <p className="font-bold text-emerald-600">매칭 상태</p>
+                          <p className="mt-1 font-black text-emerald-950">
+                            {quoteStatusLabel(call)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
+                          <p className="font-bold text-emerald-600">고객 공개</p>
+                          <p className="mt-1 font-black text-emerald-950">
+                            {call.final_selected_quote_id.trim() !== ""
+                              ? "고객정보 공개 가능"
+                              : "최종 확정 대기"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
+                          <p className="font-bold text-emerald-600">전자계약</p>
+                          <p className="mt-1 font-black text-emerald-950">
+                            {call.contract_status.trim() !== ""
+                              ? call.contract_status
+                              : "최종 확정 후 진행"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
+                          <p className="font-bold text-emerald-600">지원금 예상액</p>
+                          <p className="mt-1 font-black text-emerald-950">
+                            {formatPrice(call.estimated_support_amount)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100 sm:col-span-2">
+                          <p className="font-bold text-emerald-600">
+                            고객 감사지원금 비율
+                          </p>
+                          <p className="mt-1 font-black text-emerald-950">
+                            고객 {call.support_client_reward_ratio}% · 기사{" "}
+                            {call.support_driver_ratio}%
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -951,42 +1109,55 @@ export default function PartnerDashboardPage() {
                         </p>
                       </div>
                       <div className="flex flex-col gap-2 sm:items-end">
-                        {memberQuoted ? (
-                          <button
-                            type="button"
-                            onClick={() => setQuoteDetailCall(call)}
-                            className="inline-flex min-h-10 max-w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-center text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100"
-                            style={tapStyle}
-                          >
-                            <span>
-                              회원 견적 제출됨 - 일반가{" "}
-                              {formatPrice(call.my_quote?.price ?? null)}
-                            </span>
-                            <span className="text-[11px] font-bold text-emerald-700/90">
-                              지원가{" "}
-                              {formatPrice(
-                                call.my_quote?.member_price ??
-                                  call.my_quote?.sponsor_discounted_price ??
-                                  null,
-                              )}
-                            </span>
-                          </button>
-                        ) : guestOnlyQuoted ? (
-                          <div className="flex flex-col gap-2 sm:items-end">
+                        {activeTab === "matched" ? (
+                          <>
                             <button
                               type="button"
                               onClick={() => setQuoteDetailCall(call)}
-                              className="inline-flex min-h-10 max-w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm font-black text-amber-900 shadow-sm transition hover:bg-amber-100"
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900"
                               style={tapStyle}
                             >
-                              <span>
-                                비회원 견적 제출됨 -{" "}
-                                {formatPrice(call.my_quote?.price ?? null)}
-                              </span>
-                              <span className="text-[11px] font-bold text-amber-700/90">
-                                지원금 미적용 일반 견적
-                              </span>
+                              고객정보 확인
                             </button>
+                            <button
+                              type="button"
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-900 shadow-sm transition hover:bg-blue-100"
+                              style={tapStyle}
+                            >
+                              전자계약 진행
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50"
+                              style={tapStyle}
+                            >
+                              계약 완료 상태 보기
+                            </button>
+                          </>
+                        ) : activeTab === "quoted" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setQuoteDetailCall(call)}
+                              className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-center text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100"
+                              style={tapStyle}
+                            >
+                              내 견적 보기
+                            </button>
+                            {guestOnlyQuoted ? (
+                              <button
+                                type="button"
+                                onClick={() => openQuoteForm(call)}
+                                disabled={quoteClosed}
+                                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                style={tapStyle}
+                              >
+                                회원 지원금 견적 추가 제출
+                              </button>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
                             <button
                               type="button"
                               onClick={() => openQuoteForm(call)}
@@ -994,31 +1165,19 @@ export default function PartnerDashboardPage() {
                               className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-300"
                               style={tapStyle}
                             >
-                              {quoteClosed
-                                ? "견적 마감됨"
-                                : "지원금 적용 회원 견적 다시 제출"}
+                              {quoteClosed ? "견적 마감됨" : "견적 제출"}
                             </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => openQuoteForm(call)}
-                            disabled={quoteClosed}
-                            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-300"
-                            style={tapStyle}
-                          >
-                            {quoteClosed ? "견적 마감됨" : "견적 제출"}
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => openReferralForm(call)}
+                              disabled={quoteClosed}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-emerald-50"
+                              style={tapStyle}
+                            >
+                              {quoteClosed ? "전달 종료" : "동료기사에게 전달"}
+                            </button>
+                          </>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => openReferralForm(call)}
-                          disabled={quoteClosed}
-                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-emerald-50"
-                          style={tapStyle}
-                        >
-                          {quoteClosed ? "전달 종료" : "동료기사에게 전달"}
-                        </button>
                       </div>
                     </div>
 

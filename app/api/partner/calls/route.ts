@@ -142,7 +142,7 @@ export async function GET() {
   const { data: applications, error: applicationsError } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, departure_region, destination, departure_date, departure_time, return_date, passenger_count, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, departure_region, destination, departure_date, departure_time, return_date, passenger_count, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contract_status",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -324,6 +324,15 @@ export async function GET() {
     const row = raw as Record<string, unknown>;
     const id = safeText(row.id, "");
     const quote = quotedByApplication.get(id) ?? null;
+    const autoSelectedQuoteId = safeText(row.auto_selected_quote_id, "");
+    const finalSelectedQuoteId = safeText(row.final_selected_quote_id, "");
+    const selectedQuoteId = finalSelectedQuoteId || autoSelectedQuoteId;
+    const callCategory =
+      quote != null && selectedQuoteId !== "" && quote.id === selectedQuoteId
+        ? "matched"
+        : quote != null && finalSelectedQuoteId === ""
+          ? "quoted"
+          : "new";
     const passengerCount = parseInteger(row.passenger_count);
     const supportEstimate = estimateSponsorSupport({
       passengerCount,
@@ -348,17 +357,19 @@ export async function GET() {
       quote_deadline_at: safeText(row.quote_deadline_at, ""),
       quote_limit_count: parseInteger(row.quote_limit_count),
       quote_count: quoteCountByApplication.get(id) ?? 0,
+      call_category: callCategory,
       target_normal_price: parseInteger(row.target_normal_price),
       target_member_price: parseInteger(row.target_member_price),
       quote_closed_at: safeText(row.quote_closed_at, ""),
       extension_round: parseInteger(row.extension_round) ?? 0,
       support_client_reward_ratio: parseInteger(row.support_client_reward_ratio) ?? 0,
       support_driver_ratio: parseInteger(row.support_driver_ratio) ?? 100,
-      auto_selected_quote_id: safeText(row.auto_selected_quote_id, ""),
+      auto_selected_quote_id: autoSelectedQuoteId,
       auto_selected_quote_source: safeText(row.auto_selected_quote_source, ""),
-      final_selected_quote_id: safeText(row.final_selected_quote_id, ""),
+      final_selected_quote_id: finalSelectedQuoteId,
       final_selected_quote_source: safeText(row.final_selected_quote_source, ""),
       auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
+      contract_status: safeText(row.contract_status, ""),
       my_quote: quote,
     };
   });
