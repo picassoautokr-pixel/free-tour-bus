@@ -400,8 +400,7 @@ function parseStopovers(raw: unknown): string[] {
           .filter(Boolean);
       }
     } catch {
-      /* 한 줄 문자열이면 쉼표 분리 시도 */
-      return t.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+      return t.split(/[,，;；\r\n]+/).map((s) => s.trim()).filter(Boolean);
     }
   }
   return [];

@@ -9,6 +9,7 @@ import {
   inferDepartureRegion,
   type ServiceRegion,
 } from "@/lib/regions";
+import { formatStopovers } from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
 
 /** 고객 폼에 노출되는 유형만 (업체용 등은 렌더링하지 않음 — 기존 DB 값은 관리자에서 표시) */
@@ -58,7 +59,7 @@ type ApplicationInsertPayload = {
   departure_region: string | null;
   destination: string;
   destination_detail: string;
-  stopovers?: string[] | null;
+  stopovers?: string | null;
   departure_date: string | null;
   departure_time: string;
   return_date: string | null;
@@ -187,7 +188,7 @@ type FormData = {
   departureRegion: ServiceRegion | "";
   departureRegionManual: boolean;
   destination: string;
-  stopovers: string[];
+  stopovers: string;
   departureDate: string;
   departureTimeSlot: DepartureTimeSlot;
   departureTimeCustom: string;
@@ -214,7 +215,7 @@ const INITIAL_FORM_DATA: FormData = {
   departureRegion: "",
   departureRegionManual: false,
   destination: "",
-  stopovers: [],
+  stopovers: "",
   departureDate: "",
   departureTimeSlot: "custom",
   departureTimeCustom: "",
@@ -274,28 +275,6 @@ export default function Home() {
       /* ignore */
     }
   }, []);
-
-  const handleAddStopover = () => {
-    console.log("stopover clicked");
-    setFormData((prev) => {
-      if (prev.stopovers.length >= 3) return prev;
-      return { ...prev, stopovers: [...prev.stopovers, ""] };
-    });
-  };
-
-  const handleUpdateStopover = (index: number, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      stopovers: prev.stopovers.map((s, i) => (i === index ? value : s)),
-    }));
-  };
-
-  const handleRemoveStopover = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      stopovers: prev.stopovers.filter((_, i) => i !== index),
-    }));
-  };
 
   const resetFormToInitial = () => {
     setFormData({ ...INITIAL_FORM_DATA });
@@ -419,9 +398,7 @@ export default function Home() {
         formData.quoteLimitOption === "custom"
           ? parsePositiveIntegerText(formData.quoteLimitCustomCount)
           : Number.parseInt(formData.quoteLimitOption, 10);
-      const stopovers = formData.stopovers
-        .map((stopover) => stopover.trim())
-        .filter((stopover) => stopover !== "");
+      const stopovers = formatStopovers(formData.stopovers);
 
       const insertPayload: ApplicationInsertPayload = {
         receipt_number: receiptNumber,
@@ -433,7 +410,7 @@ export default function Home() {
         departure_region: finalDepartureRegion,
         destination: destTrim,
         destination_detail: "",
-        stopovers: stopovers.length > 0 ? stopovers : null,
+        stopovers: stopovers === "" ? null : stopovers,
         departure_date: departureDateValue === "" ? null : departureDateValue,
         departure_time: departureTimeValue,
         return_date: returnDateValue === "" ? null : returnDateValue,
@@ -773,39 +750,22 @@ export default function Home() {
                   ) : null}
                 </div>
 
-                {formData.stopovers.map((stopover, index) => (
-                  <div
-                    key={`stopover-row-${index}`}
-                    className="flex gap-2 sm:items-stretch"
-                  >
-                    <input
-                      className="min-h-14 min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
-                      placeholder={`경유지 ${index + 1} 입력`}
-                      value={stopover}
-                      onChange={(event) =>
-                        handleUpdateStopover(index, event.target.value)
-                      }
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveStopover(index)}
-                      className="touch-manipulation shrink-0 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black tracking-[-0.03em] text-red-700 transition hover:bg-red-100 active:scale-[0.98]"
-                      style={tapStyle}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={handleAddStopover}
-                  disabled={formData.stopovers.length >= 3}
-                  className="touch-manipulation flex min-h-12 w-full cursor-pointer items-center rounded-2xl px-1 text-left text-base font-black tracking-[-0.035em] text-blue-500 transition hover:text-blue-600 disabled:text-slate-300"
-                  style={tapStyle}
-                >
-                  + 경유지 추가
-                </button>
+                <div className="space-y-2">
+                  <textarea
+                    className="min-h-24 w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
+                    placeholder="경유지 선택 입력 예: 서울역, 대전역"
+                    value={formData.stopovers}
+                    onChange={(event) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        stopovers: event.target.value,
+                      }))
+                    }
+                  />
+                  <p className="px-1 text-xs font-medium leading-5 text-slate-500">
+                    여러 경유지는 쉼표, 줄바꿈, 세미콜론으로 구분해 주세요.
+                  </p>
+                </div>
               </div>
 
               <div

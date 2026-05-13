@@ -1,8 +1,6 @@
 export function parseStopovers(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item ?? "").trim())
-      .filter((item) => item !== "");
+    return value.flatMap((item) => parseStopovers(item));
   }
 
   if (typeof value !== "string") return [];
@@ -19,7 +17,7 @@ export function parseStopovers(value: unknown): string[] {
   }
 
   return trimmed
-    .split(",")
+    .split(/[,，;；\r\n]+/)
     .map((item) => item.trim())
     .filter((item) => item !== "");
 }
