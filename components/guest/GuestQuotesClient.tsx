@@ -1,10 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import {
+  realtimeStatusLabel,
+  useSupabaseRealtimeRefresh,
+} from "@/hooks/useSupabaseRealtimeRefresh";
 
 type GuestCall = {
   id: string;
@@ -44,7 +48,7 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
     [quotes, region],
   );
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const query = region ? `?region=${encodeURIComponent(region)}` : "";
@@ -54,7 +58,14 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
     } finally {
       setLoading(false);
     }
-  };
+  }, [region]);
+
+  const realtimeStatus = useSupabaseRealtimeRefresh({
+    channelName: "guest-quotes-live",
+    tables: ["applications"],
+    debounceMs: 800,
+    onRefresh: refresh,
+  });
 
   return (
     <div>
@@ -66,6 +77,9 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
               전국 견적요청을 로그인 없이 확인할 수 있습니다.
             </p>
           </div>
+          <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-600">
+            {realtimeStatusLabel(realtimeStatus)}
+          </span>
           <button
             type="button"
             onClick={() => void refresh()}

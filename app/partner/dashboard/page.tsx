@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import {
+  realtimeStatusLabel,
+  useSupabaseRealtimeRefresh,
+} from "@/hooks/useSupabaseRealtimeRefresh";
 import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import {
@@ -104,6 +108,8 @@ const emptyQuoteForm: QuoteForm = {
 const emptyReferralForm: ReferralForm = {
   phones: "",
 };
+
+const PARTNER_NOTIFICATION_SOUND_PREF_KEY = "partnerDashboardSoundEnabled";
 
 const DASHBOARD_TABS: Array<{
   id: DashboardTab;
@@ -293,6 +299,29 @@ export default function PartnerDashboardPage() {
   const [savedServiceRegions, setSavedServiceRegions] = useState<ServiceRegion[]>([]);
   const [serviceRegionBusy, setServiceRegionBusy] = useState(false);
   const [serviceRegionMessage, setServiceRegionMessage] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [newCallNoticeId, setNewCallNoticeId] = useState<string | null>(null);
+  const knownCallIdsRef = useRef<Set<string>>(new Set());
+  const callsInitializedRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  const playNotificationSound = useCallback(() => {
+    if (!soundEnabled || !audioContextRef.current) return;
+    try {
+      const ctx = audioContextRef.current;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 880;
+      gain.gain.value = 0.05;
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.12);
+    } catch {
+      /* ignore */
+    }
+  }, [soundEnabled]);
 
   const loadCalls = useCallback(async () => {
     setCallsLoading(true);
@@ -311,7 +340,21 @@ export default function PartnerDashboardPage() {
         setCalls([]);
         return;
       }
-      setCalls(Array.isArray(json.calls) ? json.calls : []);
+      const nextCalls = Array.isArray(json.calls) ? json.calls : [];
+      const nextIds = new Set(nextCalls.map((call) => call.id));
+      if (callsInitializedRef.current) {
+        const newCall = nextCalls.find(
+          (call) => !knownCallIdsRef.current.has(call.id) && isNewCall(call),
+        );
+        if (newCall) {
+          setNewCallNoticeId(newCall.id);
+          playNotificationSound();
+        }
+      } else {
+        callsInitializedRef.current = true;
+      }
+      knownCallIdsRef.current = nextIds;
+      setCalls(nextCalls);
       const nextRegions = normalizeServiceRegions(json.service_regions);
       setServiceRegions(nextRegions);
       setSavedServiceRegions(nextRegions);
@@ -321,7 +364,7 @@ export default function PartnerDashboardPage() {
     } finally {
       setCallsLoading(false);
     }
-  }, []);
+  }, [playNotificationSound]);
 
   useEffect(() => {
     let cancelled = false;
@@ -395,28 +438,58 @@ export default function PartnerDashboardPage() {
     };
   }, [loadCalls, router]);
 
-  useEffect(() => {
-    if (checking) return;
-    const supabase = createSupabaseClient();
-    const channel = supabase
-      .channel("partner-dashboard-application-inserts")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "applications",
-        },
-        () => {
-          void loadCalls();
-        },
-      )
-      .subscribe();
+  const realtimeStatus = useSupabaseRealtimeRefresh({
+    channelName: "partner-dashboard-live",
+    tables: ["applications", "driver_quotes", "guest_driver_quotes"],
+    enabled: !checking,
+    debounceMs: 800,
+    onRefresh: loadCalls,
+  });
 
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [checking, loadCalls]);
+  useEffect(() => {
+    try {
+      setSoundEnabled(
+        window.localStorage.getItem(PARTNER_NOTIFICATION_SOUND_PREF_KEY) === "1",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleSound = async () => {
+    const next = !soundEnabled;
+    if (next) {
+      const AudioContextCtor =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (AudioContextCtor && !audioContextRef.current) {
+        audioContextRef.current = new AudioContextCtor();
+      }
+      if (audioContextRef.current?.state === "suspended") {
+        await audioContextRef.current.resume();
+      }
+    }
+    setSoundEnabled(next);
+    try {
+      window.localStorage.setItem(
+        PARTNER_NOTIFICATION_SOUND_PREF_KEY,
+        next ? "1" : "0",
+      );
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const scrollToCall = (id: string) => {
+    setActiveTab("new");
+    window.setTimeout(() => {
+      document.getElementById(`partner-call-${id}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+  };
 
   const handleLogout = async () => {
     try {
@@ -652,7 +725,22 @@ export default function PartnerDashboardPage() {
                 신규 예약 신청만 표시됩니다. 고객 연락처와 이름은 아직 공개하지 않습니다.
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600">
+                {realtimeStatusLabel(realtimeStatus)}
+              </span>
+              <button
+                type="button"
+                onClick={() => void toggleSound()}
+                className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 text-sm font-black shadow-sm transition ${
+                  soundEnabled
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                    : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                }`}
+                style={tapStyle}
+              >
+                {soundEnabled ? "알림음 끄기" : "알림음 켜기"}
+              </button>
               <button
                 type="button"
                 onClick={() => void loadCalls()}
@@ -672,6 +760,25 @@ export default function PartnerDashboardPage() {
               </button>
             </div>
           </div>
+
+          {newCallNoticeId ? (
+            <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-950">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="font-black">새 견적요청이 도착했습니다.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    scrollToCall(newCallNoticeId);
+                    setNewCallNoticeId(null);
+                  }}
+                  className="min-h-10 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm"
+                  style={tapStyle}
+                >
+                  확인하기
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -989,6 +1096,7 @@ export default function PartnerDashboardPage() {
                 return (
                   <article
                     key={call.id}
+                    id={`partner-call-${call.id}`}
                     className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
                   >
                     <div

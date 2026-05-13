@@ -13,6 +13,10 @@ import * as XLSX from "xlsx";
 
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
+  realtimeStatusLabel,
+  useSupabaseRealtimeRefresh,
+} from "@/hooks/useSupabaseRealtimeRefresh";
+import {
   fetchProfileForAuthUser,
   resolveAdminRoleAccess,
   type Profile,
@@ -1091,6 +1095,14 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
   useEffect(() => {
     void loadQuotes();
   }, [loadQuotes]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `admin-driver-quotes-${applicationId}`,
+    tables: ["applications", "driver_quotes", "guest_driver_quotes", "notification_logs"],
+    enabled: isPersistableApplicationId(applicationId),
+    debounceMs: 800,
+    onRefresh: loadQuotes,
+  });
 
   return (
     <section className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm ring-1 ring-indigo-100/80">
@@ -2319,6 +2331,22 @@ export default function AdminApplicationsPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [load]);
 
+  const adminRealtimeStatus = useSupabaseRealtimeRefresh({
+    channelName: "admin-dashboard-live-refresh",
+    tables: [
+      "applications",
+      "driver_quotes",
+      "guest_driver_quotes",
+      "partner_drivers",
+      "notification_logs",
+    ],
+    debounceMs: 800,
+    onRefresh: () => {
+      void load();
+      window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+    },
+  });
+
   useEffect(() => {
     // /admin 이 mount 된 상태에서만 realtime 연결
     if (realtimeSubscribedRef.current) return;
@@ -2757,6 +2785,9 @@ export default function AdminApplicationsPage() {
                 : adminEmail
                   ? `관리자: ${adminEmail}`
                   : "관리자: -"}
+            </p>
+            <p className="mt-1 text-xs font-black text-slate-500">
+              {realtimeStatusLabel(adminRealtimeStatus)}
             </p>
             <span className="sr-only">
               {adminRoleAccess.isVerifiedAdmin

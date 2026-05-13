@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import {
+  realtimeStatusLabel,
+  useSupabaseRealtimeRefresh,
+} from "@/hooks/useSupabaseRealtimeRefresh";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -51,10 +55,13 @@ export default function ClientDashboardPage() {
   const [quotes, setQuotes] = useState<ClientQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const quoteCountRef = useRef(0);
 
-  const load = async () => {
-    setLoading(true);
-    setMessage(null);
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+      setMessage(null);
+    }
     try {
       const query = new URLSearchParams({
         receipt_number: receiptNumber,
@@ -72,14 +79,31 @@ export default function ClientDashboardPage() {
         setQuotes([]);
         return;
       }
+      if (
+        options?.silent &&
+        Array.isArray(json.quotes) &&
+        json.quotes.length > quoteCountRef.current
+      ) {
+        setMessage("새 견적이 도착했습니다.");
+      }
       setApplication(json.application ?? null);
-      setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
+      const nextQuotes = Array.isArray(json.quotes) ? json.quotes : [];
+      quoteCountRef.current = nextQuotes.length;
+      setQuotes(nextQuotes);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
-  };
+  }, [phone, receiptNumber]);
+
+  const realtimeStatus = useSupabaseRealtimeRefresh({
+    channelName: "client-dashboard-live",
+    tables: ["applications", "driver_quotes", "guest_driver_quotes"],
+    enabled: application != null,
+    debounceMs: 800,
+    onRefresh: () => load({ silent: true }),
+  });
 
   const runAction = async (
     action: "final_confirm" | "select_quote" | "reopen",
@@ -170,6 +194,9 @@ export default function ClientDashboardPage() {
         ) : null}
         {application ? (
           <div className="mt-6 space-y-4">
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 ring-1 ring-slate-200">
+              {realtimeStatusLabel(realtimeStatus)}
+            </p>
             <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
               <p className="text-sm font-black text-blue-950">
                 {application.auto_selected_quote_id
