@@ -1141,8 +1141,15 @@ export default function PartnerDashboardPage() {
                 );
                 const quotePriceValue = parsePriceInput(quoteForm.price);
                 const supportDiscountInvalid =
-                  supportDiscountValue > call.estimated_support_amount ||
-                  (quotePriceValue != null && supportDiscountValue > quotePriceValue);
+                  supportDiscountValue > call.estimated_support_amount;
+                const customerPerceivedPrice =
+                  quotePriceValue == null
+                    ? null
+                    : Math.max(0, quotePriceValue - supportDiscountValue);
+                const quoteDriverSupportAmount = Math.max(
+                  call.estimated_support_amount - supportDiscountValue,
+                  0,
+                );
                 return (
                   <article
                     key={call.id}
@@ -1532,7 +1539,11 @@ export default function PartnerDashboardPage() {
                               className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                             />
                             <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
-                              0원도 가능하며, 일반 운행가와 예상 지원금을 초과할 수 없습니다.
+                              기사님이 후원 지원금을 얼마나 고객에게 반영할지 직접 결정할 수 있습니다.
+                              예상 지원금 한도 내에서 입력해 주세요.
+                            </span>
+                            <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
+                              기사 예상 수령 지원금: {formatPrice(quoteDriverSupportAmount)}
                             </span>
                           </label>
                           <label className="block sm:col-span-2">
@@ -1543,19 +1554,9 @@ export default function PartnerDashboardPage() {
                               type="text"
                               readOnly
                               value={
-                                discountedPriceFor(
-                                  call,
-                                  quoteForm.price,
-                                  quoteForm.supportDiscountAmount,
-                                ) == null
+                                customerPerceivedPrice == null
                                   ? ""
-                                  : String(
-                                      discountedPriceFor(
-                                        call,
-                                        quoteForm.price,
-                                        quoteForm.supportDiscountAmount,
-                                      ),
-                                    )
+                                  : String(customerPerceivedPrice)
                               }
                               placeholder="일반 운행가 입력 시 자동 계산"
                               className="mt-1 min-h-11 w-full rounded-xl border border-blue-100 bg-blue-50 px-3 text-sm font-black text-blue-900 outline-none"
@@ -1563,6 +1564,11 @@ export default function PartnerDashboardPage() {
                             <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
                               * 지원금 적용가는 후원사 심사 결과에 따라 변동 또는 거절될 수 있습니다.
                             </span>
+                            {customerPerceivedPrice === 0 ? (
+                              <span className="mt-2 block rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black leading-5 text-emerald-900">
+                                🎉 후원업체 지원으로 고객 부담금 0원 예상
+                              </span>
+                            ) : null}
                           </label>
                           <label className="block">
                             <span className="text-xs font-bold text-slate-500">

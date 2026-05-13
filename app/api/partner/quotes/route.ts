@@ -5,7 +5,6 @@ import {
   isApplicationQuoteAccepting,
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
-  supportRewardAmounts,
 } from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
@@ -227,10 +226,6 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   }
-  const supportRewards = supportRewardAmounts({
-    passengerCount: activeApplication.passenger_count,
-    extensionRound: activeApplication.extension_round,
-  });
   const supportEstimate = estimateSponsorSupport({
     passengerCount: activeApplication.passenger_count,
     price,
@@ -243,19 +238,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (supportDiscountAmount > price) {
-    return NextResponse.json(
-      { error: "고객에게 반영할 지원금은 일반 견적가보다 클 수 없습니다." },
-      { status: 400 },
-    );
-  }
-  const memberPrice = price - supportDiscountAmount;
-  if (memberPrice < 0) {
-    return NextResponse.json(
-      { error: "지원금 적용 고객가는 0원보다 작을 수 없습니다." },
-      { status: 400 },
-    );
-  }
+  const memberPrice = Math.max(0, price - supportDiscountAmount);
   if (requestedDiscountedPrice != null && requestedDiscountedPrice > price) {
     return NextResponse.json(
       { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
@@ -373,8 +356,11 @@ export async function POST(request: Request) {
     sponsor_support_amount: supportDiscountAmount,
     sponsor_discounted_price: memberPrice,
     sponsor_quote_enabled: true,
-    driver_support_amount: supportRewards.driver_support_amount,
-    client_reward_amount: supportRewards.client_reward_amount,
+    driver_support_amount: Math.max(
+      supportEstimate.estimated_support_amount - supportDiscountAmount,
+      0,
+    ),
+    client_reward_amount: supportDiscountAmount,
   };
 
   const insertResult = await admin
