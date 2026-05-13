@@ -133,8 +133,21 @@ function formatRemaining(deadline: string): string {
 }
 
 function isQuoteClosed(call: PartnerCall): boolean {
-  return call.quote_closed_at.trim() !== "" ||
-    !["collecting", "extended_no_quotes", ""].includes(call.quote_status);
+  const closedStatuses = new Set([
+    "closed_by_time",
+    "closed_by_quote_count",
+    "closed_by_price",
+    "auto_selected",
+    "final_selected",
+    "completed",
+    "contract_pending",
+    "manually_closed",
+  ]);
+  return (
+    call.quote_closed_at.trim() !== "" ||
+    call.final_selected_quote_id.trim() !== "" ||
+    closedStatuses.has(call.quote_status)
+  );
 }
 
 function formatSubmittedAt(iso: string): string {
@@ -427,6 +440,7 @@ export default function PartnerDashboardPage() {
   };
 
   const openReferralForm = (call: PartnerCall) => {
+    if (isQuoteClosed(call)) return;
     setActiveReferralCallId(call.id);
     setActiveQuoteCallId(null);
     setReferralForm(emptyReferralForm);
@@ -493,6 +507,10 @@ export default function PartnerDashboardPage() {
   };
 
   const submitReferral = async (call: PartnerCall) => {
+    if (isQuoteClosed(call)) {
+      setReferralMessage("이미 마감되었거나 매칭 완료된 견적입니다.");
+      return;
+    }
     setReferralBusy(true);
     setReferralMessage(null);
     setReferralResults([]);
@@ -515,7 +533,11 @@ export default function PartnerDashboardPage() {
         results?: ReferralResult[];
       };
       if (!res.ok) {
-        setReferralMessage(json.error ?? "문자 발송에 실패했습니다.");
+        setReferralMessage(
+          json.error === "quote_closed"
+            ? "이미 마감되었거나 매칭 완료된 견적입니다."
+            : (json.error ?? "문자 발송에 실패했습니다."),
+        );
         return;
       }
       setReferralResults(Array.isArray(json.results) ? json.results : []);
@@ -991,10 +1013,11 @@ export default function PartnerDashboardPage() {
                         <button
                           type="button"
                           onClick={() => openReferralForm(call)}
-                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100"
+                          disabled={quoteClosed}
+                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-emerald-50"
                           style={tapStyle}
                         >
-                          동료기사에게 전달
+                          {quoteClosed ? "전달 종료" : "동료기사에게 전달"}
                         </button>
                       </div>
                     </div>
@@ -1303,12 +1326,17 @@ export default function PartnerDashboardPage() {
                             type="button"
                             onClick={() => void submitReferral(call)}
                             disabled={
+                              quoteClosed ||
                               referralBusy ||
                               parseReferralPhones(referralForm.phones).length === 0
                             }
-                            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+                            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {referralBusy ? "발송 중…" : "문자 발송"}
+                            {quoteClosed
+                              ? "마감된 견적"
+                              : referralBusy
+                                ? "발송 중…"
+                                : "동료에게 문자발송"}
                           </button>
                           <button
                             type="button"

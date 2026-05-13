@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { SolapiMessageService } from "solapi";
 
+import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -51,6 +52,24 @@ function normalizeKoreanMobileDigits(value: unknown): string | null {
 
 function formatKoreanMobile(digits: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function isApplicationClosedForReferral(app: Record<string, unknown>): boolean {
+  const closedStatuses = new Set([
+    "closed_by_time",
+    "closed_by_quote_count",
+    "closed_by_price",
+    "auto_selected",
+    "final_selected",
+    "completed",
+    "contract_pending",
+    "manually_closed",
+  ]);
+  return (
+    safeText(app.quote_closed_at) !== "" ||
+    safeText(app.final_selected_quote_id) !== "" ||
+    closedStatuses.has(safeText(app.quote_status, "collecting"))
+  );
 }
 
 function inputPhones(body: Body): unknown[] {
@@ -219,7 +238,7 @@ export async function POST(request: Request) {
   const { data: application, error: applicationError } = await admin
     .from("applications")
     .select(
-      "id, application_type, departure, destination, departure_date, departure_time, passenger_count",
+      "id, application_type, departure, destination, departure_date, departure_time, passenger_count, quote_status, quote_closed_at, final_selected_quote_id",
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -234,6 +253,27 @@ export async function POST(request: Request) {
       { error: "전달 가능한 견적요청이 아닙니다." },
       { status: 400 },
     );
+  }
+
+  await processApplicationQuoteLifecycle(admin, applicationId);
+  const { data: latestApplication, error: latestApplicationError } = await admin
+    .from("applications")
+    .select(
+      "id, application_type, departure, destination, departure_date, departure_time, passenger_count, quote_status, quote_closed_at, final_selected_quote_id",
+    )
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (latestApplicationError) {
+    return NextResponse.json(
+      { error: latestApplicationError.message },
+      { status: 502 },
+    );
+  }
+
+  const activeApp =
+    (latestApplication as unknown as Record<string, unknown> | null) ?? app;
+  if (isApplicationClosedForReferral(activeApp)) {
+    return NextResponse.json({ error: "quote_closed" }, { status: 409 });
   }
 
   const duplicatePhones = new Set<string>();
@@ -334,10 +374,10 @@ export async function POST(request: Request) {
   }
 
   const baseUrl = siteBaseUrl();
-  const dateTime = [safeText(app.departure_date, "미정"), safeText(app.departure_time, "")]
+  const dateTime = [safeText(activeApp.departure_date, "미정"), safeText(activeApp.departure_time, "")]
     .filter(Boolean)
     .join(" ");
-  const passengerCount = parseInteger(app.passenger_count);
+  const passengerCount = parseInteger(activeApp.passenger_count);
   const insertedByPhone = new Map<string, string>();
   for (const inserted of Array.isArray(insertedRows) ? insertedRows : []) {
     const row = inserted as { referred_phone?: unknown; token?: unknown };
@@ -359,8 +399,8 @@ export async function POST(request: Request) {
     const text = `[무료관광버스]
 전세버스 견적요청이 전달되었습니다.
 
-출발: ${safeText(app.departure, "미정")}
-도착: ${safeText(app.destination, "미정")}
+출발: ${safeText(activeApp.departure, "미정")}
+도착: ${safeText(activeApp.destination, "미정")}
 일시: ${dateTime || "미정"}
 인원: ${passengerCount == null ? "미정" : passengerCount}
 
