@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { SolapiMessageService } from "solapi";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
+import {
+  processApplicationQuoteLifecycle,
+  quoteLifecycleSelectColumns,
+  supportRewardAmounts,
+} from "@/lib/quote-auction";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -70,10 +75,21 @@ export async function GET(request: Request) {
     );
   }
 
+  await processApplicationQuoteLifecycle(admin, applicationId);
+
+  const { data: applicationRaw, error: applicationError } = await admin
+    .from("applications")
+    .select(`${quoteLifecycleSelectColumns()}, contract_status, contact_revealed_at`)
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (applicationError) {
+    return NextResponse.json({ error: applicationError.message }, { status: 502 });
+  }
+
   const { data: quotesRaw, error: quotesError } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -139,6 +155,8 @@ export async function GET(request: Request) {
       sponsor_support_amount: parseInteger(row.sponsor_support_amount),
       sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
       sponsor_quote_enabled: row.sponsor_quote_enabled === true,
+      driver_support_amount: parseInteger(row.driver_support_amount),
+      client_reward_amount: parseInteger(row.client_reward_amount),
       vehicle_type: safeText(row.vehicle_type, "—"),
       available_time: safeText(row.available_time, "—"),
       message: safeText(row.message),
@@ -308,7 +326,48 @@ export async function GET(request: Request) {
         : null,
   }));
 
-  return NextResponse.json({ ok: true, quotes: normalized, guest_quotes });
+  const application = applicationRaw as Record<string, unknown> | null;
+  const supportRewards = supportRewardAmounts({
+    passengerCount: application?.passenger_count,
+    extensionRound: application?.extension_round,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    application: application
+      ? {
+          id: safeText(application.id),
+          quote_status: safeText(application.quote_status, "collecting"),
+          quote_deadline_at: safeText(application.quote_deadline_at),
+          quote_limit_count: parseInteger(application.quote_limit_count),
+          target_normal_price: parseInteger(application.target_normal_price),
+          target_member_price: parseInteger(application.target_member_price),
+          quote_closed_at: safeText(application.quote_closed_at),
+          quote_closed_reason: safeText(application.quote_closed_reason),
+          auto_selected_quote_id: safeText(application.auto_selected_quote_id),
+          auto_selected_quote_source: safeText(application.auto_selected_quote_source),
+          auto_selected_at: safeText(application.auto_selected_at),
+          auto_final_confirm_at: safeText(application.auto_final_confirm_at),
+          final_selected_quote_id: safeText(application.final_selected_quote_id),
+          final_selected_quote_source: safeText(application.final_selected_quote_source),
+          final_selected_at: safeText(application.final_selected_at),
+          contact_revealed_at: safeText(application.contact_revealed_at),
+          extension_round: parseInteger(application.extension_round) ?? 0,
+          support_client_reward_ratio:
+            parseInteger(application.support_client_reward_ratio) ??
+            supportRewards.support_client_reward_ratio,
+          support_driver_ratio:
+            parseInteger(application.support_driver_ratio) ??
+            supportRewards.support_driver_ratio,
+          contract_status: safeText(application.contract_status),
+          estimated_support_amount: supportRewards.estimated_support_amount,
+          client_reward_amount: supportRewards.client_reward_amount,
+          driver_support_amount: supportRewards.driver_support_amount,
+        }
+      : null,
+    quotes: normalized,
+    guest_quotes,
+  });
 }
 
 export async function PATCH(request: Request) {
@@ -326,14 +385,146 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
-  let body: { guest_quote_id?: unknown; match_result?: unknown };
+  let body: {
+    guest_quote_id?: unknown;
+    match_result?: unknown;
+    application_id?: unknown;
+    action?: unknown;
+  };
   try {
     body = (await request.json()) as {
       guest_quote_id?: unknown;
       match_result?: unknown;
+      application_id?: unknown;
+      action?: unknown;
     };
   } catch {
     return NextResponse.json({ error: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const action = safeText(body.action);
+  const actionApplicationId = safeText(body.application_id);
+  if (action !== "") {
+    if (
+      actionApplicationId === "" ||
+      !["final_confirm", "reopen", "manual_close"].includes(action)
+    ) {
+      return NextResponse.json({ error: "관리자 액션 값이 올바르지 않습니다." }, { status: 400 });
+    }
+
+    const admin = createServiceRoleSupabase();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
+        { status: 503 },
+      );
+    }
+
+    if (action === "reopen") {
+      const { error: updateError } = await admin
+        .from("applications")
+        .update({
+          quote_status: "collecting",
+          quote_closed_at: null,
+          quote_closed_reason: "admin_reopened",
+          auto_selected_quote_id: null,
+          auto_selected_quote_source: null,
+          auto_selected_at: null,
+          auto_final_confirm_at: null,
+          final_selected_quote_id: null,
+          final_selected_quote_source: null,
+          final_selected_at: null,
+          contact_revealed_at: null,
+          contract_status: null,
+        })
+        .eq("id", actionApplicationId);
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 502 });
+      }
+      await admin
+        .from("driver_quotes")
+        .update({ status: "submitted" })
+        .eq("application_id", actionApplicationId);
+      await admin
+        .from("guest_driver_quotes")
+        .update({ status: "submitted", match_result: "pending" })
+        .eq("application_id", actionApplicationId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "manual_close") {
+      const now = new Date().toISOString();
+      const { error: updateError } = await admin
+        .from("applications")
+        .update({
+          quote_status: "manually_closed",
+          quote_closed_at: now,
+          quote_closed_reason: "admin_manual_close",
+        })
+        .eq("id", actionApplicationId);
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 502 });
+      }
+      await processApplicationQuoteLifecycle(admin, actionApplicationId);
+      return NextResponse.json({ ok: true });
+    }
+
+    await processApplicationQuoteLifecycle(admin, actionApplicationId);
+    const { data: app, error: appError } = await admin
+      .from("applications")
+      .select(
+        "auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id",
+      )
+      .eq("id", actionApplicationId)
+      .maybeSingle();
+    if (appError) {
+      return NextResponse.json({ error: appError.message }, { status: 502 });
+    }
+    const row = app as Record<string, unknown> | null;
+    const selectedId = safeText(row?.auto_selected_quote_id);
+    const selectedSource = safeText(row?.auto_selected_quote_source) === "guest"
+      ? "guest"
+      : "member";
+    if (selectedId === "") {
+      return NextResponse.json(
+        { error: "자동확정된 견적이 없어 즉시 최종확정할 수 없습니다." },
+        { status: 400 },
+      );
+    }
+    const now = new Date().toISOString();
+    const { error: finalError } = await admin
+      .from("applications")
+      .update({
+        final_selected_quote_id: selectedId,
+        final_selected_quote_source: selectedSource,
+        final_selected_at: now,
+        quote_status: "final_selected",
+        contact_revealed_at: now,
+        contract_status: "contract_pending",
+      })
+      .eq("id", actionApplicationId);
+    if (finalError) {
+      return NextResponse.json({ error: finalError.message }, { status: 502 });
+    }
+    await admin
+      .from(selectedSource === "member" ? "driver_quotes" : "guest_driver_quotes")
+      .update(
+        selectedSource === "member"
+          ? { status: "final_selected" }
+          : { status: "final_selected", match_result: "selected" },
+      )
+      .eq("id", selectedId);
+    await admin
+      .from("driver_quotes")
+      .update({ status: "not_selected" })
+      .eq("application_id", actionApplicationId)
+      .neq("id", selectedSource === "member" ? selectedId : "");
+    await admin
+      .from("guest_driver_quotes")
+      .update({ status: "not_selected", match_result: "not_selected" })
+      .eq("application_id", actionApplicationId)
+      .neq("id", selectedSource === "guest" ? selectedId : "");
+    return NextResponse.json({ ok: true });
   }
 
   const guestQuoteId = safeText(body.guest_quote_id);

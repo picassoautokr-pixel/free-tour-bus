@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
+import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
 import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
 import { USER_ROLES } from "@/lib/roles";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
@@ -141,7 +142,7 @@ export async function GET() {
   const { data: applications, error: applicationsError } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, departure_region, destination, departure_date, departure_time, return_date, passenger_count, status",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure, departure_region, destination, departure_date, departure_time, return_date, passenger_count, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -170,6 +171,8 @@ export async function GET() {
     .map((r) => safeText((r as { id?: unknown }).id, ""))
     .filter(Boolean);
 
+  await Promise.all(ids.map((id) => processApplicationQuoteLifecycle(admin, id)));
+
   type MyQuotePayload = {
     source: "member" | "guest";
     id: string;
@@ -191,7 +194,27 @@ export async function GET() {
   };
 
   const quotedByApplication = new Map<string, MyQuotePayload>();
+  const quoteCountByApplication = new Map<string, number>();
   if (ids.length > 0) {
+    const [{ data: memberCountRows }, { data: guestCountRows }] = await Promise.all([
+      admin.from("driver_quotes").select("application_id").in("application_id", ids),
+      admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
+    ]);
+    for (const raw of Array.isArray(memberCountRows) ? memberCountRows : []) {
+      const applicationId = safeText((raw as { application_id?: unknown }).application_id, "");
+      quoteCountByApplication.set(
+        applicationId,
+        (quoteCountByApplication.get(applicationId) ?? 0) + 1,
+      );
+    }
+    for (const raw of Array.isArray(guestCountRows) ? guestCountRows : []) {
+      const applicationId = safeText((raw as { application_id?: unknown }).application_id, "");
+      quoteCountByApplication.set(
+        applicationId,
+        (quoteCountByApplication.get(applicationId) ?? 0) + 1,
+      );
+    }
+
     const orFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
     const { data: memberQuotes, error: memberQuotesError } = await admin
       .from("driver_quotes")
@@ -321,6 +344,21 @@ export async function GET() {
       return_date: safeText(row.return_date, ""),
       passenger_count: passengerCount,
       estimated_support_amount: supportEstimate.supportAmount,
+      quote_status: safeText(row.quote_status, "collecting"),
+      quote_deadline_at: safeText(row.quote_deadline_at, ""),
+      quote_limit_count: parseInteger(row.quote_limit_count),
+      quote_count: quoteCountByApplication.get(id) ?? 0,
+      target_normal_price: parseInteger(row.target_normal_price),
+      target_member_price: parseInteger(row.target_member_price),
+      quote_closed_at: safeText(row.quote_closed_at, ""),
+      extension_round: parseInteger(row.extension_round) ?? 0,
+      support_client_reward_ratio: parseInteger(row.support_client_reward_ratio) ?? 0,
+      support_driver_ratio: parseInteger(row.support_driver_ratio) ?? 100,
+      auto_selected_quote_id: safeText(row.auto_selected_quote_id, ""),
+      auto_selected_quote_source: safeText(row.auto_selected_quote_source, ""),
+      final_selected_quote_id: safeText(row.final_selected_quote_id, ""),
+      final_selected_quote_source: safeText(row.final_selected_quote_source, ""),
+      auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
       my_quote: quote,
     };
   });

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
+import {
+  isApplicationQuoteAccepting,
+  processApplicationQuoteLifecycle,
+  quoteLifecycleSelectColumns,
+  supportRewardAmounts,
+} from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
@@ -180,7 +186,7 @@ export async function POST(request: Request) {
 
   const { data: application, error: applicationError } = await admin
     .from("applications")
-    .select("id, application_type, passenger_count")
+    .select(`application_type, passenger_count, ${quoteLifecycleSelectColumns()}`)
     .eq("id", applicationId)
     .maybeSingle();
 
@@ -200,9 +206,33 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  await processApplicationQuoteLifecycle(admin, applicationId);
+  const { data: latestApplication, error: latestApplicationError } = await admin
+    .from("applications")
+    .select(`application_type, passenger_count, ${quoteLifecycleSelectColumns()}`)
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (latestApplicationError) {
+    return NextResponse.json(
+      { error: latestApplicationError.message },
+      { status: 502 },
+    );
+  }
+  const activeApplication =
+    (latestApplication as unknown as Record<string, unknown> | null) ??
+    (application as unknown as Record<string, unknown>);
+  if (!isApplicationQuoteAccepting(activeApplication)) {
+    return NextResponse.json(
+      { error: "견적이 마감되어 새 견적을 제출할 수 없습니다." },
+      { status: 409 },
+    );
+  }
+  const supportRewards = supportRewardAmounts({
+    passengerCount: activeApplication.passenger_count,
+    extensionRound: activeApplication.extension_round,
+  });
   const supportEstimate = estimateSponsorSupport({
-    passengerCount: (application as { passenger_count?: unknown } | null)
-      ?.passenger_count,
+    passengerCount: activeApplication.passenger_count,
     price,
   });
   const supportDiscountAmount =
@@ -343,6 +373,8 @@ export async function POST(request: Request) {
     sponsor_support_amount: supportDiscountAmount,
     sponsor_discounted_price: memberPrice,
     sponsor_quote_enabled: true,
+    driver_support_amount: supportRewards.driver_support_amount,
+    client_reward_amount: supportRewards.client_reward_amount,
   };
 
   const insertResult = await admin
@@ -357,7 +389,7 @@ export async function POST(request: Request) {
 
   if (
     insertError &&
-    /estimated_support_amount|support_discount_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_discounted_price|sponsor_quote_enabled|does not exist|42703/i.test(
+    /estimated_support_amount|support_discount_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|client_reward_amount|does not exist|42703/i.test(
       insertError.message,
     )
   ) {
@@ -482,6 +514,8 @@ export async function POST(request: Request) {
       );
     }
   }
+
+  await processApplicationQuoteLifecycle(admin, applicationId);
 
   return NextResponse.json({ ok: true, quote: inserted });
 }

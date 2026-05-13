@@ -52,6 +52,21 @@ type PartnerCall = {
   return_date: string;
   passenger_count: number | null;
   estimated_support_amount: number;
+  quote_status: string;
+  quote_deadline_at: string;
+  quote_limit_count: number | null;
+  quote_count: number;
+  target_normal_price: number | null;
+  target_member_price: number | null;
+  quote_closed_at: string;
+  extension_round: number;
+  support_client_reward_ratio: number;
+  support_driver_ratio: number;
+  auto_selected_quote_id: string;
+  auto_selected_quote_source: string;
+  final_selected_quote_id: string;
+  final_selected_quote_source: string;
+  auto_final_confirm_at: string;
   my_quote: PartnerMyQuote | null;
 };
 
@@ -104,6 +119,22 @@ function formatDeparture(call: PartnerCall): string {
 function formatPrice(value: number | null): string {
   if (value == null) return "제출 완료";
   return `${value.toLocaleString("ko-KR")}원`;
+}
+
+function formatRemaining(deadline: string): string {
+  const time = new Date(deadline).getTime();
+  if (!Number.isFinite(time)) return "마감시간 미정";
+  const diff = time - Date.now();
+  if (diff <= 0) return "마감 임박";
+  const hours = Math.floor(diff / (60 * 60 * 1000));
+  const minutes = Math.ceil((diff % (60 * 60 * 1000)) / (60 * 1000));
+  if (hours <= 0) return `마감까지 ${minutes}분`;
+  return `마감까지 ${hours}시간`;
+}
+
+function isQuoteClosed(call: PartnerCall): boolean {
+  return call.quote_closed_at.trim() !== "" ||
+    !["collecting", "extended_no_quotes", ""].includes(call.quote_status);
 }
 
 function formatSubmittedAt(iso: string): string {
@@ -815,6 +846,18 @@ export default function PartnerDashboardPage() {
                   call.my_quote?.source === "guest"
                     ? "비회원 견적"
                     : "회원 견적";
+                const quoteClosed = isQuoteClosed(call);
+                const driverSupportAmount = Math.round(
+                  (call.estimated_support_amount * call.support_driver_ratio) / 100,
+                );
+                const clientRewardAmount = Math.max(
+                  call.estimated_support_amount - driverSupportAmount,
+                  0,
+                );
+                const provisionalSelected =
+                  call.my_quote != null &&
+                  call.auto_selected_quote_id === call.my_quote.id &&
+                  call.final_selected_quote_id.trim() === "";
                 const supportDiscountValue = supportDiscountFor(
                   call,
                   quoteForm.supportDiscountAmount,
@@ -828,6 +871,51 @@ export default function PartnerDashboardPage() {
                     key={call.id}
                     className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
                   >
+                    <div
+                      className={`mb-4 rounded-2xl border px-4 py-3 ${
+                        quoteClosed
+                          ? "border-slate-200 bg-slate-100 text-slate-700"
+                          : "border-orange-100 bg-orange-50 text-orange-950"
+                      }`}
+                    >
+                      <p className="text-sm font-black">
+                        {quoteClosed ? "견적 마감됨" : "실시간 견적 수집 중"}
+                        {call.extension_round > 0 ? (
+                          <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-[11px] font-black ring-1 ring-slate-200">
+                            {call.extension_round}회차 자동연장
+                          </span>
+                        ) : null}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
+                        {call.quote_deadline_at ? (
+                          <span>⏰ {formatRemaining(call.quote_deadline_at)}</span>
+                        ) : null}
+                        {call.quote_limit_count != null ? (
+                          <span>
+                            📦 견적 {call.quote_count} / {call.quote_limit_count}
+                          </span>
+                        ) : (
+                          <span>📦 견적 {call.quote_count}건</span>
+                        )}
+                        {call.target_normal_price != null ? (
+                          <span>🎯 목표가 {formatPrice(call.target_normal_price)}</span>
+                        ) : null}
+                        {call.target_member_price != null ? (
+                          <span>
+                            🔥 지원금 견적 목표 {formatPrice(call.target_member_price)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    {provisionalSelected ? (
+                      <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-950">
+                        <p className="font-black">최저가 자동매칭 되었습니다.</p>
+                        <p>최종 확정 시 고객 연락처가 공개됩니다.</p>
+                        <p className="text-xs text-emerald-800">
+                          확정매칭은 고객 또는 관리자 선택에 따라 변경될 수 있습니다.
+                        </p>
+                      </div>
+                    ) : null}
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -880,20 +968,24 @@ export default function PartnerDashboardPage() {
                             <button
                               type="button"
                               onClick={() => openQuoteForm(call)}
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+                              disabled={quoteClosed}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-300"
                               style={tapStyle}
                             >
-                              지원금 적용 회원 견적 다시 제출
+                              {quoteClosed
+                                ? "견적 마감됨"
+                                : "지원금 적용 회원 견적 다시 제출"}
                             </button>
                           </div>
                         ) : (
                           <button
                             type="button"
                             onClick={() => openQuoteForm(call)}
-                            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+                            disabled={quoteClosed}
+                            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-300"
                             style={tapStyle}
                           >
-                            견적 제출
+                            {quoteClosed ? "견적 마감됨" : "견적 제출"}
                           </button>
                         )}
                         <button
@@ -956,9 +1048,25 @@ export default function PartnerDashboardPage() {
                           약 {formatPrice(call.estimated_support_amount)}
                         </dd>
                       </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
+                          기사 예상 지원금
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          약 {formatPrice(driverSupportAmount)}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-amber-50 p-3 ring-1 ring-amber-100">
+                        <dt className="text-[11px] font-bold text-amber-600">
+                          고객 감사지원금
+                        </dt>
+                        <dd className="mt-1 font-black text-amber-900">
+                          약 {formatPrice(clientRewardAmount)}
+                        </dd>
+                      </div>
                     </dl>
 
-                    {formOpen && !memberQuoted ? (
+                    {formOpen && !memberQuoted && !quoteClosed ? (
                       <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
                         {guestOnlyQuoted ? (
                           <div className="mb-4 rounded-2xl border border-amber-200 bg-white p-4">
@@ -1020,6 +1128,18 @@ export default function PartnerDashboardPage() {
                             </p>
                             <p className="mt-1 text-sm font-black text-blue-900">
                               약 {formatPrice(call.estimated_support_amount)}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-amber-100 bg-white p-3 sm:col-span-2">
+                            <p className="text-xs font-bold text-amber-600">
+                              지원금 분리 예상
+                            </p>
+                            <p className="mt-1 text-sm font-black text-slate-900">
+                              기사 {formatPrice(driverSupportAmount)} · 고객 감사{" "}
+                              {formatPrice(clientRewardAmount)}
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
+                              후원사 심사 결과에 따라 최종 지원금은 변경될 수 있습니다.
                             </p>
                           </div>
                           <label className="block sm:col-span-2">

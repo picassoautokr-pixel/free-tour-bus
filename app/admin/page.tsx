@@ -67,10 +67,38 @@ type DriverQuoteDetail = {
   sponsor_support_amount?: number | null;
   sponsor_discounted_price?: number | null;
   sponsor_quote_enabled?: boolean;
+  driver_support_amount?: number | null;
+  client_reward_amount?: number | null;
   vehicle_type: string;
   available_time: string;
   message: string;
   status: string;
+};
+
+type ApplicationQuoteLifecycle = {
+  id: string;
+  quote_status: string;
+  quote_deadline_at: string;
+  quote_limit_count: number | null;
+  target_normal_price: number | null;
+  target_member_price: number | null;
+  quote_closed_at: string;
+  quote_closed_reason: string;
+  auto_selected_quote_id: string;
+  auto_selected_quote_source: string;
+  auto_selected_at: string;
+  auto_final_confirm_at: string;
+  final_selected_quote_id: string;
+  final_selected_quote_source: string;
+  final_selected_at: string;
+  contact_revealed_at: string;
+  extension_round: number;
+  support_client_reward_ratio: number;
+  support_driver_ratio: number;
+  contract_status: string;
+  estimated_support_amount: number;
+  client_reward_amount: number;
+  driver_support_amount: number;
 };
 
 type GuestDriverQuoteDetail = {
@@ -934,9 +962,13 @@ function StatusChangeSection({
 function DriverQuotesSection({ applicationId }: { applicationId: string }) {
   const [quotes, setQuotes] = useState<DriverQuoteDetail[]>([]);
   const [guestQuotes, setGuestQuotes] = useState<GuestDriverQuoteDetail[]>([]);
+  const [application, setApplication] = useState<ApplicationQuoteLifecycle | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [guestBusyId, setGuestBusyId] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   const loadQuotes = useCallback(async () => {
     if (!isPersistableApplicationId(applicationId)) return;
@@ -949,21 +981,25 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
       );
       const json = (await res.json()) as {
         error?: string;
+        application?: ApplicationQuoteLifecycle | null;
         quotes?: DriverQuoteDetail[];
         guest_quotes?: GuestDriverQuoteDetail[];
       };
       if (!res.ok) {
         setError(json.error ?? "견적 목록을 불러오지 못했습니다.");
+        setApplication(null);
         setQuotes([]);
         setGuestQuotes([]);
         return;
       }
+      setApplication(json.application ?? null);
       setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
       setGuestQuotes(Array.isArray(json.guest_quotes) ? json.guest_quotes : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setQuotes([]);
       setGuestQuotes([]);
+      setApplication(null);
     } finally {
       setLoading(false);
     }
@@ -998,6 +1034,31 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
     }
   };
 
+  const runApplicationAction = async (
+    action: "final_confirm" | "reopen" | "manual_close",
+  ) => {
+    setActionBusy(action);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/driver-quotes", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: applicationId, action }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(json.error ?? "자동마감 상태 변경에 실패했습니다.");
+        return;
+      }
+      void loadQuotes();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   useEffect(() => {
     void loadQuotes();
   }, [loadQuotes]);
@@ -1029,6 +1090,103 @@ function DriverQuotesSection({ applicationId }: { applicationId: string }) {
           role="alert"
         >
           {error}
+        </div>
+      ) : null}
+
+      {application ? (
+        <div className="mt-3 rounded-xl border border-white bg-white p-3 shadow-sm ring-1 ring-indigo-100">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black text-indigo-950">자동 경매 상태</p>
+              <p className="mt-1 text-sm font-black text-slate-900">
+                {application.quote_status}
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                현재 회차 {application.extension_round}회 · 자동연장{" "}
+                {application.extension_round}회 · 계약상태{" "}
+                {application.contract_status || "—"}
+              </p>
+            </div>
+            <div className="text-right text-xs font-semibold text-slate-600">
+              <p>마감: {formatCreatedAt(application.quote_closed_at || null)}</p>
+              <p>최종확정: {formatCreatedAt(application.final_selected_at || null)}</p>
+            </div>
+          </div>
+          <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+            <div className="rounded-lg bg-indigo-50 p-2">
+              <dt className="font-bold text-indigo-500">자동확정 기사</dt>
+              <dd className="mt-1 break-all font-semibold text-indigo-950">
+                {application.auto_selected_quote_id || "—"}
+              </dd>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-2">
+              <dt className="font-bold text-slate-400">마감조건</dt>
+              <dd className="mt-1 font-semibold text-slate-800">
+                {application.quote_limit_count != null
+                  ? `${application.quote_limit_count}건`
+                  : "수량 미설정"}
+              </dd>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-2">
+              <dt className="font-bold text-slate-400">목표가</dt>
+              <dd className="mt-1 font-semibold text-slate-800">
+                {application.target_normal_price != null
+                  ? `${application.target_normal_price.toLocaleString("ko-KR")}원`
+                  : "—"}
+              </dd>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-2">
+              <dt className="font-bold text-amber-600">고객 감사지원금</dt>
+              <dd className="mt-1 font-semibold text-amber-900">
+                {application.client_reward_amount.toLocaleString("ko-KR")}원 (
+                {application.support_client_reward_ratio}%)
+              </dd>
+            </div>
+            <div className="rounded-lg bg-blue-50 p-2">
+              <dt className="font-bold text-blue-600">기사 지원금</dt>
+              <dd className="mt-1 font-semibold text-blue-900">
+                {application.driver_support_amount.toLocaleString("ko-KR")}원 (
+                {application.support_driver_ratio}%)
+              </dd>
+            </div>
+            <div className="rounded-lg bg-emerald-50 p-2">
+              <dt className="font-bold text-emerald-600">연락처 공개</dt>
+              <dd className="mt-1 font-semibold text-emerald-900">
+                {application.contact_revealed_at ? "공개됨" : "대기"}
+              </dd>
+            </div>
+          </dl>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              disabled={actionBusy != null || application.auto_selected_quote_id === ""}
+              onClick={() => void runApplicationAction("final_confirm")}
+              className="min-h-9 rounded-lg bg-slate-950 px-2 text-xs font-black text-white disabled:opacity-50"
+            >
+              {actionBusy === "final_confirm" ? "처리 중…" : "즉시 최종확정"}
+            </button>
+            <button
+              type="button"
+              disabled={actionBusy != null}
+              onClick={() => void runApplicationAction("reopen")}
+              className="min-h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-800 disabled:opacity-50"
+            >
+              재오픈
+            </button>
+            <button
+              type="button"
+              disabled={actionBusy != null}
+              onClick={() => void runApplicationAction("manual_close")}
+              className="min-h-9 rounded-lg border border-red-200 bg-red-50 px-2 text-xs font-black text-red-800 disabled:opacity-50"
+            >
+              수동 마감
+            </button>
+          </div>
+          {application.final_selected_at ? (
+            <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-900">
+              예약금 및 전자계약 절차가 진행됩니다.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
