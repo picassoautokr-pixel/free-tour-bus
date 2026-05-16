@@ -20,7 +20,7 @@ type SendBody = {
 };
 
 export async function POST(request: Request) {
-  const supabase = await createSupabaseRouteHandlerClient();
+  const supabase = await createSupabaseRouteHandlerClient("admin");
   if (!supabase) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },

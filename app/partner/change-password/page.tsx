@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
-import { createSupabaseClient } from "@/lib/supabase";
+import { createPartnerBrowserClient } from "@/lib/supabase";
 
 const MIN_LEN = 8;
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -24,7 +24,7 @@ export default function PartnerChangePasswordPage() {
     let cancelled = false;
     (async () => {
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createPartnerBrowserClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -80,7 +80,7 @@ export default function PartnerChangePasswordPage() {
 
     setBusy(true);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createPartnerBrowserClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();

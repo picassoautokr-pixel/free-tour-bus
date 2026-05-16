@@ -6,7 +6,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendDriverApprovalSms } from "@/lib/driver-approval-sms";
 import { resolvePartnerAuthEmail } from "@/lib/partner-phone-login";
-import { getPartnerSetPasswordRedirectTo } from "@/lib/partner-login-redirect";
+import {
+  getPartnerSetPasswordRedirectTo,
+  withExpectedEmail,
+} from "@/lib/partner-login-redirect";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
@@ -220,6 +223,7 @@ async function resolveOrCreateAuthUserId(
   if (!redirectTo) {
     redirectTo = `${fallbackOrigin.replace(/\/$/, "")}/partner/set-password`;
   }
+  redirectTo = withExpectedEmail(redirectTo, emailLower);
   console.log(
     "[partner-drivers/status] inviteUserByEmail redirectTo:",
     redirectTo,
@@ -366,7 +370,7 @@ async function resolveOrCreateAuthUserId(
 }
 
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("admin");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },

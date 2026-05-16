@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getPartnerSetPasswordRedirectTo } from "@/lib/partner-login-redirect";
+import {
+  getPartnerSetPasswordRedirectTo,
+  withExpectedEmail,
+} from "@/lib/partner-login-redirect";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
@@ -22,7 +25,7 @@ function isNonEmptyString(v: unknown): v is string {
  * Supabase Auth recovery 이메일을 보내고 redirectTo 를 /partner/set-password 로 고정합니다.
  */
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("admin");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },
@@ -86,9 +89,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "이메일이 없습니다." }, { status: 400 });
   }
 
-  const redirectTo =
+  const redirectTo = withExpectedEmail(
     getPartnerSetPasswordRedirectTo() ||
-    "https://www.free-bus.co.kr/partner/set-password";
+      "https://www.free-bus.co.kr/partner/set-password",
+    email,
+  );
 
   console.log(
     "[password-reset] resetPasswordForEmail redirectTo:",

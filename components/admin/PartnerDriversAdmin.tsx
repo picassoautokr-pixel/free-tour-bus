@@ -15,7 +15,7 @@ import {
   normalizePartnerDrivers,
   type PartnerDriverDetail,
 } from "@/lib/partner-drivers-admin";
-import { createSupabaseClient } from "@/lib/supabase";
+import { createAdminBrowserClient } from "@/lib/supabase";
 
 const PARTNER_STATUS_OPTIONS = [
   { value: "pending", label: "접수완료" },
@@ -925,7 +925,7 @@ export function PartnerDriversAdmin({ setToast }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createAdminBrowserClient();
       const { data, error: q } = await supabase
         .from("partner_drivers")
         .select("*")

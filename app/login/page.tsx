@@ -7,7 +7,12 @@ import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
 import { resolvePartnerLoginEmail } from "@/lib/partner-phone-login";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
-import { createSupabaseClient } from "@/lib/supabase";
+import {
+  createAdminBrowserClient,
+  createClientBrowserClient,
+  createPartnerBrowserClient,
+  createTransientBrowserClient,
+} from "@/lib/supabase";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -30,13 +35,19 @@ export default function LoginPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const supabase = createSupabaseClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user?.id || cancelled) return;
-        const profile = await fetchProfileForAuthUser(supabase, user.id);
-        router.replace(routeForRole(profile?.role));
+        for (const supabase of [
+          createAdminBrowserClient(),
+          createPartnerBrowserClient(),
+          createClientBrowserClient(),
+        ]) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user?.id || cancelled) continue;
+          const profile = await fetchProfileForAuthUser(supabase, user.id);
+          router.replace(routeForRole(profile?.role));
+          return;
+        }
       } catch {
         /* ignore */
       }
@@ -50,7 +61,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createTransientBrowserClient();
       const authEmail = resolvePartnerLoginEmail(loginId);
       if (authEmail === "") {
         setError("이메일 또는 휴대폰번호를 입력해 주세요.");
@@ -87,6 +98,22 @@ export default function LoginPage() {
           setError("관리자 승인 후 로그인할 수 있습니다.");
           return;
         }
+      }
+
+      const roleSupabase =
+        role === USER_ROLES.ADMIN
+          ? createAdminBrowserClient()
+          : role === USER_ROLES.DRIVER
+            ? createPartnerBrowserClient()
+            : createClientBrowserClient();
+      const { error: roleSignInError } = await roleSupabase.auth.signInWithPassword({
+        email: authEmail,
+        password,
+      });
+      await supabase.auth.signOut();
+      if (roleSignInError) {
+        setError("역할별 로그인 세션을 저장하지 못했습니다.");
+        return;
       }
 
       router.replace(routeForRole(profile?.role));

@@ -23,7 +23,7 @@ import {
 } from "@/lib/profile";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
-import { createSupabaseClient } from "@/lib/supabase";
+import { createAdminBrowserClient } from "@/lib/supabase";
 
 /** 목록·상세 공통 — Supabase row 정규화 */
 type ApplicationDetail = {
@@ -903,7 +903,7 @@ function StatusChangeSection({
     setSaving(true);
     setError(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createAdminBrowserClient();
       const { error: updateError } = await supabase
         .from("applications")
         .update({ status: selected, admin_memo: memo })
@@ -2136,7 +2136,7 @@ export default function AdminApplicationsPage() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const soundEnabledRef = useRef(false);
   const realtimeToastTimerRef = useRef<number | null>(null);
-  const supabaseRef = useRef<ReturnType<typeof createSupabaseClient> | null>(
+  const supabaseRef = useRef<ReturnType<typeof createAdminBrowserClient> | null>(
     null,
   );
   const realtimeSubscribedRef = useRef(false);
@@ -2300,7 +2300,7 @@ export default function AdminApplicationsPage() {
     // 로그인된 관리자 이메일 + profiles 역할(STEP 1: 조회만, 미확인 시에도 접근 유지)
     (async () => {
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createAdminBrowserClient();
         const { data } = await supabase.auth.getUser();
         const user = data.user;
         setAdminEmail(user?.email ?? null);
@@ -2321,7 +2321,7 @@ export default function AdminApplicationsPage() {
 
   const handleLogout = useCallback(async () => {
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createAdminBrowserClient();
       await supabase.auth.signOut();
     } finally {
       window.location.href = "/admin/login";
@@ -2355,7 +2355,7 @@ export default function AdminApplicationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createAdminBrowserClient();
       const { data, error: queryError } = await supabase
         .from("applications")
         .select("*")
@@ -2406,7 +2406,7 @@ export default function AdminApplicationsPage() {
     realtimeSubscribedRef.current = true;
 
     if (!supabaseRef.current) {
-      supabaseRef.current = createSupabaseClient();
+      supabaseRef.current = createAdminBrowserClient();
     }
     const supabase = supabaseRef.current;
 

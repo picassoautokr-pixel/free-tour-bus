@@ -35,3 +35,16 @@ export function getPartnerSetPasswordRedirectTo(): string {
     return `${normalized}/partner/set-password`;
   }
 }
+
+export function withExpectedEmail(url: string, email: string): string {
+  const trimmedEmail = email.trim().toLowerCase();
+  if (!url || !trimmedEmail) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.set("expected_email", trimmedEmail);
+    return u.toString();
+  } catch {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}expected_email=${encodeURIComponent(trimmedEmail)}`;
+  }
+}

@@ -15,7 +15,7 @@ import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 export const runtime = "nodejs";
 
 async function resolveDriver() {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("partner");
   if (!sessionClient) return { ok: false as const, status: 500, error: "서버 설정 오류입니다." };
   const {
     data: { user },

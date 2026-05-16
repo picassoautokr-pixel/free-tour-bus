@@ -23,7 +23,7 @@ import {
   formatStopovers,
   parseStopovers,
 } from "@/lib/stopovers";
-import { createSupabaseClient } from "@/lib/supabase";
+import { createPartnerBrowserClient } from "@/lib/supabase";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -579,7 +579,7 @@ export default function PartnerDashboardPage() {
     let cancelled = false;
     (async () => {
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createPartnerBrowserClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -762,7 +762,7 @@ export default function PartnerDashboardPage() {
 
   const handleLogout = async () => {
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createPartnerBrowserClient();
       await supabase.auth.signOut();
     } finally {
       router.replace("/partner/login");

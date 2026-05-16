@@ -44,7 +44,7 @@ function hyphenKoreanMobile(digits: string): string {
 }
 
 export async function GET(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("admin");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },
@@ -413,7 +413,7 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("admin");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },

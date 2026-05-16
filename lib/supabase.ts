@@ -1,5 +1,10 @@
 import { createBrowserClient } from "@supabase/ssr";
 
+import {
+  SUPABASE_AUTH_STORAGE_KEYS,
+  type SupabaseAuthRole,
+} from "@/lib/supabase-auth";
+
 /**
  * Supabase 브라우저/서버 공용 클라이언트를 만듭니다.
  *
@@ -8,6 +13,13 @@ import { createBrowserClient } from "@supabase/ssr";
  * - 실제 비밀키(service_role)는 절대 넣지 마세요.
  */
 export function createSupabaseClient() {
+  return createRoleSupabaseClient("client", { persistSession: false });
+}
+
+export function createRoleSupabaseClient(
+  role: SupabaseAuthRole,
+  options?: { persistSession?: boolean; detectSessionInUrl?: boolean },
+) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -17,5 +29,36 @@ export function createSupabaseClient() {
     );
   }
 
-  return createBrowserClient(url, anonKey);
+  const storageKey = SUPABASE_AUTH_STORAGE_KEYS[role];
+
+  return createBrowserClient(url, anonKey, {
+    isSingleton: false,
+    cookieOptions: {
+      name: storageKey,
+    },
+    auth: {
+      storageKey,
+      persistSession: options?.persistSession ?? true,
+      detectSessionInUrl: options?.detectSessionInUrl ?? false,
+    },
+  });
+}
+
+export function createAdminBrowserClient() {
+  return createRoleSupabaseClient("admin");
+}
+
+export function createPartnerBrowserClient() {
+  return createRoleSupabaseClient("partner");
+}
+
+export function createClientBrowserClient() {
+  return createRoleSupabaseClient("client");
+}
+
+export function createTransientBrowserClient() {
+  return createRoleSupabaseClient("transient", {
+    persistSession: false,
+    detectSessionInUrl: false,
+  });
 }

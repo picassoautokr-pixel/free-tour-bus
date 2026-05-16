@@ -6,7 +6,7 @@ import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 export const runtime = "nodejs";
 
 export async function POST() {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("partner");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },

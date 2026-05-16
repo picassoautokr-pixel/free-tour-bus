@@ -49,7 +49,7 @@ function parseInteger(value: unknown): number | null {
 }
 
 async function resolveApprovedDriver(): Promise<DriverContext> {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("partner");
   if (!sessionClient) {
     return { ok: false, status: 500, error: "서버 설정 오류(Supabase)입니다." };
   }

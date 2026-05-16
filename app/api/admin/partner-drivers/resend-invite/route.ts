@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getPartnerSetPasswordRedirectTo } from "@/lib/partner-login-redirect";
+import {
+  getPartnerSetPasswordRedirectTo,
+  withExpectedEmail,
+} from "@/lib/partner-login-redirect";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
@@ -22,7 +25,7 @@ function isNonEmptyString(v: unknown): v is string {
  * 이미 동일 이메일 계정이 있으면 Supabase 가 에러를 반환할 수 있습니다.
  */
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("admin");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },
@@ -88,6 +91,7 @@ export async function POST(request: Request) {
     // 요구사항: NEXT_PUBLIC_SITE_URL 루트가 없으면 기본값(프로덕션) 사용
     redirectTo = "https://www.free-bus.co.kr/partner/set-password";
   }
+  redirectTo = withExpectedEmail(redirectTo, email);
 
   console.log("[resend-invite] inviteUserByEmail redirectTo:", redirectTo, "email:", email);
 

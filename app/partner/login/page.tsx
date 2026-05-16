@@ -13,7 +13,7 @@ import {
 } from "@/lib/partner-phone-login";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
-import { createSupabaseClient } from "@/lib/supabase";
+import { createPartnerBrowserClient } from "@/lib/supabase";
 
 const ACCESS_DENIED_MESSAGE =
   "제휴 기사(driver) 권한이 확인되지 않습니다. 등록·승인 여부를 확인하거나 담당자에게 문의해 주세요.";
@@ -58,7 +58,7 @@ async function fetchRegistrationLookup(
 }
 
 async function needsTemporaryPasswordChange(
-  supabase: ReturnType<typeof createSupabaseClient>,
+  supabase: ReturnType<typeof createPartnerBrowserClient>,
   partnerDriverId: string | null | undefined,
 ): Promise<boolean> {
   const pid = String(partnerDriverId ?? "").trim();
@@ -197,7 +197,7 @@ export default function PartnerLoginPage() {
     let cancelled = false;
     (async () => {
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createPartnerBrowserClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -263,7 +263,7 @@ export default function PartnerLoginPage() {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createPartnerBrowserClient();
       const authEmail = resolvePartnerLoginEmail(loginId);
       if (authEmail === "") {
         setErrorMessage("이메일 또는 휴대폰 번호를 입력해 주세요.");
@@ -339,7 +339,7 @@ export default function PartnerLoginPage() {
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : String(e));
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createPartnerBrowserClient();
         await supabase.auth.signOut();
       } catch {
         /* ignore */
@@ -352,7 +352,7 @@ export default function PartnerLoginPage() {
   const handleLogoutOnly = async () => {
     setErrorMessage(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createPartnerBrowserClient();
       await supabase.auth.signOut();
       setOtherRoleSession(false);
     } catch {

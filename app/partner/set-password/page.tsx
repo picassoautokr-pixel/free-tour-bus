@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { createSupabaseClient } from "@/lib/supabase";
+import { createPartnerBrowserClient } from "@/lib/supabase";
 
 const MIN_LEN = 8;
 
@@ -13,34 +14,49 @@ const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
  * Supabase 초대/복구 링크: hash(#access_token, #refresh_token) 또는 ?code= (PKCE)
  */
 export default function PartnerSetPasswordPage() {
+  const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
+  const [targetEmail, setTargetEmail] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const establishSession = useCallback(async (): Promise<boolean> => {
-    const supabase = createSupabaseClient();
-
-    const {
-      data: { session: existing },
-    } = await supabase.auth.getSession();
-    if (existing) return true;
-
-    if (typeof window === "undefined") return false;
+  const establishSession = useCallback(async (): Promise<string | null> => {
+    const supabase = createPartnerBrowserClient();
+    if (typeof window === "undefined") return null;
 
     const url = new URL(window.location.href);
+    const expectedEmail =
+      url.searchParams.get("expected_email")?.trim().toLowerCase() ||
+      url.searchParams.get("email")?.trim().toLowerCase() ||
+      null;
     const code = url.searchParams.get("code");
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) {
         console.error("[set-password] exchangeCodeForSession:", error.message);
-        return false;
+        return null;
       }
-      window.history.replaceState({}, "", url.pathname);
-      return true;
+      window.history.replaceState(
+        {},
+        "",
+        url.pathname +
+          (expectedEmail
+            ? `?expected_email=${encodeURIComponent(expectedEmail)}`
+            : ""),
+      );
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const email = user?.email?.trim().toLowerCase() || null;
+      if (expectedEmail && email !== expectedEmail) {
+        await supabase.auth.signOut();
+        throw new Error("초대 링크의 계정과 비밀번호를 설정할 계정이 일치하지 않습니다.");
+      }
+      return email;
     }
 
     const hash = window.location.hash.replace(/^#/, "");
@@ -48,21 +64,42 @@ export default function PartnerSetPasswordPage() {
       const params = new URLSearchParams(hash);
       const access_token = params.get("access_token");
       const refresh_token = params.get("refresh_token");
+      const tokenType = params.get("type");
+      const hashExpectedEmail = params.get("expected_email")?.trim().toLowerCase();
+      const checkEmail = expectedEmail || hashExpectedEmail || null;
       if (access_token && refresh_token) {
+        if (tokenType && !["invite", "recovery"].includes(tokenType)) {
+          throw new Error("초대 또는 비밀번호 재설정 링크만 사용할 수 있습니다.");
+        }
         const { error } = await supabase.auth.setSession({
           access_token,
           refresh_token,
         });
         if (error) {
           console.error("[set-password] setSession:", error.message);
-          return false;
+          return null;
         }
-        window.history.replaceState({}, "", url.pathname + url.search);
-        return true;
+        window.history.replaceState(
+          {},
+          "",
+          url.pathname +
+            (checkEmail
+              ? `?expected_email=${encodeURIComponent(checkEmail)}`
+              : ""),
+        );
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const email = user?.email?.trim().toLowerCase() || null;
+        if (checkEmail && email !== checkEmail) {
+          await supabase.auth.signOut();
+          throw new Error("초대 링크의 계정과 비밀번호를 설정할 계정이 일치하지 않습니다.");
+        }
+        return email;
       }
     }
 
-    return false;
+    return null;
   }, []);
 
   useEffect(() => {
@@ -71,17 +108,11 @@ export default function PartnerSetPasswordPage() {
       setChecking(true);
       setErrorMessage(null);
       try {
-        let ok = await establishSession();
-        if (!ok) {
-          await new Promise((r) => setTimeout(r, 400));
-          const supabase = createSupabaseClient();
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          ok = Boolean(session);
-        }
+        const email = await establishSession();
         if (!cancelled) {
+          const ok = Boolean(email);
           setSessionReady(ok);
+          setTargetEmail(email);
           if (!ok) {
             setErrorMessage(
               "유효한 초대 링크가 아니거나 만료되었습니다. 메일의 링크를 다시 확인하거나 관리자에게 문의해 주세요.",
@@ -104,24 +135,6 @@ export default function PartnerSetPasswordPage() {
     };
   }, [establishSession]);
 
-  useEffect(() => {
-    const supabase = createSupabaseClient();
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (
-        session &&
-        (event === "INITIAL_SESSION" ||
-          event === "SIGNED_IN" ||
-          event === "TOKEN_REFRESHED")
-      ) {
-        setSessionReady(true);
-        setErrorMessage(null);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
   const onSubmit = async () => {
     setErrorMessage(null);
     if (password !== confirm) {
@@ -135,14 +148,28 @@ export default function PartnerSetPasswordPage() {
 
     setBusy(true);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createPartnerBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const email = user?.email?.trim().toLowerCase() || null;
+      if (!email || email !== targetEmail) {
+        setErrorMessage(
+          "비밀번호를 설정할 계정 세션을 확인할 수 없습니다. 초대 링크를 다시 열어 주세요.",
+        );
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
         setErrorMessage(error.message);
         return;
       }
-      await supabase.auth.signOut();
+      await fetch("/api/partner/change-password", {
+        method: "POST",
+        credentials: "same-origin",
+      });
       setSuccess(true);
+      router.replace("/partner/dashboard");
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -195,6 +222,9 @@ export default function PartnerSetPasswordPage() {
             ) : null
           ) : (
             <div className="mt-8 space-y-4">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold leading-relaxed text-blue-950">
+                비밀번호를 설정할 계정: {targetEmail ?? "확인 중"}
+              </div>
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   새 비밀번호

@@ -143,7 +143,7 @@ async function sendSolapiSms(toDigits: string, text: string): Promise<{
 }
 
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient();
+  const sessionClient = await createSupabaseRouteHandlerClient("admin");
   if (!sessionClient) {
     return NextResponse.json(
       { error: "서버 설정 오류(Supabase)입니다." },

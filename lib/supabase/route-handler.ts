@@ -1,8 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+import {
+  SUPABASE_AUTH_STORAGE_KEYS,
+  type SupabaseAuthRole,
+} from "@/lib/supabase-auth";
+
 /** App Router Route Handler에서 Supabase Auth 세션(쿠키)을 읽습니다. */
-export async function createSupabaseRouteHandlerClient() {
+export async function createSupabaseRouteHandlerClient(role: SupabaseAuthRole = "client") {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -13,6 +18,9 @@ export async function createSupabaseRouteHandlerClient() {
   const cookieStore = await cookies();
 
   return createServerClient(url, anonKey, {
+    cookieOptions: {
+      name: SUPABASE_AUTH_STORAGE_KEYS[role],
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();

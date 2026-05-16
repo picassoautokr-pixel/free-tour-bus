@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { createSupabaseClient } from "@/lib/supabase";
+import { createAdminBrowserClient } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -26,7 +26,7 @@ export default function AdminLoginPage() {
     // 이미 로그인 상태면 바로 /admin
     (async () => {
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createAdminBrowserClient();
         const { data } = await supabase.auth.getUser();
         if (data.user) router.replace("/admin");
       } catch {
@@ -39,7 +39,7 @@ export default function AdminLoginPage() {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const supabase = createSupabaseClient();
+      const supabase = createAdminBrowserClient();
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,

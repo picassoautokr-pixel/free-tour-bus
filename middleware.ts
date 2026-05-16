@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SUPABASE_AUTH_STORAGE_KEYS } from "@/lib/supabase-auth";
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -22,7 +24,14 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  const authStorageKey = pathname.startsWith("/partner/")
+    ? SUPABASE_AUTH_STORAGE_KEYS.partner
+    : SUPABASE_AUTH_STORAGE_KEYS.admin;
+
   const supabase = createServerClient(url, anonKey, {
+    cookieOptions: {
+      name: authStorageKey,
+    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
