@@ -199,10 +199,18 @@ export async function GET() {
 
   const quotedByApplication = new Map<string, MyQuotePayload>();
   const quoteCountByApplication = new Map<string, number>();
+  const sponsorSupportByApplication = new Map<
+    string,
+    { status: string; approvedAmount: number | null; estimatedAmount: number | null }
+  >();
   if (ids.length > 0) {
-    const [{ data: memberCountRows }, { data: guestCountRows }] = await Promise.all([
+    const [{ data: memberCountRows }, { data: guestCountRows }, { data: sponsorRows }] = await Promise.all([
       admin.from("driver_quotes").select("application_id").in("application_id", ids),
       admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
+      admin
+        .from("sponsor_preapprovals")
+        .select("application_id, status, approved_support_amount, estimated_support_amount")
+        .in("application_id", ids),
     ]);
     for (const raw of Array.isArray(memberCountRows) ? memberCountRows : []) {
       const applicationId = safeText((raw as { application_id?: unknown }).application_id, "");
@@ -217,6 +225,23 @@ export async function GET() {
         applicationId,
         (quoteCountByApplication.get(applicationId) ?? 0) + 1,
       );
+    }
+    for (const raw of Array.isArray(sponsorRows) ? sponsorRows : []) {
+      const row = raw as Record<string, unknown>;
+      const applicationId = safeText(row.application_id, "");
+      if (!applicationId) continue;
+      const current = sponsorSupportByApplication.get(applicationId);
+      const status = safeText(row.status, "preapproved");
+      const rank = status === "approved" ? 3 : status === "preapproved" ? 2 : 1;
+      const currentRank =
+        current?.status === "approved" ? 3 : current?.status === "preapproved" ? 2 : 1;
+      if (!current || rank >= currentRank) {
+        sponsorSupportByApplication.set(applicationId, {
+          status,
+          approvedAmount: parseInteger(row.approved_support_amount),
+          estimatedAmount: parseInteger(row.estimated_support_amount),
+        });
+      }
     }
 
     const orFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
@@ -403,6 +428,11 @@ export async function GET() {
       contract_memo: safeText(row.contract_memo, ""),
       customer_name: customerInfoVisible ? safeText(row.applicant_name) : "",
       customer_phone: customerInfoVisible ? safeText(row.phone) : "",
+      sponsor_support_status: sponsorSupportByApplication.get(id)?.status ?? "none",
+      sponsor_approved_support_amount:
+        sponsorSupportByApplication.get(id)?.approvedAmount ?? null,
+      sponsor_estimated_support_amount:
+        sponsorSupportByApplication.get(id)?.estimatedAmount ?? null,
       my_quote: quote,
     };
   }));

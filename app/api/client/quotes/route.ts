@@ -138,6 +138,21 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       };
     }),
   ];
+  const { data: sponsorPreapprovals } = await admin
+    .from("sponsor_preapprovals")
+    .select("status, approved_support_amount, estimated_support_amount")
+    .eq("application_id", applicationId);
+  const sponsorRows = Array.isArray(sponsorPreapprovals)
+    ? (sponsorPreapprovals as Array<Record<string, unknown>>)
+    : [];
+  const hasApprovedSponsor = sponsorRows.some((row) => safeText(row.status) === "approved");
+  const hasRejectedSponsor =
+    sponsorRows.length > 0 &&
+    sponsorRows.every((row) => ["rejected", "cancelled", "expired"].includes(safeText(row.status)));
+  const approvedSupportAmount =
+    sponsorRows
+      .map((row) => parseInteger(row.approved_support_amount))
+      .find((value) => value != null) ?? null;
   return {
     application: {
       id: applicationId,
@@ -181,6 +196,14 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       deposit_confirmed_at: safeText(current.deposit_confirmed_at),
       contract_memo: safeText(current.contract_memo),
       quote_count: quotes.length,
+      sponsor_support_status: hasApprovedSponsor
+        ? "approved"
+        : hasRejectedSponsor
+          ? "rejected"
+          : sponsorRows.length > 0
+            ? "preapproved"
+            : "none",
+      sponsor_approved_support_amount: approvedSupportAmount,
     },
     quotes,
   };

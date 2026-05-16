@@ -17,10 +17,13 @@ export type NotificationType =
   | "contract_driver_confirmed"
   | "deposit_waiting"
   | "deposit_paid"
-  | "ride_confirmed";
+  | "ride_confirmed"
+  | "sponsor_preapproval_approved"
+  | "sponsor_preapproval_rejected"
+  | "sponsor_staff_assigned";
 
 type NotificationInput = {
-  target_type: "customer" | "driver" | "guest_driver" | "admin";
+  target_type: "customer" | "driver" | "guest_driver" | "admin" | "sponsor_staff";
   target_phone: string;
   target_name?: string;
   notification_type: NotificationType;

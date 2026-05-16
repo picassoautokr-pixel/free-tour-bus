@@ -98,6 +98,9 @@ type PartnerCall = {
   contract_memo: string;
   customer_name?: string;
   customer_phone?: string;
+  sponsor_support_status?: string;
+  sponsor_approved_support_amount?: number | null;
+  sponsor_estimated_support_amount?: number | null;
   my_quote: PartnerMyQuote | null;
 };
 
@@ -1456,9 +1459,20 @@ export default function PartnerDashboardPage() {
                         지원금 상태
                       </dt>
                       <dd className="mt-1 font-semibold text-slate-800">
-                        {customerDetailCall.final_selected_quote_id.trim() !== ""
-                          ? "매칭 확정"
-                          : "가승인 검토"}
+                        {customerDetailCall.sponsor_support_status === "approved"
+                          ? "지원금 승인완료"
+                          : customerDetailCall.sponsor_support_status === "rejected"
+                            ? "지원금 미승인 또는 조건 불일치"
+                            : customerDetailCall.sponsor_support_status === "preapproved"
+                              ? "지원금 검토중"
+                              : customerDetailCall.final_selected_quote_id.trim() !== ""
+                                ? "매칭 확정"
+                                : "가승인 검토"}
+                        {customerDetailCall.sponsor_approved_support_amount != null ? (
+                          <span className="ml-2 text-xs font-black text-blue-700">
+                            {formatPrice(customerDetailCall.sponsor_approved_support_amount)}
+                          </span>
+                        ) : null}
                       </dd>
                     </div>
                   </div>

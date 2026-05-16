@@ -91,7 +91,10 @@ export async function GET() {
           .in("id", applicationIds)
       : Promise.resolve({ data: [] }),
     ruleIds.length > 0
-      ? admin.from("sponsor_rules").select("id, title").in("id", ruleIds)
+      ? admin
+          .from("sponsor_rules")
+          .select("id, title, support_type, support_condition")
+          .in("id", ruleIds)
       : Promise.resolve({ data: [] }),
   ]);
 
@@ -104,18 +107,28 @@ export async function GET() {
   const ruleTitleById = new Map(
     (Array.isArray(matchedRuleRows) ? matchedRuleRows : []).map((row) => [
       safeText((row as Record<string, unknown>).id),
-      safeText((row as Record<string, unknown>).title, "후원조건"),
+      row as Record<string, unknown>,
+    ]),
+  );
+  const staffById = new Map(
+    (Array.isArray(staffRows) ? staffRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
     ]),
   );
 
   const calls = preapprovals.map((raw) => {
     const preapproval = raw as Record<string, unknown>;
     const application = applicationById.get(safeText(preapproval.application_id)) ?? {};
+    const rule = ruleTitleById.get(safeText(preapproval.sponsor_rule_id)) ?? {};
+    const assignedStaff = staffById.get(safeText(preapproval.assigned_staff_id)) ?? {};
     return {
       id: safeText(preapproval.id),
       application_id: safeText(preapproval.application_id),
       sponsor_rule_id: safeText(preapproval.sponsor_rule_id),
-      sponsor_rule_title: ruleTitleById.get(safeText(preapproval.sponsor_rule_id)) ?? "후원조건",
+      sponsor_rule_title: safeText(rule.title, "후원조건"),
+      support_type: safeText(rule.support_type, company.support_type),
+      support_condition: safeText(rule.support_condition),
       status: safeText(preapproval.status, "preapproved"),
       departure_region: safeText(application.departure_region),
       departure: safeText(application.departure),
@@ -129,7 +142,17 @@ export async function GET() {
       quote_status: safeText(application.quote_status, "collecting"),
       quote_closed_at: safeText(application.quote_closed_at),
       estimated_support_amount: parseInteger(preapproval.estimated_support_amount) ?? 0,
+      approved_support_amount: parseInteger(preapproval.approved_support_amount),
       matched_reason: safeText(preapproval.matched_reason),
+      decision_memo: safeText(preapproval.decision_memo),
+      decided_at: safeText(preapproval.decided_at),
+      approved_at: safeText(preapproval.approved_at),
+      rejected_at: safeText(preapproval.rejected_at),
+      assigned_staff_id: safeText(preapproval.assigned_staff_id),
+      assigned_staff_name: safeText(assignedStaff.name),
+      assigned_staff_phone: safeText(assignedStaff.phone),
+      staff_sms_sent_at: safeText(preapproval.staff_sms_sent_at),
+      staff_sms_error: safeText(preapproval.staff_sms_error),
     };
   });
 

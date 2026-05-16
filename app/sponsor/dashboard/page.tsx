@@ -20,11 +20,19 @@ import {
 type Tab = "calls" | "rules" | "staff" | "history";
 
 type Rule = Record<string, unknown> & { id: string; title?: string; is_active?: boolean };
-type Staff = Record<string, unknown> & { id: string; name?: string; is_active?: boolean };
+type Staff = Record<string, unknown> & {
+  id: string;
+  name?: string;
+  phone?: string;
+  role?: string;
+  is_active?: boolean;
+};
 type Call = {
   id: string;
   application_id: string;
   sponsor_rule_title: string;
+  support_type: string;
+  support_condition: string;
   status: string;
   departure_region: string;
   departure: string;
@@ -38,7 +46,22 @@ type Call = {
   quote_status: string;
   quote_closed_at: string;
   estimated_support_amount: number;
+  approved_support_amount?: number | null;
+  decision_memo?: string;
+  decided_at?: string;
+  approved_at?: string;
+  rejected_at?: string;
+  assigned_staff_id?: string;
+  assigned_staff_name?: string;
+  assigned_staff_phone?: string;
+  staff_sms_sent_at?: string;
+  staff_sms_error?: string;
 };
+
+type ApprovalModal =
+  | { kind: "approve"; call: Call; amount: string; staffId: string; memo: string }
+  | { kind: "reject"; call: Call; memo: string }
+  | null;
 
 export default function SponsorDashboardPage() {
   const router = useRouter();
@@ -50,6 +73,7 @@ export default function SponsorDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [approvalModal, setApprovalModal] = useState<ApprovalModal>(null);
   const [ruleForm, setRuleForm] = useState({
     id: "",
     title: "",
@@ -159,6 +183,53 @@ export default function SponsorDashboardPage() {
     await load();
   };
 
+  const submitApprove = async () => {
+    if (!approvalModal || approvalModal.kind !== "approve") return;
+    if (!approvalModal.staffId) {
+      setMessage("담당자를 먼저 등록해주세요.");
+      setTab("staff");
+      return;
+    }
+    const res = await fetch("/api/sponsor/preapprovals/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        preapproval_id: approvalModal.call.id,
+        approved_support_amount: approvalModal.amount,
+        assigned_staff_id: approvalModal.staffId,
+        decision_memo: approvalModal.memo,
+      }),
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      setMessage(json?.error ?? "지원 승인 처리에 실패했습니다.");
+      return;
+    }
+    setApprovalModal(null);
+    await load();
+  };
+
+  const submitReject = async () => {
+    if (!approvalModal || approvalModal.kind !== "reject") return;
+    const res = await fetch("/api/sponsor/preapprovals/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        preapproval_id: approvalModal.call.id,
+        decision_memo: approvalModal.memo,
+      }),
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      setMessage(json?.error ?? "지원 취소 처리에 실패했습니다.");
+      return;
+    }
+    setApprovalModal(null);
+    await load();
+  };
+
   const logout = async () => {
     const supabase = createSponsorBrowserClient();
     await supabase.auth.signOut();
@@ -183,6 +254,111 @@ export default function SponsorDashboardPage() {
         </div>
       ) : null}
       <section className="mx-auto max-w-5xl">
+        {approvalModal ? (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/50 px-4 py-8">
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+              <h2 className="text-lg font-black text-slate-950">
+                {approvalModal.kind === "approve" ? "지원 승인" : "지원 취소"}
+              </h2>
+              {approvalModal.kind === "approve" ? (
+                <div className="mt-4 space-y-4">
+                  <p className="rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-900">
+                    예상 지원금: {approvalModal.call.estimated_support_amount.toLocaleString("ko-KR")}원
+                  </p>
+                  <label className="block">
+                    <span className="text-xs font-bold text-slate-500">최종 승인 지원금</span>
+                    <input
+                      value={approvalModal.amount}
+                      onChange={(event) =>
+                        setApprovalModal((prev) =>
+                          prev?.kind === "approve" ? { ...prev, amount: event.target.value } : prev,
+                        )
+                      }
+                      className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-bold text-slate-500">담당자</span>
+                    <select
+                      value={approvalModal.staffId}
+                      onChange={(event) =>
+                        setApprovalModal((prev) =>
+                          prev?.kind === "approve" ? { ...prev, staffId: event.target.value } : prev,
+                        )
+                      }
+                      className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
+                    >
+                      <option value="">담당자 선택</option>
+                      {staff
+                        .filter((item) => item.is_active !== false)
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {safeText(item.name, "이름 없음")} / {safeText(item.phone, "연락처 없음")} / {safeText(item.role, "역할 없음")}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  {staff.filter((item) => item.is_active !== false).length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApprovalModal(null);
+                        setTab("staff");
+                      }}
+                      className="min-h-10 w-full rounded-xl border border-amber-200 bg-amber-50 text-sm font-black text-amber-900"
+                    >
+                      담당자를 먼저 등록해주세요.
+                    </button>
+                  ) : null}
+                  <textarea
+                    value={approvalModal.memo}
+                    onChange={(event) =>
+                      setApprovalModal((prev) =>
+                        prev?.kind === "approve" ? { ...prev, memo: event.target.value } : prev,
+                      )
+                    }
+                    placeholder="메모"
+                    className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void submitApprove()}
+                    className="min-h-11 w-full rounded-xl bg-blue-600 text-sm font-black text-white"
+                  >
+                    승인 확정
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  <textarea
+                    value={approvalModal.memo}
+                    onChange={(event) =>
+                      setApprovalModal((prev) =>
+                        prev?.kind === "reject" ? { ...prev, memo: event.target.value } : prev,
+                      )
+                    }
+                    placeholder="취소 사유"
+                    className="min-h-28 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void submitReject()}
+                    className="min-h-11 w-full rounded-xl bg-red-600 text-sm font-black text-white"
+                  >
+                    지원 취소
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setApprovalModal(null)}
+                className="mt-3 min-h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -262,17 +438,50 @@ export default function SponsorDashboardPage() {
                     </div>
                   </div>
                   <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-                    적용 조건: {call.sponsor_rule_title}
+                    적용 조건: {call.sponsor_rule_title} · 지원형태: {sponsorSupportTypeLabel(call.support_type)}
                   </p>
+                  {call.support_condition ? (
+                    <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+                      지원조건: {call.support_condition}
+                    </p>
+                  ) : null}
+                  {call.assigned_staff_name ? (
+                    <p className="mt-2 text-xs font-bold text-slate-500">
+                      담당자: {call.assigned_staff_name} / {call.assigned_staff_phone || "연락처 없음"}
+                    </p>
+                  ) : null}
+                  {call.approved_support_amount != null ? (
+                    <p className="mt-2 text-xs font-black text-blue-700">
+                      승인 지원금: {call.approved_support_amount.toLocaleString("ko-KR")}원
+                    </p>
+                  ) : null}
                   <div className="mt-4">
                     <QuoteStatusSummary quoteStatus={call.quote_status} compact />
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <button className="min-h-10 rounded-xl bg-slate-950 text-sm font-black text-white">
-                      상세보기
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setApprovalModal({
+                          kind: "approve",
+                          call,
+                          amount: String(call.approved_support_amount ?? call.estimated_support_amount),
+                          staffId: call.assigned_staff_id ?? "",
+                          memo: call.decision_memo ?? "",
+                        })
+                      }
+                      disabled={call.status === "approved"}
+                      className="min-h-10 rounded-xl bg-slate-950 text-sm font-black text-white disabled:opacity-50"
+                    >
+                      {call.status === "approved" ? "승인완료" : "지원 승인"}
                     </button>
-                    <button className="min-h-10 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-500">
-                      담당자 배정 준비중
+                    <button
+                      type="button"
+                      onClick={() => setApprovalModal({ kind: "reject", call, memo: call.decision_memo ?? "" })}
+                      disabled={call.status === "rejected"}
+                      className="min-h-10 rounded-xl border border-red-200 bg-white text-sm font-black text-red-700 disabled:opacity-50"
+                    >
+                      {call.status === "rejected" ? "취소완료" : "지원 취소"}
                     </button>
                   </div>
                 </article>

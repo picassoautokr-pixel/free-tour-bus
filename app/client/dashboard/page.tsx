@@ -66,6 +66,8 @@ type ClientApplication = {
   deposit_confirmed_at: string;
   contract_memo: string;
   quote_count: number;
+  sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected";
+  sponsor_approved_support_amount?: number | null;
 };
 
 function formatPrice(value: number | null): string {
@@ -345,6 +347,17 @@ export default function ClientDashboardPage() {
                 </div>
                 <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
                   지원금 조건과 기사 매칭 상태를 중심으로 확인하면 됩니다.
+                </p>
+                <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-900">
+                  {application.sponsor_support_status === "approved"
+                    ? `지원금 승인완료${
+                        application.sponsor_approved_support_amount != null
+                          ? ` · ${application.sponsor_approved_support_amount.toLocaleString("ko-KR")}원`
+                          : ""
+                      }`
+                    : application.sponsor_support_status === "rejected"
+                      ? "지원금 미승인 또는 조건 불일치"
+                      : "지원금 검토중"}
                 </p>
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">

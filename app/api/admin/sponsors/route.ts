@@ -44,12 +44,18 @@ export async function GET(request: Request) {
     const ruleIds = [
       ...new Set(preapprovals.map((row) => safeText((row as Record<string, unknown>).sponsor_rule_id)).filter(Boolean)),
     ];
-    const [{ data: companyRows }, { data: ruleRows }] = await Promise.all([
+    const staffIds = [
+      ...new Set(preapprovals.map((row) => safeText((row as Record<string, unknown>).assigned_staff_id)).filter(Boolean)),
+    ];
+    const [{ data: companyRows }, { data: ruleRows }, { data: staffRows }] = await Promise.all([
       companyIds.length > 0
         ? resolved.admin.from("sponsor_companies").select("id, company_name").in("id", companyIds)
         : Promise.resolve({ data: [] }),
       ruleIds.length > 0
         ? resolved.admin.from("sponsor_rules").select("id, title").in("id", ruleIds)
+        : Promise.resolve({ data: [] }),
+      staffIds.length > 0
+        ? resolved.admin.from("sponsor_staff").select("id, name, phone, role").in("id", staffIds)
         : Promise.resolve({ data: [] }),
     ]);
     const companyNameById = new Map(
@@ -64,15 +70,25 @@ export async function GET(request: Request) {
         safeText((row as Record<string, unknown>).title),
       ]),
     );
+    const staffById = new Map(
+      (Array.isArray(staffRows) ? staffRows : []).map((row) => [
+        safeText((row as Record<string, unknown>).id),
+        row as Record<string, unknown>,
+      ]),
+    );
 
     return NextResponse.json({
       ok: true,
       preapprovals: preapprovals.map((rowRaw) => {
         const row = rowRaw as Record<string, unknown>;
+        const staff = staffById.get(safeText(row.assigned_staff_id)) ?? {};
         return {
           ...row,
           sponsor_company_name: companyNameById.get(safeText(row.sponsor_company_id)) ?? "",
           sponsor_rule_title: ruleTitleById.get(safeText(row.sponsor_rule_id)) ?? "",
+          assigned_staff_name: safeText(staff.name),
+          assigned_staff_phone: safeText(staff.phone),
+          assigned_staff_role: safeText(staff.role),
         };
       }),
     });
