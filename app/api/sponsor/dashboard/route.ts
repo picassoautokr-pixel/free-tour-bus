@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { parseStopovers } from "@/lib/stopovers";
 import {
   normalizeStringArray,
   parseInteger,
@@ -55,7 +54,7 @@ export async function GET() {
     return NextResponse.json({ ok: true, company, approved: false, rules: [], staff: [], calls: [] });
   }
 
-  const [{ data: ruleRows }, { data: staffRows }] = await Promise.all([
+  const [{ data: ruleRows }, { data: staffRows }, { data: preapprovalRows }] = await Promise.all([
     admin
       .from("sponsor_rules")
       .select("*")
@@ -66,57 +65,71 @@ export async function GET() {
       .select("*")
       .eq("sponsor_company_id", company.id)
       .order("created_at", { ascending: false }),
+    admin
+      .from("sponsor_preapprovals")
+      .select("*")
+      .eq("sponsor_company_id", company.id)
+      .order("created_at", { ascending: false })
+      .limit(80),
   ]);
 
   const rules = Array.isArray(ruleRows) ? ruleRows : [];
-  const activeRegions = new Set<string>();
-  for (const raw of rules) {
-    const row = raw as Record<string, unknown>;
-    if (row.is_active === false) continue;
-    for (const region of normalizeStringArray(row.service_regions)) activeRegions.add(region);
-  }
+  const preapprovals = Array.isArray(preapprovalRows) ? preapprovalRows : [];
+  const applicationIds = [
+    ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).application_id)).filter(Boolean)),
+  ];
+  const ruleIds = [
+    ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).sponsor_rule_id)).filter(Boolean)),
+  ];
+  const [{ data: applicationRows }, { data: matchedRuleRows }] = await Promise.all([
+    applicationIds.length > 0
+      ? admin
+          .from("applications")
+          .select(
+            "id, created_at, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at",
+          )
+          .in("id", applicationIds)
+      : Promise.resolve({ data: [] }),
+    ruleIds.length > 0
+      ? admin.from("sponsor_rules").select("id, title").in("id", ruleIds)
+      : Promise.resolve({ data: [] }),
+  ]);
 
-  let applicationQuery = admin
-    .from("applications")
-    .select(
-      "id, created_at, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at",
-    )
-    .eq("application_type", "신규로 예약이 필요하신 경우")
-    .order("created_at", { ascending: false })
-    .limit(60);
+  const applicationById = new Map(
+    (Array.isArray(applicationRows) ? applicationRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
+    ]),
+  );
+  const ruleTitleById = new Map(
+    (Array.isArray(matchedRuleRows) ? matchedRuleRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      safeText((row as Record<string, unknown>).title, "후원조건"),
+    ]),
+  );
 
-  if (activeRegions.size > 0) {
-    applicationQuery = applicationQuery.in("departure_region", [...activeRegions]);
-  }
-
-  const { data: applicationRows } = await applicationQuery;
-  const calls = (Array.isArray(applicationRows) ? applicationRows : []).map((raw) => {
-    const row = raw as Record<string, unknown>;
-    const passengerCount = parseInteger(row.passenger_count);
-    const supportRule = rules.find((ruleRaw) => {
-      const rule = ruleRaw as Record<string, unknown>;
-      if (rule.is_active === false) return false;
-      const regions = normalizeStringArray(rule.service_regions);
-      return regions.length === 0 || regions.includes(safeText(row.departure_region));
-    }) as Record<string, unknown> | undefined;
-    const perPerson = parseInteger(supportRule?.support_per_person) ?? 0;
-    const perCase = parseInteger(supportRule?.support_per_case) ?? 0;
-    const maxAmount = parseInteger(supportRule?.max_support_amount) ?? 0;
-    const estimate = (passengerCount ?? 0) * perPerson + perCase;
+  const calls = preapprovals.map((raw) => {
+    const preapproval = raw as Record<string, unknown>;
+    const application = applicationById.get(safeText(preapproval.application_id)) ?? {};
     return {
-      id: safeText(row.id),
-      departure_region: safeText(row.departure_region),
-      departure: safeText(row.departure),
-      destination: safeText(row.destination),
-      stopovers: parseStopovers(row.stopovers),
-      departure_date: safeText(row.departure_date),
-      departure_time: safeText(row.departure_time),
-      passenger_count: passengerCount,
-      trip_type: safeText(row.trip_type),
-      bus_grade: safeText(row.bus_grade),
-      quote_status: safeText(row.quote_status, "collecting"),
-      quote_closed_at: safeText(row.quote_closed_at),
-      estimated_support_amount: maxAmount > 0 ? Math.min(estimate, maxAmount) : estimate,
+      id: safeText(preapproval.id),
+      application_id: safeText(preapproval.application_id),
+      sponsor_rule_id: safeText(preapproval.sponsor_rule_id),
+      sponsor_rule_title: ruleTitleById.get(safeText(preapproval.sponsor_rule_id)) ?? "후원조건",
+      status: safeText(preapproval.status, "preapproved"),
+      departure_region: safeText(application.departure_region),
+      departure: safeText(application.departure),
+      destination: safeText(application.destination),
+      stopovers: normalizeStringArray(application.stopovers),
+      departure_date: safeText(application.departure_date),
+      departure_time: safeText(application.departure_time),
+      passenger_count: parseInteger(preapproval.passenger_count) ?? parseInteger(application.passenger_count),
+      trip_type: safeText(application.trip_type),
+      bus_grade: safeText(application.bus_grade),
+      quote_status: safeText(application.quote_status, "collecting"),
+      quote_closed_at: safeText(application.quote_closed_at),
+      estimated_support_amount: parseInteger(preapproval.estimated_support_amount) ?? 0,
+      matched_reason: safeText(preapproval.matched_reason),
     };
   });
 

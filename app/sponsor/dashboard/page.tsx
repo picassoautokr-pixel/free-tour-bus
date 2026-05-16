@@ -23,6 +23,9 @@ type Rule = Record<string, unknown> & { id: string; title?: string; is_active?: 
 type Staff = Record<string, unknown> & { id: string; name?: string; is_active?: boolean };
 type Call = {
   id: string;
+  application_id: string;
+  sponsor_rule_title: string;
+  status: string;
   departure_region: string;
   departure: string;
   destination: string;
@@ -105,7 +108,7 @@ export default function SponsorDashboardPage() {
       const nextCalls = Array.isArray(json.calls) ? json.calls : [];
       const previousIds = callIdsRef.current;
       if (previousIds.size > 0 && nextCalls.some((call) => !previousIds.has(call.id))) {
-        setToast("새 지원 검토 요청이 도착했습니다.");
+        setToast("새 지원금 가승인 후보가 도착했습니다.");
       }
       callIdsRef.current = new Set(nextCalls.map((call) => call.id));
       setCalls(nextCalls);
@@ -122,7 +125,7 @@ export default function SponsorDashboardPage() {
 
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "sponsor-dashboard-live",
-    tables: ["applications"],
+    tables: ["sponsor_preapprovals"],
     enabled: company != null && safeText(company.status) === "approved",
     debounceMs: 800,
     onRefresh: load,
@@ -249,21 +252,24 @@ export default function SponsorDashboardPage() {
                       </p>
                     </div>
                     <div className="text-left sm:text-right">
-                      <p className="text-xs font-bold text-slate-400">예상 지원금 가능액</p>
+                      <p className="text-xs font-bold text-slate-400">예상 지원금</p>
                       <p className="mt-1 text-lg font-black text-blue-700">
                         {call.estimated_support_amount.toLocaleString("ko-KR")}원
                       </p>
                       <p className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-900">
-                        검토 가능
+                        {call.status === "preapproved" ? "가승인" : call.status}
                       </p>
                     </div>
                   </div>
+                  <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+                    적용 조건: {call.sponsor_rule_title}
+                  </p>
                   <div className="mt-4">
                     <QuoteStatusSummary quoteStatus={call.quote_status} compact />
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
                     <button className="min-h-10 rounded-xl bg-slate-950 text-sm font-black text-white">
-                      지원 검토
+                      상세보기
                     </button>
                     <button className="min-h-10 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-500">
                       담당자 배정 준비중

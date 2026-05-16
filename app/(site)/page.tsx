@@ -444,7 +444,11 @@ export default function Home() {
         JSON.stringify(insertPayload),
       );
 
-      const { error } = await supabase.from("applications").insert(insertPayload);
+      const { data: insertedApplication, error } = await supabase
+        .from("applications")
+        .insert(insertPayload)
+        .select("id")
+        .single();
       if (error) {
         console.error("[applications insert] Supabase error:", {
           message: error.message,
@@ -464,6 +468,18 @@ export default function Home() {
       }).catch(() => {
         /* 신청 저장 성공 후 알림 로그 실패는 사용자 흐름을 막지 않습니다. */
       });
+
+      const insertedApplicationId =
+        typeof insertedApplication?.id === "string" ? insertedApplication.id : "";
+      if (insertedApplicationId) {
+        void fetch("/api/sponsor/preapprovals/match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ application_id: insertedApplicationId }),
+        }).catch((matchError) => {
+          console.warn("[sponsor preapproval] match failed:", matchError);
+        });
+      }
 
       setSuccessSummary({
         receiptNumber,

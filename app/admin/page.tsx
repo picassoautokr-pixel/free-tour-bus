@@ -155,6 +155,15 @@ type NotificationLogDetail = {
   sent_at: string;
 };
 
+type SponsorPreapprovalDetail = {
+  id: string;
+  sponsor_company_name: string;
+  sponsor_rule_title: string;
+  estimated_support_amount: number;
+  status: string;
+  matched_reason: string;
+};
+
 type QuoteAutomationSettingsForm = {
   business_start_time: string;
   business_end_time: string;
@@ -1585,6 +1594,80 @@ function DriverQuotesSection({
   );
 }
 
+function SponsorPreapprovalsSection({ applicationId }: { applicationId: string }) {
+  const [items, setItems] = useState<SponsorPreapprovalDetail[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/admin/sponsors?application_id=${encodeURIComponent(applicationId)}`,
+        { credentials: "same-origin" },
+      );
+      const json = (await res.json()) as { preapprovals?: SponsorPreapprovalDetail[] };
+      setItems(Array.isArray(json.preapprovals) ? json.preapprovals : []);
+    } finally {
+      setLoading(false);
+    }
+  }, [applicationId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <section className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-black text-emerald-950">후원업체 가승인 후보</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="min-h-8 rounded-lg border border-emerald-200 bg-white px-3 text-xs font-black text-emerald-900 disabled:opacity-50"
+        >
+          새로고침
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <p className="mt-3 rounded-lg bg-white px-3 py-4 text-center text-xs font-semibold text-slate-500">
+          생성된 가승인 후보가 없습니다.
+        </p>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {items.map((item) => (
+            <div key={item.id} className="rounded-lg bg-white p-3 text-xs ring-1 ring-emerald-100">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-black text-slate-950">
+                    {item.sponsor_company_name || "후원업체"}
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-500">
+                    조건명: {item.sponsor_rule_title || "—"}
+                  </p>
+                  {item.matched_reason ? (
+                    <p className="mt-1 font-semibold text-emerald-700">
+                      {item.matched_reason}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="text-right">
+                  <p className="font-black text-blue-700">
+                    {item.estimated_support_amount.toLocaleString("ko-KR")}원
+                  </p>
+                  <p className="mt-1 font-bold text-emerald-700">
+                    {item.status === "preapproved" ? "가승인" : item.status}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function QuoteAutomationSettingsCard() {
   const [settings, setSettings] = useState<QuoteAutomationSettingsForm>({
     business_start_time: "09:00",
@@ -2088,6 +2171,7 @@ function DetailSlidePanel({
           </dl>
 
           <DriverQuotesSection applicationId={row.id} applicationDetail={row} />
+          <SponsorPreapprovalsSection applicationId={row.id} />
 
           <div className="mt-4">
             <button

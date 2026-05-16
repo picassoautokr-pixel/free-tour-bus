@@ -22,11 +22,62 @@ async function requireAdmin() {
   return { admin } as const;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const resolved = await requireAdmin();
   if ("error" in resolved) {
     return NextResponse.json({ error: resolved.error }, { status: resolved.status });
   }
+  const { searchParams } = new URL(request.url);
+  const applicationId = safeText(searchParams.get("application_id"));
+  if (applicationId) {
+    const { data: preapprovalRows, error } = await resolved.admin
+      .from("sponsor_preapprovals")
+      .select("*")
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+
+    const preapprovals = Array.isArray(preapprovalRows) ? preapprovalRows : [];
+    const companyIds = [
+      ...new Set(preapprovals.map((row) => safeText((row as Record<string, unknown>).sponsor_company_id)).filter(Boolean)),
+    ];
+    const ruleIds = [
+      ...new Set(preapprovals.map((row) => safeText((row as Record<string, unknown>).sponsor_rule_id)).filter(Boolean)),
+    ];
+    const [{ data: companyRows }, { data: ruleRows }] = await Promise.all([
+      companyIds.length > 0
+        ? resolved.admin.from("sponsor_companies").select("id, company_name").in("id", companyIds)
+        : Promise.resolve({ data: [] }),
+      ruleIds.length > 0
+        ? resolved.admin.from("sponsor_rules").select("id, title").in("id", ruleIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const companyNameById = new Map(
+      (Array.isArray(companyRows) ? companyRows : []).map((row) => [
+        safeText((row as Record<string, unknown>).id),
+        safeText((row as Record<string, unknown>).company_name),
+      ]),
+    );
+    const ruleTitleById = new Map(
+      (Array.isArray(ruleRows) ? ruleRows : []).map((row) => [
+        safeText((row as Record<string, unknown>).id),
+        safeText((row as Record<string, unknown>).title),
+      ]),
+    );
+
+    return NextResponse.json({
+      ok: true,
+      preapprovals: preapprovals.map((rowRaw) => {
+        const row = rowRaw as Record<string, unknown>;
+        return {
+          ...row,
+          sponsor_company_name: companyNameById.get(safeText(row.sponsor_company_id)) ?? "",
+          sponsor_rule_title: ruleTitleById.get(safeText(row.sponsor_rule_id)) ?? "",
+        };
+      }),
+    });
+  }
+
   const { data, error } = await resolved.admin
     .from("sponsor_companies")
     .select("*")
