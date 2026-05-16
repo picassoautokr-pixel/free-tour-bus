@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
@@ -44,6 +44,8 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
   const [region, setRegion] = useState<ServiceRegion | "">("");
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const subscribedLoggedRef = useRef(false);
 
   const filtered = useMemo(
     () => (region === "" ? quotes : quotes.filter((q) => q.departure_region === region)),
@@ -51,6 +53,9 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
   );
 
   const refresh = useCallback(async () => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[realtime] reload guest quotes");
+    }
     setLoading(true);
     try {
       const query = region ? `?region=${encodeURIComponent(region)}` : "";
@@ -64,13 +69,45 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
 
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "guest-quotes-live",
-    tables: ["applications"],
+    tables: ["applications", "driver_quotes", "guest_driver_quotes"],
     debounceMs: 800,
     onRefresh: refresh,
+    onEvent: (payload) => {
+      const table = String(payload.table ?? "");
+      const eventType = String(payload.eventType ?? "");
+      if (process.env.NODE_ENV === "development") {
+        console.log(`[realtime] ${table} ${eventType}`);
+      }
+      if (table === "applications" && eventType === "INSERT") {
+        setToastMessage("새 전국 견적요청이 등록되었습니다.");
+      }
+    },
   });
+
+  useEffect(() => {
+    if (realtimeStatus !== "connected" || subscribedLoggedRef.current) return;
+    subscribedLoggedRef.current = true;
+    if (process.env.NODE_ENV === "development") {
+      console.log("[realtime] guest-quotes subscribed");
+    }
+  }, [realtimeStatus]);
+
+  useEffect(() => {
+    if (toastMessage == null) return;
+    const id = window.setTimeout(() => setToastMessage(null), 3200);
+    return () => window.clearTimeout(id);
+  }, [toastMessage]);
 
   return (
     <div>
+      {toastMessage ? (
+        <div
+          className="fixed left-1/2 top-4 z-[120] w-[min(calc(100vw-2rem),24rem)] -translate-x-1/2 rounded-2xl border border-blue-100 bg-white px-4 py-3 text-center text-sm font-black text-blue-900 shadow-xl shadow-slate-900/15 ring-1 ring-blue-50"
+          role="status"
+        >
+          {toastMessage}
+        </div>
+      ) : null}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
