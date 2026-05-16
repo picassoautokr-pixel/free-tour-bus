@@ -28,6 +28,10 @@ function parseInteger(value: unknown): number | null {
   return null;
 }
 
+function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return error?.code === "42703" || /does not exist|column .* does not exist/i.test(error?.message ?? "");
+}
+
 function siteBaseUrl(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (raw) return raw.replace(/\/+$/, "");
@@ -78,24 +82,48 @@ export async function GET(request: Request) {
 
   await processApplicationQuoteLifecycle(admin, applicationId);
 
-  const { data: applicationRaw, error: applicationError } = await admin
+  let applicationResult: {
+    data: unknown | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
     .from("applications")
     .select(
       `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
     )
     .eq("id", applicationId)
     .maybeSingle();
+  if (isMissingColumnError(applicationResult.error)) {
+    applicationResult = await admin
+      .from("applications")
+      .select(`${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at`)
+      .eq("id", applicationId)
+      .maybeSingle();
+  }
+  const { data: applicationRaw, error: applicationError } = applicationResult;
   if (applicationError) {
     return NextResponse.json({ error: applicationError.message }, { status: 502 });
   }
 
-  const { data: quotesRaw, error: quotesError } = await admin
+  let quotesResult: {
+    data: unknown[] | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
     .from("driver_quotes")
     .select(
       "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
+  if (isMissingColumnError(quotesResult.error)) {
+    quotesResult = await admin
+      .from("driver_quotes")
+      .select(
+        "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status",
+      )
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+  }
+  const { data: quotesRaw, error: quotesError } = quotesResult;
 
   if (quotesError) {
     return NextResponse.json({ error: quotesError.message }, { status: 502 });
@@ -316,6 +344,7 @@ export async function GET(request: Request) {
       result_sms_error: safeText(row.result_sms_error),
       converted_to_member_quote_id: safeText(row.converted_to_member_quote_id),
       converted_at: safeText(row.converted_at),
+      linked_partner_driver_id: linkedId,
       member_converted: resolved != null,
       linked_partner_company: resolved?.company_name ?? "",
       linked_partner_phone: resolved?.phone ?? "",

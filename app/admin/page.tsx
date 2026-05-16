@@ -143,6 +143,7 @@ type GuestDriverQuoteDetail = {
   match_result: string;
   result_notified_at: string;
   result_sms_error: string;
+  linked_partner_driver_id?: string;
   converted_to_member_quote_id?: string;
   converted_at?: string;
   member_converted?: boolean;
@@ -1057,6 +1058,7 @@ function DriverQuotesSection({
         notification_logs?: NotificationLogDetail[];
       };
       if (!res.ok) {
+        console.error("[admin] driver quotes api error", json.error);
         setError(json.error ?? "견적 목록을 불러오지 못했습니다.");
         setApplication(null);
         setQuotes([]);
@@ -1071,7 +1073,8 @@ function DriverQuotesSection({
         Array.isArray(json.notification_logs) ? json.notification_logs : [],
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      console.error("[admin] failed to load driver quotes", e);
+      setError("견적 정보를 불러오지 못했습니다.");
       setQuotes([]);
       setGuestQuotes([]);
       setApplication(null);
@@ -1448,6 +1451,9 @@ function DriverQuotesSection({
                   <p className="mt-1 text-xs font-semibold text-slate-500">
                     {quote.manager_name} · {quote.phone}
                   </p>
+                  <p className="mt-1 break-all font-mono text-[11px] font-semibold text-slate-400">
+                    견적 ID: {quote.id}
+                  </p>
                 </div>
                 <p className="shrink-0 text-right text-sm font-black text-indigo-900">
                   {quote.price == null
@@ -1499,8 +1505,22 @@ function DriverQuotesSection({
                   <dt className="font-bold text-slate-400">고객 반영 지원금</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {quote.sponsor_quote_enabled
-                      ? `${(quote.support_discount_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
+                      ? `${(quote.customer_support_amount ?? quote.support_discount_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
                       : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">기사 지원금</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.driver_support_amount != null
+                      ? `${quote.driver_support_amount.toLocaleString("ko-KR")}원`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-slate-400">지원금 상태</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-800">
+                    {quote.sponsor_support_status || "—"}
                   </dd>
                 </div>
                 <div>
@@ -1556,6 +1576,9 @@ function DriverQuotesSection({
                       <p className="mt-1 text-xs font-semibold text-slate-500">
                         {quote.guest_driver_name} · {quote.guest_phone}
                       </p>
+                      <p className="mt-1 break-all font-mono text-[11px] font-semibold text-slate-400">
+                        견적 ID: {quote.id}
+                      </p>
                     </div>
                     <p className="shrink-0 text-right text-sm font-black text-amber-900">
                       {quote.price == null
@@ -1586,6 +1609,16 @@ function DriverQuotesSection({
                       <dt className="font-bold text-slate-400">매칭결과</dt>
                       <dd className="mt-0.5 font-semibold text-slate-800">
                         {quote.match_result}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">회원전환 여부</dt>
+                      <dd className="mt-0.5 font-semibold text-slate-800">
+                        {quote.linked_partner_driver_id?.trim()
+                          ? `전환됨 · ${quote.linked_partner_driver_id}`
+                          : quote.member_converted
+                            ? "전환됨"
+                            : "미전환"}
                       </dd>
                     </div>
                     <div>
