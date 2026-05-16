@@ -29,7 +29,13 @@ function parseInteger(value: unknown): number | null {
 }
 
 function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
-  return error?.code === "42703" || /does not exist|column .* does not exist/i.test(error?.message ?? "");
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    /does not exist|column .* does not exist|could not find .* column|schema cache/i.test(
+      error?.message ?? "",
+    )
+  );
 }
 
 function siteBaseUrl(): string {
@@ -82,27 +88,33 @@ export async function GET(request: Request) {
 
   await processApplicationQuoteLifecycle(admin, applicationId);
 
-  let applicationResult: {
+  const applicationResult: {
     data: unknown | null;
     error: { message: string; code?: string } | null;
   } = await admin
     .from("applications")
     .select(
-      `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+      `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
     )
     .eq("id", applicationId)
     .maybeSingle();
-  if (isMissingColumnError(applicationResult.error)) {
-    applicationResult = await admin
-      .from("applications")
-      .select(`${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at`)
-      .eq("id", applicationId)
-      .maybeSingle();
-  }
   const { data: applicationRaw, error: applicationError } = applicationResult;
   if (applicationError) {
     return NextResponse.json({ error: applicationError.message }, { status: 502 });
   }
+  const sponsorSummaryResult: {
+    data: unknown | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
+    .from("applications")
+    .select(
+      "sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count",
+    )
+    .eq("id", applicationId)
+    .maybeSingle();
+  const sponsorSummary = isMissingColumnError(sponsorSummaryResult.error)
+    ? {}
+    : ((sponsorSummaryResult.data as Record<string, unknown> | null) ?? {});
 
   let quotesResult: {
     data: unknown[] | null;
@@ -417,12 +429,12 @@ export async function GET(request: Request) {
             parseInteger(application.support_driver_ratio) ??
             supportRewards.support_driver_ratio,
           contract_status: safeText(application.contract_status),
-          sponsor_support_status: safeText(application.sponsor_support_status, "none"),
+          sponsor_support_status: safeText(sponsorSummary.sponsor_support_status, "none"),
           sponsor_approved_support_amount:
-            parseInteger(application.sponsor_approved_support_amount) ?? 0,
-          sponsor_preapproved_count: parseInteger(application.sponsor_preapproved_count) ?? 0,
-          sponsor_approved_count: parseInteger(application.sponsor_approved_count) ?? 0,
-          sponsor_rejected_count: parseInteger(application.sponsor_rejected_count) ?? 0,
+            parseInteger(sponsorSummary.sponsor_approved_support_amount) ?? 0,
+          sponsor_preapproved_count: parseInteger(sponsorSummary.sponsor_preapproved_count) ?? 0,
+          sponsor_approved_count: parseInteger(sponsorSummary.sponsor_approved_count) ?? 0,
+          sponsor_rejected_count: parseInteger(sponsorSummary.sponsor_rejected_count) ?? 0,
           estimated_support_amount: supportRewards.estimated_support_amount,
           client_reward_amount: supportRewards.client_reward_amount,
           driver_support_amount: supportRewards.driver_support_amount,
