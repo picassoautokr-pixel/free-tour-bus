@@ -29,7 +29,10 @@ type ClientQuote = {
   sponsor_quote_enabled: boolean;
   vehicle_type: string;
   available_time: string;
+  memo?: string;
+  message?: string;
   status: string;
+  created_at?: string;
 };
 
 type ClientApplication = {
@@ -56,8 +59,10 @@ type ClientApplication = {
   target_member_price: number | null;
   quote_closed_at: string;
   auto_selected_quote_id: string;
+  auto_selected_quote_source: string;
   auto_final_confirm_at: string;
   final_selected_quote_id: string;
+  final_selected_quote_source: string;
   final_selected_at: string;
   contact_revealed_at: string;
   contract_status: string;
@@ -183,8 +188,16 @@ export default function ClientDashboardPage() {
   const selectedQuote =
     application == null
       ? null
-      : quotes.find((quote) => quote.id === application.final_selected_quote_id) ??
-        quotes.find((quote) => quote.id === application.auto_selected_quote_id) ??
+      : quotes.find(
+          (quote) =>
+            quote.id === application.final_selected_quote_id &&
+            quote.source === application.final_selected_quote_source,
+        ) ??
+        quotes.find(
+          (quote) =>
+            quote.id === application.auto_selected_quote_id &&
+            quote.source === application.auto_selected_quote_source,
+        ) ??
         null;
   const contactRevealed =
     application != null &&
@@ -395,8 +408,10 @@ export default function ClientDashboardPage() {
             <div className="space-y-3">
               {quotes.map((quote) => {
                 const selected =
-                  quote.id === application.auto_selected_quote_id ||
-                  quote.id === application.final_selected_quote_id;
+                  (quote.id === application.auto_selected_quote_id &&
+                    quote.source === application.auto_selected_quote_source) ||
+                  (quote.id === application.final_selected_quote_id &&
+                    quote.source === application.final_selected_quote_source);
                 const supportStatus =
                   quote.sponsor_support_status ||
                   (quote.member_price != null ? application.sponsor_support_status : "none");
@@ -419,10 +434,25 @@ export default function ClientDashboardPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
+                            quote.source === "member"
+                              ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100"
+                              : "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
+                          }`}>
+                            {quote.source === "member" ? "제휴기사 견적" : "비회원 견적"}
+                          </span>
+                          {quote.member_price != null ? (
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                              지원금 적용가
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="text-sm font-black text-slate-950">
                           {quote.company_name}
                         </p>
                         <p className="mt-1 text-xs font-semibold text-slate-500">
+                          {quote.driver_name !== "—" ? `${quote.driver_name} · ` : ""}
                           {quote.vehicle_type} · {quote.available_time}
                         </p>
                         {quote.phone ? (

@@ -30,6 +30,23 @@ function parseInteger(value: unknown): number | null {
   return null;
 }
 
+function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    /does not exist|column .* does not exist|could not find .* column|schema cache/i.test(
+      error?.message ?? "",
+    )
+  );
+}
+
+function comparablePrice(quote: {
+  price: number | null;
+  member_price?: number | null;
+}): number {
+  return quote.member_price ?? quote.price ?? Number.MAX_SAFE_INTEGER;
+}
+
 async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupabase>, request: Request) {
   if (!admin) return { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.", status: 503 } as const;
   const { searchParams } = new URL(request.url);
@@ -38,13 +55,26 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   if (receiptNumber === "" || phoneDigits === "") {
     return { error: "접수번호와 휴대폰번호가 필요합니다.", status: 400 } as const;
   }
-  const { data, error } = await admin
+  let result: {
+    data: unknown | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
     .from("applications")
     .select(
       `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
+  if (isMissingColumnError(result.error)) {
+    result = await admin
+      .from("applications")
+      .select(
+        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
+      )
+      .eq("receipt_number", receiptNumber)
+      .maybeSingle();
+  }
+  const { data, error } = result;
   if (error) return { error: error.message, status: 502 } as const;
   const app = data as Record<string, unknown> | null;
   if (!app || digits(app.phone) !== phoneDigits) {
@@ -56,27 +86,59 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
 async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>, app: Record<string, unknown>) {
   const applicationId = safeText(app.id);
   await processApplicationQuoteLifecycle(admin, applicationId);
-  const [{ data: latest }, { data: memberRows }, { data: guestRows }] = await Promise.all([
-    admin
+  let latestResult: {
+    data: unknown | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
+    .from("applications")
+    .select(
+      `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+    )
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (isMissingColumnError(latestResult.error)) {
+    latestResult = await admin
       .from("applications")
       .select(
-        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
       )
       .eq("id", applicationId)
-      .maybeSingle(),
-    admin
+      .maybeSingle();
+  }
+
+  let memberResult: {
+    data: unknown[] | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
+    .from("driver_quotes")
+    .select(
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status, sponsor_approved_support_amount, driver_support_amount, client_reward_amount",
+    )
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
+  if (isMissingColumnError(memberResult.error)) {
+    memberResult = await admin
       .from("driver_quotes")
-      .select(
-        "id, created_at, price, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status, sponsor_approved_support_amount, driver_support_amount, client_reward_amount, vehicle_type, available_time, message, status, partner_driver_id, partner_drivers(company_name, manager_name, phone)",
-      )
+      .select("id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status")
       .eq("application_id", applicationId)
-      .order("created_at", { ascending: false }),
-    admin
-      .from("guest_driver_quotes")
-      .select("id, created_at, price, vehicle_type, available_time, message, status, match_result, guest_company_name, guest_driver_name, guest_phone")
-      .eq("application_id", applicationId)
-      .order("created_at", { ascending: false }),
-  ]);
+      .order("created_at", { ascending: false });
+  }
+
+  const guestResult: {
+    data: unknown[] | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
+    .from("guest_driver_quotes")
+    .select("id, created_at, application_id, price, vehicle_type, available_time, message, status, match_result, guest_company_name, guest_driver_name, guest_phone")
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
+
+  if (memberResult.error && guestResult.error) {
+    throw new Error("견적 정보를 불러오지 못했습니다.");
+  }
+  const latest = latestResult.data;
+  const memberRows = memberResult.error ? [] : memberResult.data;
+  const guestRows = guestResult.error ? [] : guestResult.data;
   const current = (latest as Record<string, unknown> | null) ?? app;
   const contractNumber =
     safeText(current.final_selected_quote_id) !== ""
@@ -89,20 +151,64 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     contactRevealed &&
     finalSelectedQuoteId !== "" &&
     revealStatuses.has(safeText(current.quote_status, "collecting"));
+  const finalSelectedQuoteSource =
+    safeText(current.final_selected_quote_source) === "guest" ? "guest" : "member";
+  const memberPartnerIds = [
+    ...new Set(
+      (Array.isArray(memberRows) ? memberRows : [])
+        .map((raw) => safeText((raw as Record<string, unknown>).partner_driver_id))
+        .filter(Boolean),
+    ),
+  ];
+  const memberAuthUserIds = [
+    ...new Set(
+      (Array.isArray(memberRows) ? memberRows : [])
+        .map((raw) => safeText((raw as Record<string, unknown>).auth_user_id))
+        .filter(Boolean),
+    ),
+  ];
+  const [{ data: partnerRows }, { data: authPartnerRows }] = await Promise.all([
+    memberPartnerIds.length > 0
+      ? admin
+          .from("partner_drivers")
+          .select("id, company_name, manager_name, phone")
+          .in("id", memberPartnerIds)
+      : Promise.resolve({ data: [] }),
+    memberAuthUserIds.length > 0
+      ? admin
+          .from("partner_drivers")
+          .select("auth_user_id, company_name, manager_name, phone")
+          .in("auth_user_id", memberAuthUserIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const partnerById = new Map(
+    (Array.isArray(partnerRows) ? partnerRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
+    ]),
+  );
+  const partnerByAuthUserId = new Map(
+    (Array.isArray(authPartnerRows) ? authPartnerRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).auth_user_id),
+      row as Record<string, unknown>,
+    ]),
+  );
   const quotes = [
     ...(Array.isArray(memberRows) ? memberRows : []).map((raw) => {
       const row = raw as Record<string, unknown>;
-      const partnerRaw = Array.isArray(row.partner_drivers)
-        ? row.partner_drivers[0]
-        : row.partner_drivers;
-      const partner = partnerRaw as Record<string, unknown> | null | undefined;
+      const partner =
+        partnerById.get(safeText(row.partner_driver_id)) ??
+        partnerByAuthUserId.get(safeText(row.auth_user_id)) ??
+        {};
       return {
         source: "member",
         id: safeText(row.id),
         company_name: safeText(partner?.company_name, "회원 기사"),
         driver_name: safeText(partner?.manager_name, "—"),
         phone:
-          canRevealSelectedContact && safeText(row.id) === finalSelectedQuoteId
+          canRevealSelectedContact &&
+          finalSelectedQuoteSource === "member" &&
+          safeText(row.id) === finalSelectedQuoteId
             ? safeText(partner?.phone)
             : "",
         price: parseInteger(row.price),
@@ -119,7 +225,10 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
+        memo: safeText(row.message),
+        message: safeText(row.message),
         status: safeText(row.status, "submitted"),
+        created_at: safeText(row.created_at),
       };
     }),
     ...(Array.isArray(guestRows) ? guestRows : []).map((raw) => {
@@ -130,7 +239,9 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         company_name: safeText(row.guest_company_name, "비회원 기사"),
         driver_name: safeText(row.guest_driver_name, "—"),
         phone:
-          canRevealSelectedContact && safeText(row.id) === finalSelectedQuoteId
+          canRevealSelectedContact &&
+          finalSelectedQuoteSource === "guest" &&
+          safeText(row.id) === finalSelectedQuoteId
             ? safeText(row.guest_phone)
             : "",
         price: parseInteger(row.price),
@@ -138,10 +249,22 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         sponsor_quote_enabled: false,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
+        memo: safeText(row.message),
+        message: safeText(row.message),
         status: safeText(row.status, safeText(row.match_result, "submitted")),
+        created_at: safeText(row.created_at),
       };
     }),
-  ];
+  ].sort((a, b) => {
+    const aSupport = a.member_price != null ? 0 : 1;
+    const bSupport = b.member_price != null ? 0 : 1;
+    if (aSupport !== bSupport) return aSupport - bSupport;
+    const priceDiff = comparablePrice(a) - comparablePrice(b);
+    if (priceDiff !== 0) return priceDiff;
+    const rawPriceDiff = (a.price ?? Number.MAX_SAFE_INTEGER) - (b.price ?? Number.MAX_SAFE_INTEGER);
+    if (rawPriceDiff !== 0) return rawPriceDiff;
+    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+  });
   const { data: sponsorPreapprovals } = await admin
     .from("sponsor_preapprovals")
     .select("status, approved_support_amount, estimated_support_amount")
