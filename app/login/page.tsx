@@ -11,6 +11,7 @@ import {
   createAdminBrowserClient,
   createClientBrowserClient,
   createPartnerBrowserClient,
+  createSponsorBrowserClient,
   createTransientBrowserClient,
 } from "@/lib/supabase";
 
@@ -20,6 +21,7 @@ function routeForRole(role: string | null | undefined): string {
   const parsed = parseUserRole(role);
   if (parsed === USER_ROLES.ADMIN) return "/admin";
   if (parsed === USER_ROLES.DRIVER) return "/partner/dashboard";
+  if (parsed === USER_ROLES.SPONSOR) return "/sponsor/dashboard";
   if (parsed === USER_ROLES.CLIENT) return "/client/dashboard";
   return "/partner/login";
 }
@@ -38,6 +40,7 @@ export default function LoginPage() {
         for (const supabase of [
           createAdminBrowserClient(),
           createPartnerBrowserClient(),
+          createSponsorBrowserClient(),
           createClientBrowserClient(),
         ]) {
           const {
@@ -105,6 +108,8 @@ export default function LoginPage() {
           ? createAdminBrowserClient()
           : role === USER_ROLES.DRIVER
             ? createPartnerBrowserClient()
+            : role === USER_ROLES.SPONSOR
+              ? createSponsorBrowserClient()
             : createClientBrowserClient();
       const { error: roleSignInError } = await roleSupabase.auth.signInWithPassword({
         email: authEmail,

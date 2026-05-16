@@ -52,6 +52,10 @@ export function createPartnerBrowserClient() {
   return createRoleSupabaseClient("partner");
 }
 
+export function createSponsorBrowserClient() {
+  return createRoleSupabaseClient("sponsor");
+}
+
 export function createClientBrowserClient() {
   return createRoleSupabaseClient("client");
 }

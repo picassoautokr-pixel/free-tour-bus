@@ -22,6 +22,7 @@ import {
   type Profile,
 } from "@/lib/profile";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
+import { SponsorCompaniesAdmin } from "@/components/admin/SponsorCompaniesAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createAdminBrowserClient } from "@/lib/supabase";
 
@@ -2176,12 +2177,12 @@ export default function AdminApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [adminSectionTab, setAdminSectionTab] = useState<"bus" | "partner">(
+  const [adminSectionTab, setAdminSectionTab] = useState<"bus" | "partner" | "sponsor">(
     "bus",
   );
 
   useEffect(() => {
-    if (adminSectionTab !== "partner") return;
+    if (adminSectionTab === "bus") return;
     setDetailOpen(false);
     setSelected(null);
     setSmsOpen(false);
@@ -2391,12 +2392,14 @@ export default function AdminApplicationsPage() {
       "driver_quotes",
       "guest_driver_quotes",
       "partner_drivers",
+      "sponsor_companies",
       "notification_logs",
     ],
     debounceMs: 800,
     onRefresh: () => {
       void load();
       window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+      window.dispatchEvent(new CustomEvent("sponsor-admin-refresh"));
     },
   });
 
@@ -2829,8 +2832,10 @@ export default function AdminApplicationsPage() {
             </div>
             <p className="mt-0.5 text-sm text-slate-500">
               {adminSectionTab === "bus"
-                ? "클라이언트 신청과 후원업체 가승인 상태를 관리합니다."
-                : "기사 등록과 견적 참여 상태를 관리합니다."}
+                ? "클라이언트 신청과 지원 가능 여부를 관리합니다."
+                : adminSectionTab === "partner"
+                  ? "기사 등록과 견적 참여 상태를 관리합니다."
+                  : "후원업체 신청과 후원조건 승인 상태를 관리합니다."}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {["클라이언트", "기사", "후원업체", "관리자"].map((role) => (
@@ -3006,6 +3011,8 @@ export default function AdminApplicationsPage() {
               onClick={() => {
                 if (adminSectionTab === "partner") {
                   window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
+                } else if (adminSectionTab === "sponsor") {
+                  window.dispatchEvent(new CustomEvent("sponsor-admin-refresh"));
                 } else {
                   void load();
                 }
@@ -3058,10 +3065,25 @@ export default function AdminApplicationsPage() {
           >
             기사 관리
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminSectionTab === "sponsor"}
+            onClick={() => setAdminSectionTab("sponsor")}
+            className={`min-h-11 flex-1 rounded-xl px-4 py-2.5 text-sm font-black transition sm:flex-none ${
+              adminSectionTab === "sponsor"
+                ? "bg-[#1e3a5f] text-white shadow-sm"
+                : "bg-transparent text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            후원업체 관리
+          </button>
         </div>
 
         {adminSectionTab === "partner" ? (
           <PartnerDriversAdmin setToast={setToast} />
+        ) : adminSectionTab === "sponsor" ? (
+          <SponsorCompaniesAdmin setToast={setToast} />
         ) : (
           <>
         <QuoteAutomationSettingsCard />

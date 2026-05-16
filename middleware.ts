@@ -26,7 +26,9 @@ export async function middleware(request: NextRequest) {
 
   const authStorageKey = pathname.startsWith("/partner/")
     ? SUPABASE_AUTH_STORAGE_KEYS.partner
-    : SUPABASE_AUTH_STORAGE_KEYS.admin;
+    : pathname.startsWith("/sponsor/")
+      ? SUPABASE_AUTH_STORAGE_KEYS.sponsor
+      : SUPABASE_AUTH_STORAGE_KEYS.admin;
 
   const supabase = createServerClient(url, anonKey, {
     cookieOptions: {
@@ -52,6 +54,8 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     if (pathname.startsWith("/partner/")) {
       redirectUrl.pathname = "/partner/login";
+    } else if (pathname.startsWith("/sponsor/")) {
+      redirectUrl.pathname = "/sponsor/login";
     } else {
       redirectUrl.pathname = "/admin/login";
     }
@@ -63,5 +67,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/partner/dashboard/:path*", "/partner/change-password"],
+  matcher: [
+    "/admin/:path*",
+    "/partner/dashboard/:path*",
+    "/partner/change-password",
+    "/sponsor/dashboard/:path*",
+  ],
 };

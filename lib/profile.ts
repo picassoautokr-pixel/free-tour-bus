@@ -17,6 +17,7 @@ export type Profile = {
   /** DB text — 파싱은 parseUserRole */
   role: string;
   partner_driver_id: string | null;
+  sponsor_company_id?: string | null;
 };
 
 export type AdminRoleResolution = {
@@ -42,7 +43,7 @@ export async function fetchProfileForAuthUser(
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, user_id, created_at, name, phone, email, role, partner_driver_id",
+        "id, user_id, created_at, name, phone, email, role, partner_driver_id, sponsor_company_id",
       )
       .eq("user_id", authUserId)
       .maybeSingle();

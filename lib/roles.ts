@@ -1,10 +1,11 @@
 /**
  * 서비스 역할 — profiles.role 및 향후 권한 검사용.
- * (client: 일반 고객, driver: 제휴 기사, admin: 관리자)
+ * (client: 일반 고객, driver: 제휴 기사, sponsor: 후원업체, admin: 관리자)
  */
 export const USER_ROLES = {
   CLIENT: "client",
   DRIVER: "driver",
+  SPONSOR: "sponsor",
   ADMIN: "admin",
 } as const;
 
@@ -28,4 +29,8 @@ export function isDriverRole(role: string | null | undefined): boolean {
 
 export function isClientRole(role: string | null | undefined): boolean {
   return parseUserRole(role) === USER_ROLES.CLIENT;
+}
+
+export function isSponsorRole(role: string | null | undefined): boolean {
+  return parseUserRole(role) === USER_ROLES.SPONSOR;
 }
