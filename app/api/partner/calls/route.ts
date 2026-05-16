@@ -26,6 +26,11 @@ type DriverContext =
       partnerDriverId: string;
       serviceRegions: string[];
       phoneDigits: string;
+      driverInfo: {
+        company_name: string;
+        manager_name: string;
+        phone: string;
+      };
     }
   | {
       ok: false;
@@ -85,7 +90,7 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
     | null
     | undefined;
   if (safeText(p?.role, "").toLowerCase() !== USER_ROLES.DRIVER) {
-    return { ok: false, status: 403, error: "기사 계정으로 로그인해 주세요." };
+    return { ok: false, status: 403, error: "제휴기사 계정으로 로그인해주세요." };
   }
 
   const partnerDriverId = safeText(p?.partner_driver_id, "");
@@ -99,7 +104,7 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
 
   const { data: driver, error: driverError } = await admin
     .from("partner_drivers")
-    .select("id, status, service_regions, phone")
+    .select("id, status, service_regions, company_name, manager_name, name, phone")
     .eq("id", partnerDriverId)
     .eq("auth_user_id", user.id)
     .maybeSingle();
@@ -121,6 +126,13 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
     userId: user.id,
     partnerDriverId,
     phoneDigits,
+    driverInfo: {
+      company_name: safeText((driver as { company_name?: unknown } | null)?.company_name, ""),
+      manager_name:
+        safeText((driver as { manager_name?: unknown } | null)?.manager_name, "") ||
+        safeText((driver as { name?: unknown } | null)?.name, ""),
+      phone: safeText((driver as { phone?: unknown } | null)?.phone, ""),
+    },
     serviceRegions: normalizeServiceRegions(
       (driver as { service_regions?: unknown } | null)?.service_regions,
     ),
@@ -454,5 +466,6 @@ export async function GET() {
     calls,
     service_regions: driver.serviceRegions,
     service_regions_required: driver.serviceRegions.length === 0,
+    driver: driver.driverInfo,
   });
 }

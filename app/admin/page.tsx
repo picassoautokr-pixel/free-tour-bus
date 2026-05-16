@@ -2520,6 +2520,12 @@ export default function AdminApplicationsPage() {
         setAdminEmail(user?.email ?? null);
         if (user?.id) {
           const p = await fetchProfileForAuthUser(supabase, user.id);
+          const access = resolveAdminRoleAccess(p);
+          if (p && !access.isVerifiedAdmin) {
+            await supabase.auth.signOut();
+            window.location.href = "/admin/login";
+            return;
+          }
           setSessionProfile(p);
         } else {
           setSessionProfile(null);

@@ -120,6 +120,12 @@ export default function SponsorDashboardPage() {
         calls?: Call[];
       };
       if (!res.ok) {
+        if ([401, 403, 404].includes(res.status)) {
+          const supabase = createSponsorBrowserClient();
+          await supabase.auth.signOut();
+          router.replace("/sponsor/login");
+          return;
+        }
         setMessage(json.error ?? "후원업체 정보를 불러오지 못했습니다.");
         return;
       }
@@ -145,7 +151,7 @@ export default function SponsorDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void load();
@@ -370,6 +376,9 @@ export default function SponsorDashboardPage() {
               <h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-slate-950">
                 {safeText(company?.company_name, "후원업체")}
               </h1>
+              <p className="mt-1 text-sm font-bold text-slate-600">
+                후원업체 · {safeText(company?.manager_name, "담당자 미등록")}
+              </p>
               <p className="mt-1 text-xs font-bold text-slate-500">
                 {realtimeStatusLabel(realtimeStatus)}
               </p>

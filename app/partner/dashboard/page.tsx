@@ -107,6 +107,12 @@ type PartnerCall = {
   my_quote: PartnerMyQuote | null;
 };
 
+type PartnerDriverInfo = {
+  company_name: string;
+  manager_name: string;
+  phone: string;
+};
+
 type QuoteForm = {
   price: string;
   supportDiscountAmount: string;
@@ -407,6 +413,7 @@ export default function PartnerDashboardPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [calls, setCalls] = useState<PartnerCall[]>([]);
+  const [driverInfo, setDriverInfo] = useState<PartnerDriverInfo | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("new");
   const [callsLoading, setCallsLoading] = useState(false);
   const [callsError, setCallsError] = useState<string | null>(null);
@@ -544,10 +551,16 @@ export default function PartnerDashboardPage() {
         error?: string;
         calls?: PartnerCall[];
         service_regions?: unknown;
+        driver?: PartnerDriverInfo;
       };
       if (!res.ok) {
         setCallsError(json.error ?? "대기중인 콜을 불러오지 못했습니다.");
         setCalls([]);
+        if (res.status === 401 || res.status === 403) {
+          const supabase = createPartnerBrowserClient();
+          await supabase.auth.signOut();
+          router.replace("/partner/login?error=forbidden");
+        }
         return;
       }
       const nextCalls = Array.isArray(json.calls) ? json.calls : [];
@@ -570,6 +583,7 @@ export default function PartnerDashboardPage() {
       }
       knownCallIdsRef.current = nextIds;
       setCalls(nextCalls);
+      setDriverInfo(json.driver ?? null);
       const nextRegions = normalizeServiceRegions(json.service_regions);
       setServiceRegions(nextRegions);
       setSavedServiceRegions(nextRegions);
@@ -579,7 +593,7 @@ export default function PartnerDashboardPage() {
     } finally {
       setCallsLoading(false);
     }
-  }, [handleNewCallArrived]);
+  }, [handleNewCallArrived, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1014,6 +1028,17 @@ export default function PartnerDashboardPage() {
               <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-500">
                 신규 예약 신청만 표시됩니다. 고객 연락처와 이름은 아직 공개하지 않습니다.
               </p>
+              {driverInfo ? (
+                <div className="mt-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-950 ring-1 ring-blue-100">
+                  <p className="text-xs font-black text-blue-600">로그인한 제휴기사</p>
+                  <p className="mt-1">
+                    {driverInfo.company_name || "업체명 미등록"} · {driverInfo.manager_name || "담당자 미등록"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-blue-800">
+                    {driverInfo.phone || "전화번호 미등록"}
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2 sm:justify-end">
               <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { fetchProfileForAuthUser, resolveAdminRoleAccess } from "@/lib/profile";
 import { createAdminBrowserClient } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
@@ -28,7 +29,15 @@ export default function AdminLoginPage() {
       try {
         const supabase = createAdminBrowserClient();
         const { data } = await supabase.auth.getUser();
-        if (data.user) router.replace("/admin");
+        if (data.user?.id) {
+          const profile = await fetchProfileForAuthUser(supabase, data.user.id);
+          if (profile && !resolveAdminRoleAccess(profile).isVerifiedAdmin) {
+            await supabase.auth.signOut();
+            setErrorMessage("관리자 계정으로 로그인해주세요.");
+            return;
+          }
+          router.replace("/admin");
+        }
       } catch {
         // ignore
       }
@@ -48,6 +57,18 @@ export default function AdminLoginPage() {
       if (error) {
         setErrorMessage(error.message);
         return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) {
+        const profile = await fetchProfileForAuthUser(supabase, user.id);
+        if (profile && !resolveAdminRoleAccess(profile).isVerifiedAdmin) {
+          await supabase.auth.signOut();
+          setErrorMessage("관리자 계정으로 로그인해주세요.");
+          return;
+        }
       }
 
       router.replace(nextPath);

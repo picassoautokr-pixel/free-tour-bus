@@ -44,6 +44,8 @@ export function createRoleSupabaseClient(
   });
 }
 
+export const createRoleBrowserClient = createRoleSupabaseClient;
+
 export function createAdminBrowserClient() {
   return createRoleSupabaseClient("admin");
 }

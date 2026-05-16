@@ -247,9 +247,7 @@ export default function PartnerLoginPage() {
     try {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get("error") === "forbidden") {
-        setErrorMessage(
-          "제휴 기사 전용 영역입니다. 권한이 있는 계정으로 로그인해 주세요.",
-        );
+        setErrorMessage("제휴기사 계정으로 로그인해주세요.");
         const url = new URL(window.location.href);
         url.searchParams.delete("error");
         window.history.replaceState({}, "", url.pathname + url.search);
