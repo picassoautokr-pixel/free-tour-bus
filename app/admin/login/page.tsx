@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { fetchProfileForAuthUser, resolveAdminRoleAccess } from "@/lib/profile";
+import { roleDashboardPath } from "@/lib/role-hosts";
 import { createAdminBrowserClient } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
@@ -36,7 +37,7 @@ export default function AdminLoginPage() {
             setErrorMessage("관리자 계정으로 로그인해주세요.");
             return;
           }
-          router.replace("/admin");
+          router.replace(roleDashboardPath("admin"));
         }
       } catch {
         // ignore
@@ -71,7 +72,7 @@ export default function AdminLoginPage() {
         }
       }
 
-      router.replace(nextPath);
+      router.replace(nextPath === "/admin" || nextPath === "/" ? roleDashboardPath("admin") : nextPath);
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : String(e));
     } finally {

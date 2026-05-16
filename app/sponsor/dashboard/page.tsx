@@ -10,6 +10,7 @@ import {
   sponsorSupportTypeLabel,
   safeText,
 } from "@/lib/sponsor";
+import { roleLoginPath } from "@/lib/role-hosts";
 import { formatRouteWithStopovers } from "@/lib/stopovers";
 import { createSponsorBrowserClient } from "@/lib/supabase";
 import {
@@ -123,7 +124,7 @@ export default function SponsorDashboardPage() {
         if ([401, 403, 404].includes(res.status)) {
           const supabase = createSponsorBrowserClient();
           await supabase.auth.signOut();
-          router.replace("/sponsor/login");
+          router.replace(roleLoginPath("sponsor"));
           return;
         }
         setMessage(json.error ?? "후원업체 정보를 불러오지 못했습니다.");
@@ -243,7 +244,7 @@ export default function SponsorDashboardPage() {
   const logout = async () => {
     const supabase = createSponsorBrowserClient();
     await supabase.auth.signOut();
-    router.replace("/sponsor/login");
+    router.replace(roleLoginPath("sponsor"));
   };
 
   const tabs = useMemo(

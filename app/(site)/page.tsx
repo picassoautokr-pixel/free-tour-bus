@@ -9,6 +9,7 @@ import {
   inferDepartureRegion,
   type ServiceRegion,
 } from "@/lib/regions";
+import { roleRegisterUrl } from "@/lib/role-hosts";
 import { parseStopovers } from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
 
@@ -36,6 +37,9 @@ const TIME_SLOT_OPTIONS = [
   { value: "negotiated", label: "협의", db: "협의" },
   { value: "custom", label: "직접입력", db: "" },
 ] as const;
+
+const partnerRegisterHref = roleRegisterUrl("partner");
+const sponsorRegisterHref = roleRegisterUrl("sponsor");
 
 type DepartureTimeSlot = (typeof TIME_SLOT_OPTIONS)[number]["value"];
 
@@ -533,14 +537,14 @@ export default function Home() {
         </p>
         <div className="relative mt-6 grid gap-2 sm:mx-auto sm:max-w-[28rem] sm:grid-cols-2">
           <Link
-            href="/partner/register"
+            href={partnerRegisterHref}
             className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-2xl border border-blue-200/90 bg-white/80 px-4 py-2.5 text-center text-sm font-black leading-5 tracking-[-0.02em] text-blue-800 shadow-sm shadow-blue-900/5 ring-1 ring-blue-100/80 transition hover:border-blue-300 hover:bg-blue-50/90 hover:ring-blue-200/80 active:scale-[0.99]"
             style={{ WebkitTapHighlightColor: "transparent" }}
           >
             기사님/운수업체 제휴하기
           </Link>
           <Link
-            href="/sponsor/register"
+            href={sponsorRegisterHref}
             className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-2xl border border-emerald-200/90 bg-white/80 px-4 py-2.5 text-center text-sm font-black leading-5 tracking-[-0.02em] text-emerald-800 shadow-sm shadow-emerald-900/5 ring-1 ring-emerald-100/80 transition hover:border-emerald-300 hover:bg-emerald-50/90 hover:ring-emerald-200/80 active:scale-[0.99]"
             style={{ WebkitTapHighlightColor: "transparent" }}
           >

@@ -31,6 +31,38 @@ You can start editing the landing page at `app/(site)/page.tsx`. The page auto-u
 
 관리자 신청 목록(STEP 1): 개발 서버 실행 후 [http://localhost:3000/admin](http://localhost:3000/admin) · 소스 `app/admin/page.tsx`.
 
+## Role Subdomains
+
+운영 배포에서는 역할별 대시보드를 아래 서브도메인으로 연결합니다. 기존 path 라우팅(`/partner/login`, `/sponsor/login`, `/admin`)도 계속 동작합니다.
+
+- `https://www.free-bus.co.kr` 또는 `https://free-bus.co.kr`: 고객 메인, 견적 신청, 고객 조회
+- `https://partner.free-bus.co.kr`: 제휴기사 로그인/대시보드
+- `https://sponsor.free-bus.co.kr`: 후원업체 로그인/대시보드
+- `https://admin.free-bus.co.kr`: 관리자 로그인/대시보드
+
+필요 환경변수:
+
+```bash
+NEXT_PUBLIC_SITE_URL=https://www.free-bus.co.kr
+NEXT_PUBLIC_PARTNER_URL=https://partner.free-bus.co.kr
+NEXT_PUBLIC_SPONSOR_URL=https://sponsor.free-bus.co.kr
+NEXT_PUBLIC_ADMIN_URL=https://admin.free-bus.co.kr
+```
+
+Supabase Auth Redirect URLs에 아래 패턴을 등록해야 합니다.
+
+- `https://www.free-bus.co.kr/**`
+- `https://free-bus.co.kr/**`
+- `https://partner.free-bus.co.kr/**`
+- `https://sponsor.free-bus.co.kr/**`
+- `https://admin.free-bus.co.kr/**`
+
+Vercel 프로젝트 도메인에도 아래를 추가해야 합니다.
+
+- `partner.free-bus.co.kr`
+- `sponsor.free-bus.co.kr`
+- `admin.free-bus.co.kr`
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

@@ -18,6 +18,7 @@ import {
   type ServiceRegion,
 } from "@/lib/regions";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
+import { isRoleHost, roleLoginPath } from "@/lib/role-hosts";
 import {
   formatRouteWithStopovers,
   formatStopovers,
@@ -559,7 +560,7 @@ export default function PartnerDashboardPage() {
         if (res.status === 401 || res.status === 403) {
           const supabase = createPartnerBrowserClient();
           await supabase.auth.signOut();
-          router.replace("/partner/login?error=forbidden");
+          router.replace(`${roleLoginPath("partner")}?error=forbidden`);
         }
         return;
       }
@@ -605,7 +606,7 @@ export default function PartnerDashboardPage() {
         } = await supabase.auth.getUser();
 
         if (!user?.id) {
-          router.replace("/partner/login");
+          router.replace(roleLoginPath("partner"));
           return;
         }
 
@@ -614,7 +615,7 @@ export default function PartnerDashboardPage() {
 
         if (role !== USER_ROLES.DRIVER) {
           await supabase.auth.signOut();
-          router.replace("/partner/login?error=forbidden");
+          router.replace(`${roleLoginPath("partner")}?error=forbidden`);
           return;
         }
 
@@ -625,7 +626,7 @@ export default function PartnerDashboardPage() {
         );
         if (!approvedOk) {
           await supabase.auth.signOut();
-          router.replace("/partner/login");
+          router.replace(roleLoginPath("partner"));
           return;
         }
 
@@ -648,7 +649,7 @@ export default function PartnerDashboardPage() {
               row.password_changed_at != null &&
               String(row.password_changed_at).trim() !== "";
             if (issued && !changed) {
-              router.replace("/partner/change-password");
+              router.replace(isRoleHost("partner") ? "/change-password" : "/partner/change-password");
               return;
             }
           }
@@ -659,7 +660,7 @@ export default function PartnerDashboardPage() {
           void loadCalls();
         }
       } catch {
-        router.replace("/partner/login");
+        router.replace(roleLoginPath("partner"));
       }
     })();
     return () => {
@@ -785,7 +786,7 @@ export default function PartnerDashboardPage() {
       const supabase = createPartnerBrowserClient();
       await supabase.auth.signOut();
     } finally {
-      router.replace("/partner/login");
+      router.replace(roleLoginPath("partner"));
     }
   };
 

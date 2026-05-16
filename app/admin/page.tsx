@@ -21,6 +21,7 @@ import {
   resolveAdminRoleAccess,
   type Profile,
 } from "@/lib/profile";
+import { roleLoginPath } from "@/lib/role-hosts";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
 import { SponsorCompaniesAdmin } from "@/components/admin/SponsorCompaniesAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
@@ -2523,7 +2524,7 @@ export default function AdminApplicationsPage() {
           const access = resolveAdminRoleAccess(p);
           if (p && !access.isVerifiedAdmin) {
             await supabase.auth.signOut();
-            window.location.href = "/admin/login";
+            window.location.href = roleLoginPath("admin");
             return;
           }
           setSessionProfile(p);
@@ -2544,7 +2545,7 @@ export default function AdminApplicationsPage() {
       const supabase = createAdminBrowserClient();
       await supabase.auth.signOut();
     } finally {
-      window.location.href = "/admin/login";
+      window.location.href = roleLoginPath("admin");
     }
   }, []);
 

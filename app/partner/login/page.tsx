@@ -12,6 +12,7 @@ import {
   resolvePartnerLoginEmail,
 } from "@/lib/partner-phone-login";
 import { fetchProfileForAuthUser } from "@/lib/profile";
+import { isRoleHost, roleDashboardPath } from "@/lib/role-hosts";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import { createPartnerBrowserClient } from "@/lib/supabase";
 
@@ -223,10 +224,10 @@ export default function PartnerLoginPage() {
               profile?.partner_driver_id,
             )
           ) {
-            router.replace("/partner/change-password");
+            router.replace(isRoleHost("partner") ? "/change-password" : "/partner/change-password");
             return;
           }
-          router.replace("/partner/dashboard");
+          router.replace(roleDashboardPath("partner"));
           return;
         }
 
@@ -325,14 +326,16 @@ export default function PartnerLoginPage() {
       if (
         await needsTemporaryPasswordChange(supabase, profile?.partner_driver_id)
       ) {
-        router.replace("/partner/change-password");
+        router.replace(isRoleHost("partner") ? "/change-password" : "/partner/change-password");
         return;
       }
 
       const dest =
         nextPath.startsWith("/partner/") && nextPath !== "/partner/login"
           ? nextPath
-          : "/partner/dashboard";
+          : nextPath === "/dashboard" && isRoleHost("partner")
+            ? "/dashboard"
+            : roleDashboardPath("partner");
       router.replace(dest);
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : String(e));

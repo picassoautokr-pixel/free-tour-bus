@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { roleDashboardPath } from "@/lib/role-hosts";
 import { createSponsorBrowserClient } from "@/lib/supabase";
 
 export default function SponsorLoginPage() {
@@ -40,7 +41,7 @@ export default function SponsorLoginPage() {
         );
         return;
       }
-      router.replace("/sponsor/dashboard");
+      router.replace(roleDashboardPath("sponsor"));
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
