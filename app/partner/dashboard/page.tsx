@@ -4,10 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  ContractPreview,
-  type ContractPreviewData,
-} from "@/components/ContractPreview";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -145,9 +141,9 @@ const DASHBOARD_TABS: Array<{
   label: string;
   empty: string;
 }> = [
-  { id: "new", label: "신규 견적요청", empty: "현재 신규 견적이 없습니다." },
-  { id: "quoted", label: "내가 제출한 견적", empty: "제출한 견적이 없습니다." },
-  { id: "matched", label: "내가 매칭된 견적", empty: "매칭된 견적이 없습니다." },
+  { id: "new", label: "가승인 대기", empty: "현재 가승인 대기 콜이 없습니다." },
+  { id: "quoted", label: "제출한 견적", empty: "제출한 견적이 없습니다." },
+  { id: "matched", label: "매칭 확정", empty: "매칭 확정된 콜이 없습니다." },
 ];
 
 function formatDate(value: string): string {
@@ -232,48 +228,11 @@ function canRevealCustomerInfo(call: PartnerCall): boolean {
   );
 }
 
-function contractPreviewDataForCall(call: PartnerCall): ContractPreviewData | null {
-  if (!call.my_quote) return null;
-  return {
-    applicationId: call.id,
-    contractNumber: call.contract_number,
-    contractPdfGeneratedAt: call.contract_pdf_generated_at,
-    contractStatus: call.contract_status || "pending",
-    clientContractConfirmedAt: call.client_contract_confirmed_at,
-    driverContractConfirmedAt: call.driver_contract_confirmed_at,
-    depositStatus: call.deposit_status,
-    clientName: call.customer_name ?? "",
-    clientPhone: call.customer_phone ?? "",
-    receiptNumber: call.receipt_number,
-    driverCompanyName: "내 견적",
-    driverManagerName: "제휴기사",
-    driverPhone: "",
-    vehicleType: call.my_quote.vehicle_type,
-    departure: call.departure,
-    stopovers: call.stopovers,
-    destination: call.destination,
-    departureDateTime: formatDeparture(call),
-    tripType: call.trip_type,
-    busGrade: call.bus_grade,
-    passengerCount: call.passenger_count,
-    requestMessage: call.request_message ?? "",
-    normalPrice: call.my_quote.price,
-    memberPrice: call.my_quote.member_price ?? call.my_quote.sponsor_discounted_price ?? null,
-    estimatedSupportAmount:
-      call.my_quote.estimated_support_amount ?? call.my_quote.sponsor_support_amount ?? null,
-    supportDiscountAmount:
-      call.my_quote.support_discount_amount ?? call.my_quote.sponsor_support_amount ?? null,
-    driverSupportAmount: call.my_quote.driver_support_amount ?? null,
-    clientRewardAmount: call.my_quote.client_reward_amount ?? null,
-    depositAmount: call.deposit_amount,
-  };
-}
-
 function quoteStatusLabel(call: PartnerCall): string {
   if (isMatchedCall(call)) {
     return call.final_selected_quote_id.trim() !== ""
-      ? "최종 확정"
-      : "자동선정 후보";
+      ? "매칭 확정"
+      : "가승인 후보";
   }
   if (call.my_quote != null) return "견적 검토중";
   return "제출 전";
@@ -358,7 +317,7 @@ function referralStatusLabel(status: ReferralResult["status"]): string {
 
 function buildReferralPreview(call: PartnerCall): string {
   const stopoverText = formatStopovers(call.stopovers);
-  return `[무료관광버스]
+  return `[지원금 전세버스]
 전세버스 견적요청이 전달되었습니다.
 
 출발: ${call.departure}
@@ -455,19 +414,6 @@ export default function PartnerDashboardPage() {
   const [customerDetailCall, setCustomerDetailCall] = useState<PartnerCall | null>(
     null,
   );
-  const [contractDetailCall, setContractDetailCall] = useState<PartnerCall | null>(
-    null,
-  );
-  const [contractChecks, setContractChecks] = useState({
-    preview: false,
-    route: false,
-    deposit: false,
-    support: false,
-  });
-  const [contractPreviewCall, setContractPreviewCall] = useState<PartnerCall | null>(
-    null,
-  );
-  const [contractBusy, setContractBusy] = useState(false);
   const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
   const [referralForm, setReferralForm] =
     useState<ReferralForm>(emptyReferralForm);
@@ -1024,32 +970,6 @@ export default function PartnerDashboardPage() {
     }
   };
 
-  const confirmDriverContract = async (call: PartnerCall) => {
-    setContractBusy(true);
-    setQuoteMessage(null);
-    try {
-      const res = await fetch("/api/partner/contract-confirm", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: call.id }),
-      });
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setQuoteMessage(json.error ?? "계약 확인에 실패했습니다.");
-        return;
-      }
-      setQuoteMessage("기사 계약 확인이 완료되었습니다.");
-      setContractDetailCall(null);
-      setContractChecks({ preview: false, route: false, deposit: false, support: false });
-      void loadCalls();
-    } catch (e) {
-      setQuoteMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setContractBusy(false);
-    }
-  };
-
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f3f8fb] text-sm font-semibold text-slate-500">
@@ -1533,10 +1453,12 @@ export default function PartnerDashboardPage() {
                     </div>
                     <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
                       <dt className="text-[11px] font-bold text-slate-400">
-                        계약상태
+                        지원금 상태
                       </dt>
                       <dd className="mt-1 font-semibold text-slate-800">
-                        {customerDetailCall.contract_status || "—"}
+                        {customerDetailCall.final_selected_quote_id.trim() !== ""
+                          ? "매칭 확정"
+                          : "가승인 검토"}
                       </dd>
                     </div>
                   </div>
@@ -1559,117 +1481,6 @@ export default function PartnerDashboardPage() {
                 >
                   닫기
                 </button>
-              </div>
-            </div>
-          ) : null}
-
-          {contractDetailCall?.my_quote ? (
-            <div
-              className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="partner-contract-title"
-            >
-              <button
-                type="button"
-                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
-                aria-label="닫기"
-                onClick={() => setContractDetailCall(null)}
-              />
-              <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
-                <h2 id="partner-contract-title" className="text-lg font-black text-slate-950">
-                  전자계약 진행
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setContractPreviewCall(contractDetailCall)}
-                  className="mt-3 min-h-10 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-black text-indigo-900"
-                >
-                  전자계약서 보기
-                </button>
-                <div className="mt-4 space-y-2 text-sm font-semibold text-slate-700">
-                  <p>고객: {contractDetailCall.customer_name || "—"}</p>
-                  <p>전화: {contractDetailCall.customer_phone || "—"}</p>
-                  <p>
-                    운행:{" "}
-                    {formatRouteWithStopovers(
-                      contractDetailCall.departure,
-                      contractDetailCall.stopovers,
-                      contractDetailCall.destination,
-                    )}
-                  </p>
-                  <p>출발일시: {formatDeparture(contractDetailCall)}</p>
-                  <p>내 견적금액: {formatPrice(contractDetailCall.my_quote.price)}</p>
-                  {contractDetailCall.my_quote.member_price != null ? (
-                    <p>지원금 적용가: {formatPrice(contractDetailCall.my_quote.member_price)}</p>
-                  ) : null}
-                  <p>
-                    기사 지원금 예상액:{" "}
-                    {formatPrice(contractDetailCall.my_quote.driver_support_amount ?? null)}
-                  </p>
-                  <p>
-                    고객 감사지원금 예상액:{" "}
-                    {formatPrice(contractDetailCall.my_quote.client_reward_amount ?? null)}
-                  </p>
-                  <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                    예약금/노쇼 정책은 관리자 확인 기준으로 진행됩니다. 양측 확인 완료 후 예약금 입금 대기 상태로 전환됩니다.
-                  </p>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {[
-                    ["preview", "전자계약서 내용을 확인했습니다."],
-                    ["route", "운행 정보와 고객 정보를 확인했습니다."],
-                    ["deposit", "예약금/노쇼 정책을 확인했습니다."],
-                    ["support", "후원업체 지원금은 심사 결과에 따라 변동될 수 있음을 확인했습니다."],
-                  ].map(([key, label]) => (
-                    <label key={key} className="flex gap-2 text-xs font-bold text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={contractChecks[key as keyof typeof contractChecks]}
-                        onChange={(event) =>
-                          setContractChecks((prev) => ({
-                            ...prev,
-                            [key]: event.target.checked,
-                          }))
-                        }
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  disabled={
-                    contractBusy ||
-                    !contractChecks.route ||
-                    !contractChecks.preview ||
-                    !contractChecks.deposit ||
-                    !contractChecks.support ||
-                    contractDetailCall.driver_contract_confirmed_at !== ""
-                  }
-                  onClick={() => void confirmDriverContract(contractDetailCall)}
-                  className="mt-5 flex min-h-12 w-full items-center justify-center rounded-2xl bg-indigo-600 text-sm font-black text-white shadow-sm disabled:opacity-50"
-                  style={tapStyle}
-                >
-                  {contractDetailCall.driver_contract_confirmed_at
-                    ? "기사 확인 완료"
-                    : contractBusy
-                      ? "처리 중…"
-                      : "기사 계약 확인"}
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {contractPreviewCall ? (
-            <div className="fixed inset-0 z-[140] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8 backdrop-blur-[2px]">
-              <div className="w-full max-w-3xl">
-                {contractPreviewDataForCall(contractPreviewCall) ? (
-                  <ContractPreview
-                    data={contractPreviewDataForCall(contractPreviewCall)!}
-                    onClose={() => setContractPreviewCall(null)}
-                  />
-                ) : null}
               </div>
             </div>
           ) : null}
@@ -1821,8 +1632,8 @@ export default function PartnerDashboardPage() {
                     </div>
                     {provisionalSelected ? (
                       <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-950">
-                        <p className="font-black">최저가 자동매칭 되었습니다.</p>
-                        <p>최종 확정 시 고객 연락처가 공개됩니다.</p>
+                        <p className="font-black">지원금 가승인 후보로 선정되었습니다.</p>
+                        <p>매칭 확정 시 고객 연락처가 공개됩니다.</p>
                         <p className="text-xs text-emerald-800">
                           확정매칭은 고객 또는 관리자 선택에 따라 변경될 수 있습니다.
                         </p>
@@ -1867,15 +1678,15 @@ export default function PartnerDashboardPage() {
                           <p className="mt-1 font-black text-emerald-950">
                             {call.final_selected_quote_id.trim() !== ""
                               ? "고객정보 공개 가능"
-                              : "최종 확정 대기"}
+                              : "매칭 확정 대기"}
                           </p>
                         </div>
                         <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
-                          <p className="font-bold text-emerald-600">전자계약</p>
+                          <p className="font-bold text-emerald-600">지원금 가승인</p>
                           <p className="mt-1 font-black text-emerald-950">
-                            {call.contract_status.trim() !== ""
-                              ? call.contract_status
-                              : "최종 확정 후 진행"}
+                            {call.final_selected_quote_id.trim() !== ""
+                              ? "매칭 확정"
+                              : "확정 대기"}
                           </p>
                         </div>
                         <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
@@ -1931,42 +1742,23 @@ export default function PartnerDashboardPage() {
                               title={
                                 customerInfoVisible
                                   ? undefined
-                                  : "최종확정 후 고객정보가 공개됩니다."
+                                  : "매칭 확정 후 고객정보가 공개됩니다."
                               }
                               className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:bg-slate-300"
                               style={tapStyle}
                             >
                               {customerInfoVisible
                                 ? "고객정보 확인"
-                                : "최종확정 후 고객정보가 공개됩니다."}
+                                : "매칭 확정 후 고객정보가 공개됩니다."}
                             </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                setContractChecks({ preview: false, route: false, deposit: false, support: false });
-                                setContractDetailCall(call);
-                              }}
+                              onClick={() => setCustomerDetailCall(call)}
                               disabled={!customerInfoVisible}
                               className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-900 shadow-sm transition hover:bg-blue-100"
                               style={tapStyle}
                             >
-                              전자계약 진행
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setContractPreviewCall(call)}
-                              disabled={!customerInfoVisible}
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-indigo-200 bg-white px-4 text-sm font-black text-indigo-900 shadow-sm transition hover:bg-indigo-50 disabled:opacity-50"
-                              style={tapStyle}
-                            >
-                              전자계약서 보기
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50"
-                              style={tapStyle}
-                            >
-                              계약 완료 상태 보기
+                              지원금 조건 확인
                             </button>
                           </>
                         ) : activeTab === "quoted" ? (

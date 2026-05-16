@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "무료관광버스",
-  description: "무료관광버스 MVP",
+  title: "지원금 기반 전세버스 매칭예약",
+  description: "지원금 가승인 중심 전세버스 매칭예약 플랫폼",
 };
 
 export default function RootLayout({

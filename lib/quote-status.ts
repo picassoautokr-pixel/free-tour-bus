@@ -12,16 +12,16 @@ export type QuoteStatusValue =
   | string;
 
 export const QUOTE_STATUS_LABELS: Record<string, string> = {
-  collecting: "견적 접수중",
-  extended_no_quotes: "자동연장중",
-  closed_by_time: "시간마감",
-  closed_by_quote_count: "견적수마감",
-  closed_by_price: "목표가마감",
-  manually_closed: "수동마감",
-  auto_selected: "최저가 자동매칭",
-  final_selected: "최종확정",
-  contract_pending: "계약대기",
-  completed: "완료",
+  collecting: "지원금 견적 수집",
+  extended_no_quotes: "지원금 조건 재수집",
+  closed_by_time: "가승인 검토중",
+  closed_by_quote_count: "가승인 검토중",
+  closed_by_price: "목표가 도달",
+  manually_closed: "관리자 검토중",
+  auto_selected: "지원금 가승인",
+  final_selected: "매칭 확정",
+  contract_pending: "지원금 가승인",
+  completed: "운행 준비 완료",
 };
 
 export function quoteStatusLabel(status: QuoteStatusValue | null | undefined): string {
@@ -80,16 +80,16 @@ export function quoteCountdownText(params: {
   ) {
     const remaining = formatRemainingText(params.quoteDeadlineAt, nowMs);
     if (!remaining) return null;
-    if (remaining === "곧 진행") return "마감 임박";
-    if (/^\d+분$/.test(remaining)) return `마감 임박 ${remaining}`;
-    return `마감까지 ${remaining}`;
+    if (remaining === "곧 진행") return "가승인 검토 임박";
+    if (/^\d+분$/.test(remaining)) return `가승인 검토 임박 ${remaining}`;
+    return `가승인 검토까지 ${remaining}`;
   }
 
   if (params.quoteStatus === "auto_selected" && params.autoFinalConfirmAt) {
     const remaining = formatRemainingText(params.autoFinalConfirmAt, nowMs);
     if (!remaining) return null;
-    if (remaining === "곧 진행") return "최종확정 임박";
-    return `최종확정까지 ${remaining}`;
+    if (remaining === "곧 진행") return "매칭 확정 임박";
+    return `매칭 확정까지 ${remaining}`;
   }
 
   return null;

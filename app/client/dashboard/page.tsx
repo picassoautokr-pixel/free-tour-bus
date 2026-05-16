@@ -3,10 +3,6 @@
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 
-import {
-  ContractPreview,
-  type ContractPreviewData,
-} from "@/components/ContractPreview";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -83,13 +79,6 @@ export default function ClientDashboardPage() {
   const [quotes, setQuotes] = useState<ClientQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [contractChecks, setContractChecks] = useState({
-    preview: false,
-    route: false,
-    deposit: false,
-    support: false,
-  });
-  const [contractPreviewOpen, setContractPreviewOpen] = useState(false);
   const quoteCountRef = useRef(0);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
@@ -174,32 +163,8 @@ export default function ClientDashboardPage() {
           ? "견적을 재오픈했습니다."
           : action === "select_quote"
             ? "다른 견적으로 자동확정을 변경했습니다."
-            : "최종 확정했습니다. 기사 연락처가 공개됩니다.",
+            : "지원금 가승인을 확정했습니다. 기사 연락처가 공개됩니다.",
       );
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const confirmClientContract = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/client/contract-confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receipt_number: receiptNumber, phone }),
-      });
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setMessage(json.error ?? "계약 확인에 실패했습니다.");
-        return;
-      }
-      setMessage("클라이언트 계약 확인이 완료되었습니다.");
-      setContractChecks({ preview: false, route: false, deposit: false, support: false });
-      await load({ silent: true });
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -220,59 +185,17 @@ export default function ClientDashboardPage() {
     ["final_selected", "contract_pending", "completed"].includes(
       application.quote_status,
     );
-  const canShowContract =
-    contactRevealed && selectedQuote != null && application != null;
-  const contractCheckComplete =
-    contractChecks.preview &&
-    contractChecks.route &&
-    contractChecks.deposit &&
-    contractChecks.support;
-  const rideConfirmed =
-    application?.contract_status === "ride_confirmed" ||
-    application?.deposit_status === "paid" ||
-    application?.deposit_status === "waived";
-  const contractPreviewData: ContractPreviewData | null =
-    application && selectedQuote
-      ? {
-          applicationId: application.id,
-          contractNumber: application.contract_number,
-          contractPdfGeneratedAt: application.contract_pdf_generated_at,
-          contractStatus: application.contract_status || "pending",
-          clientContractConfirmedAt: application.client_contract_confirmed_at,
-          driverContractConfirmedAt: application.driver_contract_confirmed_at,
-          depositStatus: application.deposit_status,
-          clientName: application.applicant_name,
-          clientPhone: application.phone,
-          receiptNumber: application.receipt_number,
-          driverCompanyName: selectedQuote.company_name,
-          driverManagerName: selectedQuote.driver_name,
-          driverPhone: selectedQuote.phone,
-          vehicleType: selectedQuote.vehicle_type,
-          departure: application.departure,
-          stopovers: application.stopovers,
-          destination: application.destination,
-          departureDateTime: [application.departure_date, application.departure_time]
-            .filter(Boolean)
-            .join(" "),
-          tripType: application.trip_type,
-          busGrade: application.bus_grade,
-          passengerCount: application.passenger_count,
-          requestMessage: application.request_message,
-          normalPrice: selectedQuote.price,
-          memberPrice: selectedQuote.member_price,
-          estimatedSupportAmount: selectedQuote.estimated_support_amount ?? null,
-          supportDiscountAmount: selectedQuote.support_discount_amount ?? null,
-          driverSupportAmount: selectedQuote.driver_support_amount ?? null,
-          clientRewardAmount: selectedQuote.client_reward_amount ?? null,
-          depositAmount: application.deposit_amount,
-        }
-      : null;
+  const subsidyPreApproved =
+    application != null &&
+    ["auto_selected", "final_selected", "contract_pending", "completed"].includes(
+      application.quote_status,
+    );
 
   return (
     <main className="min-h-screen bg-[#f3f8fb] px-5 py-10">
       <section className="mx-auto w-full max-w-2xl rounded-[2rem] bg-white p-7 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100">
         <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600">
-          무료관광버스
+          지원금 전세버스
         </p>
         <h1 className="mt-3 text-2xl font-black tracking-[-0.04em] text-slate-950">
           내 견적요청서 조회
@@ -402,92 +325,28 @@ export default function ClientDashboardPage() {
               ) : null}
               <p className="mt-3 text-xs font-semibold leading-5 text-blue-800">
                 {contactRevealed
-                  ? "최종확정되어 기사 연락처가 공개되었습니다."
-                  : "최종확정 시 기사 연락처가 공개됩니다."}
+                  ? "매칭이 확정되어 기사 연락처가 공개되었습니다."
+                  : "지원금 가승인 후 매칭 확정 시 기사 연락처가 공개됩니다."}
               </p>
-              {application.contract_status === "contract_pending" ? (
-                <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-900">
-                  예약금 및 전자계약 절차가 진행됩니다.
+              <div className="mt-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                <p className="text-sm font-black text-emerald-950">
+                  지원금 가승인 진행
                 </p>
-              ) : null}
-              {rideConfirmed ? (
-                <p className="mt-3 rounded-xl bg-emerald-100 px-3 py-3 text-sm font-black text-emerald-950">
-                  배차 확정 완료 · 운행일 전 기사와 최종 확인을 진행해주세요.
-                </p>
-              ) : null}
-              {canShowContract && selectedQuote ? (
-                <div className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
-                  <p className="text-sm font-black text-indigo-950">
-                    전자계약 및 예약금 안내
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setContractPreviewOpen(true)}
-                    className="mt-3 min-h-10 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-black text-indigo-900"
-                  >
-                    전자계약서 보기
-                  </button>
-                  <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
-                    <p>운행: {application.departure} → {application.destination}</p>
-                    <p>
-                      매칭: {selectedQuote.company_name} · {selectedQuote.vehicle_type}
-                    </p>
-                    <p>견적금액: {formatPrice(selectedQuote.price)}</p>
-                    {selectedQuote.member_price != null ? (
-                      <p>지원금 적용 예상가: {formatPrice(selectedQuote.member_price)}</p>
-                    ) : null}
-                    {application.contract_status === "deposit_waiting" ? (
-                      <p className="rounded-xl bg-amber-50 px-3 py-2 font-black text-amber-900">
-                        예약금 입금 대기 · 예약금:{" "}
-                        {application.deposit_amount.toLocaleString("ko-KR")}원
-                      </p>
-                    ) : null}
-                    <p className="text-xs leading-5 text-slate-500">
-                      관리자가 확인 후 예약금 입금 완료 처리합니다. 취소/노쇼 정책은
-                      관리자 안내 기준을 따릅니다.
-                    </p>
+                <div className="mt-3 grid gap-2 text-xs font-bold text-slate-700 sm:grid-cols-3">
+                  <div className="rounded-xl bg-emerald-50 p-3 text-emerald-900">
+                    후원 조건 {subsidyPreApproved ? "가승인" : "검토중"}
                   </div>
-                  <div className="mt-4 space-y-2">
-                    {[
-                      ["preview", "전자계약서 내용을 확인했습니다."],
-                      ["route", "운행 정보와 견적 내용을 확인했습니다."],
-                      ["deposit", "예약금 및 취소/노쇼 정책을 확인했습니다."],
-                      [
-                        "support",
-                        "후원업체 지원금은 심사 결과에 따라 변동 또는 거절될 수 있음을 확인했습니다.",
-                      ],
-                    ].map(([key, label]) => (
-                      <label key={key} className="flex gap-2 text-xs font-bold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={contractChecks[key as keyof typeof contractChecks]}
-                          onChange={(event) =>
-                            setContractChecks((prev) => ({
-                              ...prev,
-                              [key]: event.target.checked,
-                            }))
-                          }
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
+                  <div className="rounded-xl bg-blue-50 p-3 text-blue-900">
+                    기사 견적 {selectedQuote ? "선정됨" : "수집중"}
                   </div>
-                  <button
-                    type="button"
-                    disabled={
-                      loading ||
-                      !contractCheckComplete ||
-                      application.client_contract_confirmed_at !== ""
-                    }
-                    onClick={() => void confirmClientContract()}
-                    className="mt-4 min-h-11 w-full rounded-xl bg-indigo-600 px-4 text-sm font-black text-white disabled:opacity-50"
-                  >
-                    {application.client_contract_confirmed_at
-                      ? "클라이언트 확인 완료"
-                      : "클라이언트 계약 확인"}
-                  </button>
+                  <div className="rounded-xl bg-slate-50 p-3 text-slate-700">
+                    연락처 {contactRevealed ? "공개됨" : "확정 후 공개"}
+                  </div>
                 </div>
-              ) : null}
+                <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+                  지원금 조건과 기사 매칭 상태를 중심으로 확인하면 됩니다.
+                </p>
+              </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
@@ -495,7 +354,7 @@ export default function ClientDashboardPage() {
                   onClick={() => void runAction("final_confirm", selectedQuote ?? undefined)}
                   className="min-h-11 rounded-xl bg-slate-950 px-3 text-sm font-black text-white disabled:opacity-50"
                 >
-                  최종 확정
+                  지원금 가승인 확정
                 </button>
                 <button
                   type="button"
@@ -503,7 +362,7 @@ export default function ClientDashboardPage() {
                   onClick={() => void runAction("reopen")}
                   className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-800"
                 >
-                  견적 재오픈
+                  조건 재검토 요청
                 </button>
                 <Link
                   href="/"
@@ -514,16 +373,6 @@ export default function ClientDashboardPage() {
                 </Link>
               </div>
             </div>
-            {contractPreviewOpen && contractPreviewData ? (
-              <div className="fixed inset-0 z-[130] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8 backdrop-blur-[2px]">
-                <div className="w-full max-w-3xl">
-                  <ContractPreview
-                    data={contractPreviewData}
-                    onClose={() => setContractPreviewOpen(false)}
-                  />
-                </div>
-              </div>
-            ) : null}
             <div className="space-y-3">
               {quotes.map((quote) => {
                 const selected =

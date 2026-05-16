@@ -11,10 +11,6 @@ import {
 
 import * as XLSX from "xlsx";
 
-import {
-  ContractPreview,
-  type ContractPreviewData,
-} from "@/components/ContractPreview";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -678,16 +674,16 @@ function buildDefaultSmsText(row: ApplicationDetail): string {
     : "";
 
   if (status === "pending") {
-    return `[무료관광버스]\n신청이 정상 접수되었습니다.${receiptBlock}\n\n관리자 심사 후 문자로 결과를 안내드립니다.\n감사합니다.\n`;
+    return `[지원금 전세버스]\n지원금 가승인 신청이 정상 접수되었습니다.${receiptBlock}\n\n후원 조건과 기사 견적 검토 후 결과를 안내드립니다.\n감사합니다.\n`;
   }
   if (status === "reviewing") {
-    return `[무료관광버스]\n신청 내용 검토 중입니다.${receiptBlock}\n\n추가 확인 후 안내드리겠습니다.\n감사합니다.\n`;
+    return `[지원금 전세버스]\n지원금 가승인 조건을 검토 중입니다.${receiptBlock}\n\n추가 확인 후 안내드리겠습니다.\n감사합니다.\n`;
   }
   if (status === "approved") {
-    return `[무료관광버스]\n신청이 승인되었습니다.${receiptBlock}\n\n담당자가 순차 연락드릴 예정입니다.\n감사합니다.\n`;
+    return `[지원금 전세버스]\n지원금 가승인이 완료되었습니다.${receiptBlock}\n\n매칭 조건을 순차 안내드릴 예정입니다.\n감사합니다.\n`;
   }
 
-  return `[무료관광버스]\n신청이 반려되었습니다.${receiptBlock}\n\n사유:\n${memo || "사유 미기재"}\n\n문의사항은 고객센터로 연락 부탁드립니다.\n`;
+  return `[지원금 전세버스]\n지원금 가승인이 어렵습니다.${receiptBlock}\n\n사유:\n${memo || "사유 미기재"}\n\n문의사항은 고객센터로 연락 부탁드립니다.\n`;
 }
 
 function SmsModal({
@@ -1015,7 +1011,6 @@ function DriverQuotesSection({
   const [error, setError] = useState<string | null>(null);
   const [guestBusyId, setGuestBusyId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
-  const [contractPreviewOpen, setContractPreviewOpen] = useState(false);
 
   const loadQuotes = useCallback(async () => {
     if (!isPersistableApplicationId(applicationId)) return;
@@ -1112,33 +1107,6 @@ function DriverQuotesSection({
     }
   };
 
-  const runDepositAction = async (action: "paid" | "waived" | "cancelled") => {
-    setActionBusy(action);
-    setError(null);
-    try {
-      const endpoint =
-        action === "cancelled"
-          ? "/api/admin/contract-cancel"
-          : "/api/admin/deposit-confirm";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: applicationId, action }),
-      });
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "계약/예약금 상태 변경에 실패했습니다.");
-        return;
-      }
-      void loadQuotes();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
   useEffect(() => {
     void loadQuotes();
   }, [loadQuotes]);
@@ -1151,77 +1119,6 @@ function DriverQuotesSection({
     onRefresh: loadQuotes,
   });
 
-  const selectedMemberQuote = application
-    ? quotes.find((quote) => quote.id === application.final_selected_quote_id) ?? null
-    : null;
-  const selectedGuestQuote = application
-    ? guestQuotes.find((quote) => quote.id === application.final_selected_quote_id) ?? null
-    : null;
-  const selectedContractQuote = selectedMemberQuote ?? selectedGuestQuote;
-  const contractPreviewData: ContractPreviewData | null =
-    application && selectedContractQuote
-      ? {
-          applicationId: application.id,
-          contractNumber: application.contract_number,
-          contractPdfGeneratedAt: application.contract_pdf_generated_at,
-          contractStatus: application.contract_status || "pending",
-          clientContractConfirmedAt: application.client_contract_confirmed_at,
-          driverContractConfirmedAt: application.driver_contract_confirmed_at,
-          depositStatus: application.deposit_status,
-          clientName: applicationDetail.applicant_name,
-          clientPhone: applicationDetail.phone,
-          receiptNumber: applicationDetail.receipt_number,
-          driverCompanyName:
-            "company_name" in selectedContractQuote
-              ? selectedContractQuote.company_name
-              : selectedContractQuote.guest_company_name,
-          driverManagerName:
-            "manager_name" in selectedContractQuote
-              ? selectedContractQuote.manager_name
-              : selectedContractQuote.guest_driver_name,
-          driverPhone:
-            "phone" in selectedContractQuote
-              ? selectedContractQuote.phone
-              : selectedContractQuote.guest_phone,
-          vehicleType: selectedContractQuote.vehicle_type,
-          departure: applicationDetail.departure,
-          stopovers: applicationDetail.stopovers,
-          destination: applicationDetail.destination,
-          departureDateTime: formatDepartureDateTimeLine(
-            applicationDetail.departure_date,
-            applicationDetail.departure_time,
-          ),
-          tripType: applicationDetail.trip_type,
-          busGrade: applicationDetail.bus_grade,
-          passengerCount: applicationDetail.passenger_count,
-          requestMessage: applicationDetail.request_message,
-          normalPrice: selectedContractQuote.price,
-          memberPrice:
-            "member_price" in selectedContractQuote
-              ? selectedContractQuote.member_price ??
-                selectedContractQuote.sponsor_discounted_price ??
-                null
-              : null,
-          estimatedSupportAmount:
-            "estimated_support_amount" in selectedContractQuote
-              ? selectedContractQuote.estimated_support_amount ?? null
-              : null,
-          supportDiscountAmount:
-            "support_discount_amount" in selectedContractQuote
-              ? selectedContractQuote.support_discount_amount ?? null
-              : null,
-          driverSupportAmount:
-            "driver_support_amount" in selectedContractQuote
-              ? selectedContractQuote.driver_support_amount ?? null
-              : null,
-          clientRewardAmount:
-            "client_reward_amount" in selectedContractQuote
-              ? selectedContractQuote.client_reward_amount ?? null
-              : null,
-          depositAmount: application.deposit_amount,
-        }
-      : null;
-
   return (
     <section className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm ring-1 ring-indigo-100/80">
       <div className="flex items-center justify-between gap-3">
@@ -1230,7 +1127,8 @@ function DriverQuotesSection({
             기사 견적
           </p>
           <p className="mt-1 text-xs font-medium text-indigo-950/70">
-            제출된 회원/비회원 기사 견적을 관리자만 확인합니다.
+            {applicationDetail.applicant_name}님의 신청에 제출된 회원/비회원 기사
+            견적을 관리자만 확인합니다.
           </p>
         </div>
         <button
@@ -1267,19 +1165,19 @@ function DriverQuotesSection({
           />
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black text-indigo-950">자동 경매 상태</p>
+              <p className="text-xs font-black text-indigo-950">지원금 가승인 상태</p>
               <p className="mt-1 text-sm font-black text-slate-900">
                 {application.quote_status}
               </p>
               <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
                 현재 회차 {application.extension_round}회 · 자동연장{" "}
-                {application.extension_round}회 · 계약상태{" "}
-                {application.contract_status || "—"}
+                {application.extension_round}회 · 지원금 상태{" "}
+                {application.final_selected_quote_id ? "가승인 후보 있음" : "검토중"}
               </p>
             </div>
             <div className="text-right text-xs font-semibold text-slate-600">
               <p>마감: {formatCreatedAt(application.quote_closed_at || null)}</p>
-              <p>최종확정: {formatCreatedAt(application.final_selected_at || null)}</p>
+              <p>매칭확정: {formatCreatedAt(application.final_selected_at || null)}</p>
             </div>
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
@@ -1327,110 +1225,48 @@ function DriverQuotesSection({
             </div>
           </dl>
           <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-black text-emerald-950">계약 / 예약금</p>
-              <button
-                type="button"
-                disabled={!contractPreviewData}
-                onClick={() => setContractPreviewOpen(true)}
-                className="min-h-9 rounded-lg border border-emerald-200 bg-white px-3 text-xs font-black text-emerald-900 disabled:opacity-50"
-              >
-                전자계약서 미리보기
-              </button>
-            </div>
+            <p className="text-xs font-black text-emerald-950">
+              지원금 가승인 관리
+            </p>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
               <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">계약번호</dt>
+                <dt className="font-bold text-emerald-600">후원업체 검토</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.contract_number || "미발급"}
+                  {application.quote_status === "collecting" ? "견적 수집중" : "가승인 검토"}
                 </dd>
               </div>
               <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">PDF 생성</dt>
+                <dt className="font-bold text-emerald-600">클라이언트 혜택</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.contract_pdf_generated_at ? "생성됨" : "미생성"}
+                  {application.client_reward_amount.toLocaleString("ko-KR")}원
                 </dd>
               </div>
               <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">PDF 생성 시각</dt>
+                <dt className="font-bold text-emerald-600">기사 지원</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">
-                  {formatCreatedAt(application.contract_pdf_generated_at || null)}
+                  {application.driver_support_amount.toLocaleString("ko-KR")}원
                 </dd>
               </div>
               <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">계약 상태</dt>
+                <dt className="font-bold text-emerald-600">매칭 상태</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.contract_status || "pending"}
+                  {application.final_selected_quote_id ? "확정 후보 있음" : "후보 대기"}
                 </dd>
               </div>
               <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">클라이언트 확인</dt>
+                <dt className="font-bold text-emerald-600">연락처 공개</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.client_contract_confirmed_at ? "완료" : "대기"}
+                  {application.contact_revealed_at ? "공개됨" : "확정 후 공개"}
                 </dd>
               </div>
               <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">기사 확인</dt>
+                <dt className="font-bold text-emerald-600">확정 시각</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.driver_contract_confirmed_at ? "완료" : "대기"}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">예약금</dt>
-                <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.deposit_amount.toLocaleString("ko-KR")}원
-                </dd>
-              </div>
-              <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">예약금 상태</dt>
-                <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.deposit_status || "unpaid"}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">입금 확인</dt>
-                <dd className="mt-1 font-semibold text-emerald-950">
-                  {formatCreatedAt(application.deposit_confirmed_at || null)}
+                  {formatCreatedAt(application.final_selected_at || null)}
                 </dd>
               </div>
             </dl>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                disabled={actionBusy != null}
-                onClick={() => void runDepositAction("paid")}
-                className="min-h-9 rounded-lg bg-emerald-600 px-2 text-xs font-black text-white disabled:opacity-50"
-              >
-                예약금 입금확인
-              </button>
-              <button
-                type="button"
-                disabled={actionBusy != null}
-                onClick={() => void runDepositAction("waived")}
-                className="min-h-9 rounded-lg border border-emerald-200 bg-white px-2 text-xs font-black text-emerald-900 disabled:opacity-50"
-              >
-                예약금 면제
-              </button>
-              <button
-                type="button"
-                disabled={actionBusy != null}
-                onClick={() => void runDepositAction("cancelled")}
-                className="min-h-9 rounded-lg border border-red-200 bg-red-50 px-2 text-xs font-black text-red-800 disabled:opacity-50"
-              >
-                계약 취소
-              </button>
-            </div>
           </div>
-          {contractPreviewOpen && contractPreviewData ? (
-            <div className="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8 backdrop-blur-[2px]">
-              <div className="w-full max-w-3xl">
-                <ContractPreview
-                  data={contractPreviewData}
-                  onClose={() => setContractPreviewOpen(false)}
-                />
-              </div>
-            </div>
-          ) : null}
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"
@@ -1438,7 +1274,7 @@ function DriverQuotesSection({
               onClick={() => void runApplicationAction("final_confirm")}
               className="min-h-9 rounded-lg bg-slate-950 px-2 text-xs font-black text-white disabled:opacity-50"
             >
-              {actionBusy === "final_confirm" ? "처리 중…" : "즉시 최종확정"}
+              {actionBusy === "final_confirm" ? "처리 중…" : "가승인 확정"}
             </button>
             <button
               type="button"
@@ -1459,7 +1295,7 @@ function DriverQuotesSection({
           </div>
           {application.final_selected_at ? (
             <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-900">
-              예약금 및 전자계약 절차가 진행됩니다.
+              지원금 가승인이 확정되어 클라이언트와 기사에게 매칭 상태가 안내됩니다.
             </p>
           ) : null}
         </div>
@@ -1834,17 +1670,17 @@ function QuoteAutomationSettingsCard() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-wide text-blue-600">
-            자동매칭 운영설정
+            가승인 매칭 운영설정
           </p>
           <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">
             현재 설정: 업무시간 {settings.business_start_time} ~{" "}
-            {settings.business_end_time} · 자동확정 대기시간{" "}
+            {settings.business_end_time} · 매칭 확정 대기시간{" "}
             {settings.auto_final_confirm_delay_minutes}분
           </h2>
           <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
-            자동 최저가 매칭 후 설정된 시간이 지나면 최종확정됩니다. 단,
+            지원금 가승인 후보 선정 후 설정된 시간이 지나면 매칭 확정됩니다. 단,
             업무시간 외에는 다음 업무 시작시간에 고객정보가 공개됩니다. 고객은
-            24시간 직접 최종확정할 수 있습니다.
+            24시간 직접 매칭 확정할 수 있습니다.
           </p>
         </div>
         <button
@@ -2968,7 +2804,7 @@ export default function AdminApplicationsPage() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "신청목록");
 
-      const filename = `무료관광버스_신청목록_${ymdTodayLocal()}.xlsx`;
+      const filename = `지원금전세버스_신청목록_${ymdTodayLocal()}.xlsx`;
       XLSX.writeFile(wb, filename, { bookType: "xlsx" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -2983,7 +2819,7 @@ export default function AdminApplicationsPage() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                신청 관리
+                지원금 매칭 관리
               </h1>
               {unseenRealtimeCount > 0 ? (
                 <span className="rounded-full bg-[#1e3a5f] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm ring-1 ring-slate-900/15">
@@ -2993,9 +2829,19 @@ export default function AdminApplicationsPage() {
             </div>
             <p className="mt-0.5 text-sm text-slate-500">
               {adminSectionTab === "bus"
-                ? "무료관광버스 신청 목록 · 행을 눌러 상세 보기"
-                : "제휴기사 등록 신청 목록 · 행을 눌러 상세 보기"}
+                ? "클라이언트 신청과 후원업체 가승인 상태를 관리합니다."
+                : "기사 등록과 견적 참여 상태를 관리합니다."}
             </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {["클라이언트", "기사", "후원업체", "관리자"].map((role) => (
+                <span
+                  key={role}
+                  className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-600"
+                >
+                  {role}
+                </span>
+              ))}
+            </div>
             <p className="mt-1 text-xs font-semibold text-slate-500">
               {authLoading
                 ? "관리자 확인 중…"
@@ -3131,7 +2977,7 @@ export default function AdminApplicationsPage() {
               }
               title={
                 adminSectionTab !== "bus"
-                  ? "버스 신청 관리 탭에서 이용할 수 있습니다."
+                  ? "클라이언트 신청 탭에서 이용할 수 있습니다."
                   : undefined
               }
               className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
@@ -3197,7 +3043,7 @@ export default function AdminApplicationsPage() {
                 : "bg-transparent text-slate-600 hover:bg-slate-50"
             }`}
           >
-            버스 신청 관리
+            클라이언트 신청
           </button>
           <button
             type="button"
@@ -3210,7 +3056,7 @@ export default function AdminApplicationsPage() {
                 : "bg-transparent text-slate-600 hover:bg-slate-50"
             }`}
           >
-            제휴기사 신청 관리
+            기사 관리
           </button>
         </div>
 

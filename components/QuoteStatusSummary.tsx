@@ -25,6 +25,39 @@ function formatPrice(value: number | null | undefined): string | null {
   return `${value.toLocaleString("ko-KR")}원`;
 }
 
+function subsidyStage(quoteStatus: string): {
+  tone: string;
+  title: string;
+  description: string;
+} {
+  if (["auto_selected", "final_selected", "contract_pending", "completed"].includes(quoteStatus)) {
+    return {
+      tone: "bg-emerald-600 text-white",
+      title: "지원금 가승인 완료",
+      description: "선정된 기사와 지원금 조건을 확인하고 매칭을 확정하는 단계입니다.",
+    };
+  }
+  if (
+    [
+      "closed_by_time",
+      "closed_by_quote_count",
+      "closed_by_price",
+      "manually_closed",
+    ].includes(quoteStatus)
+  ) {
+    return {
+      tone: "bg-blue-600 text-white",
+      title: "지원금 가승인 검토",
+      description: "관리자가 후원 조건과 기사 견적을 비교해 가승인 여부를 확인합니다.",
+    };
+  }
+  return {
+    tone: "bg-slate-900 text-white",
+    title: "지원금 견적 수집",
+    description: "기사 견적과 후원 가능 금액을 모아 지원금 적용가를 계산합니다.",
+  };
+}
+
 export function QuoteStatusSummary({
   quoteStatus,
   quoteDeadlineAt,
@@ -53,6 +86,7 @@ export function QuoteStatusSummary({
     quoteStatus === "auto_selected" && autoFinalConfirmAt
       ? formatDateTimeShort(autoFinalConfirmAt)
       : null;
+  const stage = subsidyStage(quoteStatus);
 
   return (
     <div
@@ -60,21 +94,27 @@ export function QuoteStatusSummary({
         compact ? "" : "shadow-sm"
       }`}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">
-          {quoteStatusLabel(quoteStatus)}
-        </span>
-        {countdown ? (
-          <span className="text-sm font-black text-slate-900">{countdown}</span>
-        ) : null}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${stage.tone}`}>
+            {stage.title}
+          </span>
+          <p className="mt-2 text-sm font-black text-slate-950">
+            {quoteStatusLabel(quoteStatus)}
+            {countdown ? <span className="ml-2 text-blue-700">{countdown}</span> : null}
+          </p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+            {stage.description}
+          </p>
+        </div>
       </div>
       {autoFinalDate ? (
         <p className="mt-2 text-xs font-bold leading-5 text-blue-700">
-          업무시간 기준 다음 확정: {autoFinalDate}
+          업무시간 기준 매칭 확정 예정: {autoFinalDate}
         </p>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-        {quoteDeadlineAt ? <span>마감 {formatDateTimeShort(quoteDeadlineAt)}</span> : null}
+        {quoteDeadlineAt ? <span>가승인 검토 {formatDateTimeShort(quoteDeadlineAt)}</span> : null}
         {quoteCount != null ? (
           <span>
             견적 {quoteCount}
@@ -85,7 +125,7 @@ export function QuoteStatusSummary({
           <span>일반 목표 {formatPrice(targetNormalPrice)}</span>
         ) : null}
         {formatPrice(targetMemberPrice) ? (
-          <span>지원금 목표 {formatPrice(targetMemberPrice)}</span>
+          <span>지원금 적용 목표 {formatPrice(targetMemberPrice)}</span>
         ) : null}
       </div>
       {quoteClosedReason ? (

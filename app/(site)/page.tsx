@@ -491,7 +491,7 @@ export default function Home() {
     <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
       <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] px-6 text-white shadow-lg shadow-blue-900/25 ring-1 ring-white/20">
         <h1 className="rounded-2xl bg-white px-4 py-2.5 text-lg font-black tracking-[-0.04em] text-blue-900 shadow-sm ring-1 ring-white/60">
-          무료관광버스
+          지원버스
         </h1>
         <Link
           href="/login"
@@ -502,24 +502,45 @@ export default function Home() {
       </header>
 
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-24 pt-12 text-center">
+        <p className="relative mx-auto mb-4 inline-flex rounded-full bg-white px-3 py-1 text-xs font-black text-blue-700 ring-1 ring-blue-100">
+          지원금 기반 전세버스 매칭예약
+        </p>
         <p className="relative text-[2.12rem] font-black leading-[1.18] tracking-[-0.06em] text-slate-950">
-          관광버스도 무료!
+          지원금 먼저 확인하고
           <br />
-          재테크 정보도 무료!
+          전세버스를 매칭하세요
         </p>
         <p className="relative mt-6 text-[1.03rem] font-semibold leading-8 tracking-[-0.035em] text-slate-500">
-          최소 30% 부터 전액지원까지~
+          클라이언트 신청 → 후원업체 가승인
           <br />
-          열심히 일한 당신은 전액 무료~
+          기사 견적 비교 → 관리자 확정까지
           <br />
-          신청만 하면 지원 가능~
+          모바일에서 한 번에 진행됩니다
         </p>
+        <div className="relative mt-7 grid grid-cols-2 gap-2 text-left">
+          {[
+            ["클라이언트", "지원금 적용가 확인"],
+            ["기사", "가승인 콜에 견적 제출"],
+            ["후원업체", "지원 조건 검토"],
+            ["관리자", "매칭과 승인 관리"],
+          ].map(([role, text]) => (
+            <div
+              key={role}
+              className="rounded-2xl bg-white/85 p-3 shadow-sm ring-1 ring-blue-100/80"
+            >
+              <p className="text-sm font-black text-slate-950">{role}</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                {text}
+              </p>
+            </div>
+          ))}
+        </div>
         <Link
           href="/partner/register"
           className="relative mt-5 inline-flex min-h-11 min-w-[min(100%,18rem)] touch-manipulation items-center justify-center rounded-2xl border border-blue-200/90 bg-white/80 px-4 py-2.5 text-sm font-black tracking-[-0.02em] text-blue-800 shadow-sm shadow-blue-900/5 ring-1 ring-blue-100/80 transition hover:border-blue-300 hover:bg-blue-50/90 hover:ring-blue-200/80 active:scale-[0.99]"
           style={{ WebkitTapHighlightColor: "transparent" }}
         >
-          ※ 기사님(회사)를 모십니다.
+          기사님(회사) 지원금 콜 참여하기
         </Link>
       </section>
 
@@ -527,8 +548,11 @@ export default function Home() {
         <div className="relative z-10 overflow-visible rounded-[2rem] bg-white px-6 pb-10 pt-9 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100/80">
           <div>
             <h2 className="text-lg font-black tracking-[-0.045em] text-slate-950">
-              신청유형 (한 가지를 선택해주세요)
+              1. 지원금 가승인 유형
             </h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+              이미 예약한 차량도, 새 전세버스 매칭도 지원금 검토를 먼저 진행합니다.
+            </p>
             <div className="mt-5 grid gap-3">
               {customerApplicationTypes.map((applicationType) => {
                 const isSelected = formData.applicationType === applicationType;
@@ -1506,7 +1530,7 @@ export default function Home() {
 
           <div className="mt-9 border-t border-slate-100 pt-8">
             <p className="mb-5 text-center text-xs font-medium leading-6 tracking-[-0.02em] text-slate-400">
-              신청 후 관리자 심사를 통해 지원 여부가 안내됩니다.
+              신청 후 후원업체 조건과 기사 견적을 함께 검토해 가승인 결과를 안내합니다.
             </p>
             {submitError ? (
               <div className="mb-4 space-y-2 text-center">
@@ -1527,7 +1551,7 @@ export default function Home() {
               className="touch-manipulation relative z-10 flex min-h-[3.75rem] w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-4 text-lg font-black tracking-[-0.04em] text-white shadow-lg shadow-slate-950/20 ring-1 ring-slate-900/80 transition hover:bg-slate-900 hover:shadow-xl hover:shadow-slate-950/25 active:scale-[0.99] active:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-slate-950"
               style={tapStyle}
             >
-              {isSubmitting ? "신청 접수 중..." : "무료버스 신청하기"}
+              {isSubmitting ? "가승인 신청 접수 중..." : "지원금 가승인 신청하기"}
             </button>
           </div>
         </div>
@@ -1539,7 +1563,7 @@ export default function Home() {
             <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-blue-500 text-xs font-black text-blue-500">
               !
             </span>
-            신청 조건
+            지원금 가승인 조건
           </h2>
 
           <div className="space-y-3.5">
@@ -1601,8 +1625,7 @@ export default function Home() {
           </div>
 
           <p className="mt-5 text-center text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
-            ※ 신청 후 관리자 심사를 거쳐 영업일 기준 3-5일 이내 결과를
-            통보해드립니다
+            ※ 접수 후 후원업체 조건과 기사 견적을 확인해 가승인 결과를 안내드립니다.
           </p>
         </div>
       </section>
@@ -1639,11 +1662,11 @@ export default function Home() {
                 id="submit-success-title"
                 className="mt-5 text-center text-[1.35rem] font-black leading-snug tracking-[-0.04em] text-slate-950"
               >
-                신청이 접수되었습니다.
+                지원금 가승인 신청이 접수되었습니다.
               </h3>
 
               <p className="mt-3 text-center text-[0.9375rem] font-semibold leading-7 tracking-[-0.02em] text-slate-600">
-                관리자 심사 후 문자로 결과를 안내드립니다.
+                후원 조건과 기사 견적 검토 후 문자로 결과를 안내드립니다.
               </p>
               <p className="mt-2 text-center text-sm font-medium leading-6 tracking-[-0.02em] text-slate-500">
                 영업일 기준 3~5일 이내 순차적으로 연락드릴 수 있습니다.
