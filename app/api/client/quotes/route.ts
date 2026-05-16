@@ -41,7 +41,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   const { data, error } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -60,14 +60,14 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     admin
       .from("applications")
       .select(
-        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
+        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
       )
       .eq("id", applicationId)
       .maybeSingle(),
     admin
       .from("driver_quotes")
       .select(
-        "id, created_at, price, estimated_support_amount, support_discount_amount, member_price, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount, vehicle_type, available_time, message, status, partner_driver_id, partner_drivers(company_name, manager_name, phone)",
+        "id, created_at, price, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status, sponsor_approved_support_amount, driver_support_amount, client_reward_amount, vehicle_type, available_time, message, status, partner_driver_id, partner_drivers(company_name, manager_name, phone)",
       )
       .eq("application_id", applicationId)
       .order("created_at", { ascending: false }),
@@ -108,8 +108,12 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         price: parseInteger(row.price),
         estimated_support_amount: parseInteger(row.estimated_support_amount),
         support_discount_amount: parseInteger(row.support_discount_amount),
+        customer_support_amount:
+          parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount),
         member_price:
           parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price),
+        sponsor_support_status: safeText(row.sponsor_support_status),
+        sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
         driver_support_amount: parseInteger(row.driver_support_amount),
         client_reward_amount: parseInteger(row.client_reward_amount),
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
@@ -149,10 +153,19 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   const hasRejectedSponsor =
     sponsorRows.length > 0 &&
     sponsorRows.every((row) => ["rejected", "cancelled", "expired"].includes(safeText(row.status)));
-  const approvedSupportAmount =
-    sponsorRows
-      .map((row) => parseInteger(row.approved_support_amount))
-      .find((value) => value != null) ?? null;
+  const approvedSupportAmount = sponsorRows.reduce((sum, row) => {
+    if (safeText(row.status) !== "approved") return sum;
+    const amount = parseInteger(row.approved_support_amount) ?? parseInteger(row.estimated_support_amount);
+    return amount != null && amount > 0 ? sum + amount : sum;
+  }, 0);
+  const derivedSponsorSupportStatus = hasApprovedSponsor
+    ? "approved"
+    : hasRejectedSponsor
+      ? "rejected"
+      : sponsorRows.length > 0
+        ? "preapproved"
+        : "none";
+  const storedSponsorSupportStatus = safeText(current.sponsor_support_status);
   return {
     application: {
       id: applicationId,
@@ -196,14 +209,17 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       deposit_confirmed_at: safeText(current.deposit_confirmed_at),
       contract_memo: safeText(current.contract_memo),
       quote_count: quotes.length,
-      sponsor_support_status: hasApprovedSponsor
-        ? "approved"
-        : hasRejectedSponsor
-          ? "rejected"
-          : sponsorRows.length > 0
-            ? "preapproved"
-            : "none",
-      sponsor_approved_support_amount: approvedSupportAmount,
+      sponsor_support_status:
+        storedSponsorSupportStatus && storedSponsorSupportStatus !== "none"
+          ? storedSponsorSupportStatus
+          : derivedSponsorSupportStatus,
+      sponsor_approved_support_amount:
+        (parseInteger(current.sponsor_approved_support_amount) ?? 0) > 0
+          ? parseInteger(current.sponsor_approved_support_amount)
+          : approvedSupportAmount,
+      sponsor_preapproved_count: parseInteger(current.sponsor_preapproved_count) ?? 0,
+      sponsor_approved_count: parseInteger(current.sponsor_approved_count) ?? 0,
+      sponsor_rejected_count: parseInteger(current.sponsor_rejected_count) ?? 0,
     },
     quotes,
   };

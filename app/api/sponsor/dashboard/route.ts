@@ -81,7 +81,7 @@ export async function GET() {
   const ruleIds = [
     ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).sponsor_rule_id)).filter(Boolean)),
   ];
-  const [{ data: applicationRows }, { data: matchedRuleRows }] = await Promise.all([
+  const [{ data: applicationRows }, { data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
     applicationIds.length > 0
       ? admin
           .from("applications")
@@ -95,6 +95,12 @@ export async function GET() {
           .from("sponsor_rules")
           .select("id, title, support_type, support_condition")
           .in("id", ruleIds)
+      : Promise.resolve({ data: [] }),
+    applicationIds.length > 0
+      ? admin
+          .from("driver_quotes")
+          .select("application_id, sponsor_quote_enabled, status")
+          .in("application_id", applicationIds)
       : Promise.resolve({ data: [] }),
   ]);
 
@@ -116,15 +122,36 @@ export async function GET() {
       row as Record<string, unknown>,
     ]),
   );
+  const quoteStatsByApplication = new Map<
+    string,
+    { quote_count: number; sponsor_quote_count: number; matched_quote_count: number; final_quote_count: number }
+  >();
+  for (const raw of Array.isArray(quoteRows) ? quoteRows : []) {
+    const row = raw as Record<string, unknown>;
+    const applicationId = safeText(row.application_id);
+    if (!applicationId) continue;
+    const prev =
+      quoteStatsByApplication.get(applicationId) ??
+      { quote_count: 0, sponsor_quote_count: 0, matched_quote_count: 0, final_quote_count: 0 };
+    prev.quote_count += 1;
+    if (row.sponsor_quote_enabled === true) prev.sponsor_quote_count += 1;
+    if (safeText(row.status) === "provisional_selected") prev.matched_quote_count += 1;
+    if (safeText(row.status) === "final_selected") prev.final_quote_count += 1;
+    quoteStatsByApplication.set(applicationId, prev);
+  }
 
   const calls = preapprovals.map((raw) => {
     const preapproval = raw as Record<string, unknown>;
-    const application = applicationById.get(safeText(preapproval.application_id)) ?? {};
+    const applicationId = safeText(preapproval.application_id);
+    const application = applicationById.get(applicationId) ?? {};
     const rule = ruleTitleById.get(safeText(preapproval.sponsor_rule_id)) ?? {};
     const assignedStaff = staffById.get(safeText(preapproval.assigned_staff_id)) ?? {};
+    const quoteStats =
+      quoteStatsByApplication.get(applicationId) ??
+      { quote_count: 0, sponsor_quote_count: 0, matched_quote_count: 0, final_quote_count: 0 };
     return {
       id: safeText(preapproval.id),
-      application_id: safeText(preapproval.application_id),
+      application_id: applicationId,
       sponsor_rule_id: safeText(preapproval.sponsor_rule_id),
       sponsor_rule_title: safeText(rule.title, "후원조건"),
       support_type: safeText(rule.support_type, company.support_type),
@@ -153,6 +180,10 @@ export async function GET() {
       assigned_staff_phone: safeText(assignedStaff.phone),
       staff_sms_sent_at: safeText(preapproval.staff_sms_sent_at),
       staff_sms_error: safeText(preapproval.staff_sms_error),
+      quote_count: quoteStats.quote_count,
+      sponsor_quote_count: quoteStats.sponsor_quote_count,
+      matched_quote_count: quoteStats.matched_quote_count,
+      final_quote_count: quoteStats.final_quote_count,
     };
   });
 

@@ -43,6 +43,8 @@ type QuoteCandidate = {
   source: QuoteSource;
   price: number | null;
   memberPrice: number | null;
+  customerSupportAmount: number | null;
+  sponsorSupportStatus: string;
   isSupportQuote: boolean;
 };
 
@@ -276,7 +278,12 @@ function formatDateTimeKorean(value: string): string {
 }
 
 function effectiveQuotePrice(quote: QuoteCandidate): number | null {
-  if (quote.source === "member" && quote.isSupportQuote) return quote.memberPrice;
+  if (quote.source === "member" && quote.isSupportQuote) {
+    if (quote.memberPrice != null) return quote.memberPrice;
+    if (quote.price != null && quote.customerSupportAmount != null) {
+      return Math.max(0, quote.price - quote.customerSupportAmount);
+    }
+  }
   return quote.price;
 }
 
@@ -363,7 +370,7 @@ async function fetchQuoteCandidates(
   const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
     admin
       .from("driver_quotes")
-      .select("id, price, member_price, sponsor_discounted_price, sponsor_quote_enabled")
+      .select("id, price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
       .eq("application_id", applicationId),
     admin.from("guest_driver_quotes").select("id, price").eq("application_id", applicationId),
   ]);
@@ -372,12 +379,22 @@ async function fetchQuoteCandidates(
     const row = raw as Record<string, unknown>;
     const memberPrice =
       parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price);
+    const customerSupportAmount =
+      parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
+    const hasApprovedSupport = parseInteger(row.sponsor_approved_support_amount) != null &&
+      (parseInteger(row.sponsor_approved_support_amount) ?? 0) > 0;
     return {
       id: safeText(row.id),
       source: "member" as const,
       price: parseInteger(row.price),
       memberPrice,
-      isSupportQuote: row.sponsor_quote_enabled === true && memberPrice != null,
+      customerSupportAmount,
+      sponsorSupportStatus: hasApprovedSupport
+        ? "approved"
+        : safeText(row.sponsor_support_status, "none"),
+      isSupportQuote:
+        row.sponsor_quote_enabled === true &&
+        (memberPrice != null || customerSupportAmount != null),
     };
   });
 
@@ -388,6 +405,8 @@ async function fetchQuoteCandidates(
       source: "guest" as const,
       price: parseInteger(row.price),
       memberPrice: null,
+      customerSupportAmount: null,
+      sponsorSupportStatus: "none",
       isSupportQuote: false,
     };
   });
@@ -398,13 +417,15 @@ async function fetchQuoteCandidates(
 function bestQuote(candidates: QuoteCandidate[]): QuoteCandidate | null {
   const priced = candidates
     .map((quote) => {
-      const priority = quote.source === "member" && quote.isSupportQuote
-        ? 0
-        : quote.source === "member"
-          ? 1
-          : 2;
-      const effectivePrice =
-        priority === 0 ? quote.memberPrice : quote.price;
+      const priority =
+        quote.source === "member" && quote.isSupportQuote && quote.sponsorSupportStatus === "approved"
+          ? 0
+          : quote.source === "member" && quote.isSupportQuote
+            ? 1
+            : quote.source === "member"
+              ? 2
+              : 3;
+      const effectivePrice = effectiveQuotePrice(quote);
       return {
         ...quote,
         priority,
@@ -838,6 +859,8 @@ async function autoFinalConfirmIfDue(
     source,
     price: null,
     memberPrice: null,
+    customerSupportAmount: null,
+    sponsorSupportStatus: "none",
     isSupportQuote: false,
   };
   const now = new Date().toISOString();

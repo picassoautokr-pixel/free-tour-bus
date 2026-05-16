@@ -181,10 +181,13 @@ export async function GET() {
     price: number | null;
     estimated_support_amount?: number | null;
     support_discount_amount?: number | null;
+    customer_support_amount?: number | null;
     member_price?: number | null;
     is_member_quote?: boolean;
     converted_from_guest_quote_id?: string;
     sponsor_support_amount?: number | null;
+    sponsor_support_status?: string;
+    sponsor_approved_support_amount?: number | null;
     sponsor_discounted_price?: number | null;
     sponsor_quote_enabled?: boolean;
     driver_support_amount?: number | null;
@@ -238,7 +241,8 @@ export async function GET() {
       if (!current || rank >= currentRank) {
         sponsorSupportByApplication.set(applicationId, {
           status,
-          approvedAmount: parseInteger(row.approved_support_amount),
+          approvedAmount:
+            parseInteger(row.approved_support_amount) ?? parseInteger(row.estimated_support_amount),
           estimatedAmount: parseInteger(row.estimated_support_amount),
         });
       }
@@ -248,7 +252,7 @@ export async function GET() {
     const { data: memberQuotes, error: memberQuotesError } = await admin
       .from("driver_quotes")
       .select(
-        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
+        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
       )
       .in("application_id", ids)
       .or(orFilter)
@@ -273,10 +277,14 @@ export async function GET() {
         price: parseInteger(row.price),
         estimated_support_amount: parseInteger(row.estimated_support_amount),
         support_discount_amount: parseInteger(row.support_discount_amount),
+        customer_support_amount:
+          parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount),
         member_price: parseInteger(row.member_price),
         is_member_quote: row.is_member_quote === true,
         converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id, ""),
         sponsor_support_amount: parseInteger(row.sponsor_support_amount),
+        sponsor_support_status: safeText(row.sponsor_support_status),
+        sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
         sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
         driver_support_amount: parseInteger(row.driver_support_amount),
@@ -371,6 +379,12 @@ export async function GET() {
       passengerCount,
       price: 0,
     });
+    const sponsorSupport = sponsorSupportByApplication.get(id);
+    const approvedSupportAmount = sponsorSupport?.approvedAmount ?? 0;
+    const supportAmount =
+      approvedSupportAmount > 0
+        ? approvedSupportAmount
+        : supportEstimate.supportAmount;
     const customerInfoVisible =
       quote != null &&
       finalSelectedQuoteId !== "" &&
@@ -400,7 +414,7 @@ export async function GET() {
       return_date: safeText(row.return_date, ""),
       passenger_count: passengerCount,
       request_message: safeText(row.request_message),
-      estimated_support_amount: supportEstimate.supportAmount,
+      estimated_support_amount: supportAmount,
       quote_status: safeText(row.quote_status, "collecting"),
       quote_deadline_at: safeText(row.quote_deadline_at, ""),
       quote_limit_count: parseInteger(row.quote_limit_count),
@@ -428,11 +442,9 @@ export async function GET() {
       contract_memo: safeText(row.contract_memo, ""),
       customer_name: customerInfoVisible ? safeText(row.applicant_name) : "",
       customer_phone: customerInfoVisible ? safeText(row.phone) : "",
-      sponsor_support_status: sponsorSupportByApplication.get(id)?.status ?? "none",
-      sponsor_approved_support_amount:
-        sponsorSupportByApplication.get(id)?.approvedAmount ?? null,
-      sponsor_estimated_support_amount:
-        sponsorSupportByApplication.get(id)?.estimatedAmount ?? null,
+      sponsor_support_status: sponsorSupport?.status ?? "none",
+      sponsor_approved_support_amount: sponsorSupport?.approvedAmount ?? null,
+      sponsor_estimated_support_amount: sponsorSupport?.estimatedAmount ?? null,
       my_quote: quote,
     };
   }));

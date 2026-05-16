@@ -20,7 +20,10 @@ type ClientQuote = {
   price: number | null;
   estimated_support_amount?: number | null;
   support_discount_amount?: number | null;
+  customer_support_amount?: number | null;
   member_price: number | null;
+  sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected" | "mixed" | "";
+  sponsor_approved_support_amount?: number | null;
   driver_support_amount?: number | null;
   client_reward_amount?: number | null;
   sponsor_quote_enabled: boolean;
@@ -66,8 +69,11 @@ type ClientApplication = {
   deposit_confirmed_at: string;
   contract_memo: string;
   quote_count: number;
-  sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected";
+  sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected" | "mixed";
   sponsor_approved_support_amount?: number | null;
+  sponsor_preapproved_count?: number;
+  sponsor_approved_count?: number;
+  sponsor_rejected_count?: number;
 };
 
 function formatPrice(value: number | null): string {
@@ -125,7 +131,7 @@ export default function ClientDashboardPage() {
 
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "client-dashboard-live",
-    tables: ["applications", "driver_quotes", "guest_driver_quotes"],
+    tables: ["applications", "driver_quotes", "guest_driver_quotes", "sponsor_preapprovals"],
     enabled: application != null,
     debounceMs: 800,
     onRefresh: () => load({ silent: true }),
@@ -391,6 +397,17 @@ export default function ClientDashboardPage() {
                 const selected =
                   quote.id === application.auto_selected_quote_id ||
                   quote.id === application.final_selected_quote_id;
+                const supportStatus =
+                  quote.sponsor_support_status ||
+                  (quote.member_price != null ? application.sponsor_support_status : "none");
+                const supportStatusLabel =
+                  supportStatus === "approved"
+                    ? "지원금 승인완료"
+                    : supportStatus === "preapproved" || supportStatus === "mixed"
+                      ? "지원금 검토중"
+                      : supportStatus === "rejected"
+                        ? "지원금 미승인"
+                        : "일반견적";
                 return (
                   <article
                     key={`${quote.source}-${quote.id}`}
@@ -415,12 +432,16 @@ export default function ClientDashboardPage() {
                         ) : null}
                       </div>
                       <p className="text-right text-sm font-black text-slate-950">
+                        <span className="block text-xs text-slate-500">일반가</span>
                         {formatPrice(quote.price)}
                         {quote.member_price != null ? (
                           <span className="block text-xs text-blue-700">
-                            지원금 적용 {formatPrice(quote.member_price)}
+                            지원금 적용가 {formatPrice(quote.member_price)}
                           </span>
                         ) : null}
+                        <span className="mt-1 block text-[11px] text-slate-500">
+                          {supportStatusLabel}
+                        </span>
                       </p>
                     </div>
                     <button

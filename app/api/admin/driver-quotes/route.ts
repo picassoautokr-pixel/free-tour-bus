@@ -81,7 +81,7 @@ export async function GET(request: Request) {
   const { data: applicationRaw, error: applicationError } = await admin
     .from("applications")
     .select(
-      `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
+      `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
   const { data: quotesRaw, error: quotesError } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -152,10 +152,14 @@ export async function GET(request: Request) {
       price: parseInteger(row.price),
       estimated_support_amount: parseInteger(row.estimated_support_amount),
       support_discount_amount: parseInteger(row.support_discount_amount),
+      customer_support_amount:
+        parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount),
       member_price: parseInteger(row.member_price),
       is_member_quote: row.is_member_quote === true,
       converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id),
       sponsor_support_amount: parseInteger(row.sponsor_support_amount),
+      sponsor_support_status: safeText(row.sponsor_support_status),
+      sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
       sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
       sponsor_quote_enabled: row.sponsor_quote_enabled === true,
       driver_support_amount: parseInteger(row.driver_support_amount),
@@ -384,6 +388,12 @@ export async function GET(request: Request) {
             parseInteger(application.support_driver_ratio) ??
             supportRewards.support_driver_ratio,
           contract_status: safeText(application.contract_status),
+          sponsor_support_status: safeText(application.sponsor_support_status, "none"),
+          sponsor_approved_support_amount:
+            parseInteger(application.sponsor_approved_support_amount) ?? 0,
+          sponsor_preapproved_count: parseInteger(application.sponsor_preapproved_count) ?? 0,
+          sponsor_approved_count: parseInteger(application.sponsor_approved_count) ?? 0,
+          sponsor_rejected_count: parseInteger(application.sponsor_rejected_count) ?? 0,
           estimated_support_amount: supportRewards.estimated_support_amount,
           client_reward_amount: supportRewards.client_reward_amount,
           driver_support_amount: supportRewards.driver_support_amount,

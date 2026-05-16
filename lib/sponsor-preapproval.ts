@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { parseInteger, safeText } from "@/lib/sponsor";
+import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 
@@ -79,7 +80,10 @@ export async function matchSponsorPreapprovals(
   const approvedCompanyIds = (Array.isArray(companies) ? companies : [])
     .map((row) => safeText((row as Record<string, unknown>).id))
     .filter(Boolean);
-  if (approvedCompanyIds.length === 0) return { created: 0, matched: [] };
+  if (approvedCompanyIds.length === 0) {
+    await refreshApplicationSponsorSupportSummary(supabase, id);
+    return { created: 0, matched: [] };
+  }
 
   const { data: rules, error: rulesError } = await supabase
     .from("sponsor_rules")
@@ -146,7 +150,10 @@ export async function matchSponsorPreapprovals(
     });
   }
 
-  if (rowsToInsert.length === 0) return { created: 0, matched: [] };
+  if (rowsToInsert.length === 0) {
+    await refreshApplicationSponsorSupportSummary(supabase, id);
+    return { created: 0, matched: [] };
+  }
 
   const { error: insertError } = await supabase
     .from("sponsor_preapprovals")
@@ -155,6 +162,7 @@ export async function matchSponsorPreapprovals(
       ignoreDuplicates: true,
     });
   if (insertError) throw new Error(insertError.message);
+  await refreshApplicationSponsorSupportSummary(supabase, id);
 
   return { created: rowsToInsert.length, matched };
 }

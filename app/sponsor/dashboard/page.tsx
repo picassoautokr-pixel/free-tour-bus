@@ -56,6 +56,10 @@ type Call = {
   assigned_staff_phone?: string;
   staff_sms_sent_at?: string;
   staff_sms_error?: string;
+  quote_count?: number;
+  sponsor_quote_count?: number;
+  matched_quote_count?: number;
+  final_quote_count?: number;
 };
 
 type ApprovalModal =
@@ -454,6 +458,22 @@ export default function SponsorDashboardPage() {
                     <p className="mt-2 text-xs font-black text-blue-700">
                       승인 지원금: {call.approved_support_amount.toLocaleString("ko-KR")}원
                     </p>
+                  ) : null}
+                  {call.status === "approved" ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                      <p className="rounded-xl bg-slate-50 px-3 py-2 font-bold text-slate-600">
+                        기사 견적 {call.quote_count ?? 0}건
+                      </p>
+                      <p className="rounded-xl bg-blue-50 px-3 py-2 font-bold text-blue-700">
+                        지원금 견적 {call.sponsor_quote_count ?? 0}건
+                      </p>
+                      <p className="rounded-xl bg-emerald-50 px-3 py-2 font-bold text-emerald-700">
+                        매칭 {call.matched_quote_count ?? 0}건
+                      </p>
+                      <p className="rounded-xl bg-indigo-50 px-3 py-2 font-bold text-indigo-700">
+                        최종 {call.final_quote_count ?? 0}건
+                      </p>
+                    </div>
                   ) : null}
                   <div className="mt-4">
                     <QuoteStatusSummary quoteStatus={call.quote_status} compact />

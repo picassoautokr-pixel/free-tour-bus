@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatWon, sendNotificationSms, siteBaseUrl } from "@/lib/notification-service";
 import { parseInteger, safeText } from "@/lib/sponsor";
+import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
 type Actor = {
   userId: string;
@@ -30,7 +31,7 @@ async function loadPreapprovalContext(
       .maybeSingle(),
     admin
       .from("applications")
-      .select("id, departure, destination, departure_date")
+      .select("id, applicant_name, phone, departure, destination, departure_date")
       .eq("id", safeText(p.application_id))
       .maybeSingle(),
     safeText(p.sponsor_rule_id)
@@ -106,6 +107,21 @@ export async function approveSponsorPreapproval(
     .update(patch)
     .eq("id", params.preapprovalId);
   if (error) throw new Error(error.message);
+  const applicationId = safeText(ctx.preapproval.application_id);
+  await refreshApplicationSponsorSupportSummary(admin, applicationId);
+
+  await sendNotificationSms(admin, {
+    target_type: "customer",
+    target_phone: safeText(ctx.application.phone),
+    target_name: safeText(ctx.application.applicant_name),
+    notification_type: "sponsor_preapproval_approved",
+    application_id: applicationId,
+    quote_id: params.preapprovalId,
+    quote_source: "sponsor_preapproval",
+    message:
+      "[무료전세버스]\n후원업체 지원금이 승인되었습니다. 견적 비교 화면에서 지원금 적용가를 확인해주세요.",
+    allowDuplicate: true,
+  });
 
   if (staff) {
     const message = `[무료전세버스]
@@ -176,6 +192,7 @@ export async function rejectSponsorPreapproval(
     })
     .eq("id", params.preapprovalId);
   if (error) throw new Error(error.message);
+  await refreshApplicationSponsorSupportSummary(admin, safeText(ctx.preapproval.application_id));
 
   await sendNotificationSms(admin, {
     target_type: "admin",

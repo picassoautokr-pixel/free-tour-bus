@@ -35,10 +35,13 @@ type PartnerMyQuote = {
   price: number | null;
   estimated_support_amount?: number | null;
   support_discount_amount?: number | null;
+  customer_support_amount?: number | null;
   member_price?: number | null;
   is_member_quote?: boolean;
   converted_from_guest_quote_id?: string;
   sponsor_support_amount?: number | null;
+  sponsor_support_status?: string;
+  sponsor_approved_support_amount?: number | null;
   sponsor_discounted_price?: number | null;
   sponsor_quote_enabled?: boolean;
   driver_support_amount?: number | null;
@@ -1232,6 +1235,18 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
+                          후원업체 승인 상태
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          {quoteDetailCall.my_quote.sponsor_support_status === "approved"
+                            ? "지원금 승인완료"
+                            : quoteDetailCall.my_quote.sponsor_support_status === "preapproved"
+                              ? "지원금 검토중"
+                              : "일반/검토 없음"}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
                           고객 반영 지원금
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
@@ -1875,10 +1890,16 @@ export default function PartnerDashboardPage() {
                       ) : null}
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          예상 지원금
+                          {call.sponsor_support_status === "approved"
+                            ? "후원업체 승인 지원금"
+                            : call.sponsor_support_status === "preapproved"
+                              ? "후원업체 지원금 검토중"
+                              : "예상 지원금"}
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
-                          약 {formatPrice(call.estimated_support_amount)}
+                          {call.estimated_support_amount > 0
+                            ? `약 ${formatPrice(call.estimated_support_amount)}`
+                            : "현재 적용 가능한 승인 지원금이 없습니다."}
                         </dd>
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">

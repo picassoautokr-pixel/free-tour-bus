@@ -7,6 +7,7 @@ import {
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
+import { getApprovedSponsorSupport, supportLimitForQuote } from "@/lib/sponsor-support";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -230,11 +231,16 @@ export async function POST(request: Request) {
     passengerCount: activeApplication.passenger_count,
     price,
   });
+  const sponsorSummary = await getApprovedSponsorSupport(admin, applicationId);
+  const supportLimit = supportLimitForQuote({
+    approvedSupportAmountTotal: sponsorSummary.approved_support_amount_total,
+    estimatedSupportAmount: supportEstimate.estimated_support_amount,
+  });
   const supportDiscountAmount =
-    requestedSupportDiscountAmount ?? supportEstimate.estimated_support_amount;
-  if (supportDiscountAmount > supportEstimate.estimated_support_amount) {
+    requestedSupportDiscountAmount ?? supportLimit;
+  if (supportDiscountAmount > supportLimit) {
     return NextResponse.json(
-      { error: "고객에게 반영할 지원금은 예상 지원금보다 클 수 없습니다." },
+      { error: "고객에게 반영할 지원금은 적용 가능한 지원금 한도보다 클 수 없습니다." },
       { status: 400 },
     );
   }
@@ -348,16 +354,19 @@ export async function POST(request: Request) {
     available_time: availableTime,
     message,
     status: "submitted",
-    estimated_support_amount: supportEstimate.estimated_support_amount,
+    estimated_support_amount: supportLimit,
     support_discount_amount: supportDiscountAmount,
+    customer_support_amount: supportDiscountAmount,
     member_price: memberPrice,
     is_member_quote: true,
     converted_from_guest_quote_id: convertingGuestQuoteId,
     sponsor_support_amount: supportDiscountAmount,
+    sponsor_support_status: sponsorSummary.status,
+    sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
     sponsor_discounted_price: memberPrice,
     sponsor_quote_enabled: true,
     driver_support_amount: Math.max(
-      supportEstimate.estimated_support_amount - supportDiscountAmount,
+      supportLimit - supportDiscountAmount,
       0,
     ),
     client_reward_amount: supportDiscountAmount,
@@ -367,7 +376,7 @@ export async function POST(request: Request) {
     .from("driver_quotes")
     .insert(insertPayload)
     .select(
-      "id, price, estimated_support_amount, support_discount_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      "id, price, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
     )
     .single();
   let inserted: unknown = insertResult.data;
@@ -375,7 +384,7 @@ export async function POST(request: Request) {
 
   if (
     insertError &&
-    /estimated_support_amount|support_discount_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|client_reward_amount|does not exist|42703/i.test(
+    /estimated_support_amount|support_discount_amount|customer_support_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_support_status|sponsor_approved_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|client_reward_amount|does not exist|42703/i.test(
       insertError.message,
     )
   ) {

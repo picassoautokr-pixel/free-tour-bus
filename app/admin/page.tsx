@@ -71,6 +71,9 @@ type DriverQuoteDetail = {
   converted_from_guest_quote_id?: string;
   converted_from_guest_price?: number | null;
   sponsor_support_amount?: number | null;
+  sponsor_support_status?: string;
+  sponsor_approved_support_amount?: number | null;
+  customer_support_amount?: number | null;
   sponsor_discounted_price?: number | null;
   sponsor_quote_enabled?: boolean;
   driver_support_amount?: number | null;
@@ -112,6 +115,11 @@ type ApplicationQuoteLifecycle = {
   support_client_reward_ratio: number;
   support_driver_ratio: number;
   contract_status: string;
+  sponsor_support_status?: string;
+  sponsor_approved_support_amount?: number | null;
+  sponsor_preapproved_count?: number;
+  sponsor_approved_count?: number;
+  sponsor_rejected_count?: number;
   estimated_support_amount: number;
   client_reward_amount: number;
   driver_support_amount: number;
@@ -1182,6 +1190,48 @@ function DriverQuotesSection({
             targetMemberPrice={application.target_member_price}
             compact
           />
+          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-6">
+            <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+              <p className="font-bold text-blue-500">후원 가승인 수</p>
+              <p className="mt-1 font-black text-blue-950">
+                {application.sponsor_preapproved_count ?? 0}건
+              </p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+              <p className="font-bold text-emerald-600">승인 수</p>
+              <p className="mt-1 font-black text-emerald-950">
+                {application.sponsor_approved_count ?? 0}건
+              </p>
+            </div>
+            <div className="rounded-xl bg-indigo-50 p-3 ring-1 ring-indigo-100">
+              <p className="font-bold text-indigo-600">승인 지원금 합계</p>
+              <p className="mt-1 font-black text-indigo-950">
+                {((application.sponsor_approved_support_amount ?? 0)).toLocaleString("ko-KR")}원
+              </p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+              <p className="font-bold text-slate-500">지원금 상태</p>
+              <p className="mt-1 font-black text-slate-950">
+                {application.sponsor_support_status ?? "none"}
+              </p>
+            </div>
+            <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+              <p className="font-bold text-blue-500">지원금 적용 견적</p>
+              <p className="mt-1 font-black text-blue-950">
+                {quotes.filter((quote) => quote.sponsor_quote_enabled).length}건
+              </p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+              <p className="font-bold text-emerald-600">최종 지원금 적용가</p>
+              <p className="mt-1 font-black text-emerald-950">
+                {(() => {
+                  const selected = quotes.find((quote) => quote.id === application.final_selected_quote_id);
+                  const value = selected?.member_price ?? selected?.sponsor_discounted_price ?? null;
+                  return value == null ? "—" : `${value.toLocaleString("ko-KR")}원`;
+                })()}
+              </p>
+            </div>
+          </div>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-black text-indigo-950">지원금 가승인 상태</p>
