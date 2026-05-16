@@ -217,9 +217,16 @@ export async function GET() {
     id: string;
     price: number | null;
     estimated_support_amount?: number | null;
+    support_settlement_type?: string;
+    preapproved_support_amount?: number | null;
+    approved_support_amount?: number | null;
     support_discount_amount?: number | null;
     customer_support_amount?: number | null;
     member_price?: number | null;
+    final_customer_support_amount?: number | null;
+    final_driver_support_amount?: number | null;
+    final_member_price?: number | null;
+    support_recalculated_at?: string;
     is_member_quote?: boolean;
     converted_from_guest_quote_id?: string;
     sponsor_support_amount?: number | null;
@@ -292,7 +299,7 @@ export async function GET() {
     } = await admin
       .from("driver_quotes")
       .select(
-        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
+        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_settlement_type, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, support_recalculated_at, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, client_reward_amount",
       )
       .in("application_id", ids)
       .or(orFilter)
@@ -325,10 +332,17 @@ export async function GET() {
         id: safeText(row.id, ""),
         price: parseInteger(row.price),
         estimated_support_amount: parseInteger(row.estimated_support_amount),
+        support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
+        preapproved_support_amount: parseInteger(row.preapproved_support_amount),
+        approved_support_amount: parseInteger(row.approved_support_amount),
         support_discount_amount: parseInteger(row.support_discount_amount),
         customer_support_amount:
           parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount),
         member_price: parseInteger(row.member_price),
+        final_customer_support_amount: parseInteger(row.final_customer_support_amount),
+        final_driver_support_amount: parseInteger(row.final_driver_support_amount),
+        final_member_price: parseInteger(row.final_member_price),
+        support_recalculated_at: safeText(row.support_recalculated_at),
         is_member_quote: row.is_member_quote === true,
         converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id, ""),
         sponsor_support_amount: parseInteger(row.sponsor_support_amount),

@@ -34,10 +34,17 @@ type PartnerMyQuote = {
   source: "member" | "guest";
   id: string;
   price: number | null;
+  support_settlement_type?: "client_priority" | "ratio" | string;
+  preapproved_support_amount?: number | null;
+  approved_support_amount?: number | null;
   estimated_support_amount?: number | null;
   support_discount_amount?: number | null;
   customer_support_amount?: number | null;
   member_price?: number | null;
+  final_customer_support_amount?: number | null;
+  final_driver_support_amount?: number | null;
+  final_member_price?: number | null;
+  support_recalculated_at?: string;
   is_member_quote?: boolean;
   converted_from_guest_quote_id?: string;
   sponsor_support_amount?: number | null;
@@ -117,6 +124,7 @@ type PartnerDriverInfo = {
 type QuoteForm = {
   price: string;
   supportDiscountAmount: string;
+  supportSettlementType: "client_priority" | "ratio";
   vehicleType: string;
   availableTime: string;
   message: string;
@@ -137,6 +145,7 @@ type DashboardTab = "new" | "quoted" | "matched";
 const emptyQuoteForm: QuoteForm = {
   price: "",
   supportDiscountAmount: "",
+  supportSettlementType: "client_priority",
   vehicleType: "",
   availableTime: "",
   message: "",
@@ -253,6 +262,7 @@ function quoteStatusLabel(call: PartnerCall): string {
 
 function averageStatusLabel(call: PartnerCall): string {
   const myPrice =
+    call.my_quote?.final_member_price ??
     call.my_quote?.member_price ??
     call.my_quote?.sponsor_discounted_price ??
     call.my_quote?.price ??
@@ -908,6 +918,7 @@ export default function PartnerDashboardPage() {
             call,
             quoteForm.supportDiscountAmount,
           ),
+          support_settlement_type: quoteForm.supportSettlementType,
           sponsor_discounted_price: discountedPriceFor(
             call,
             quoteForm.price,
@@ -1248,12 +1259,23 @@ export default function PartnerDashboardPage() {
                     <>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          예상 지원금
+                          지원금 분배방식
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          {quoteDetailCall.my_quote.support_settlement_type === "ratio"
+                            ? "비율정산"
+                            : "클라이언트 지원금 우선보장"}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
+                          가승인 지원금
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           약{" "}
                           {formatPrice(
-                            quoteDetailCall.my_quote.estimated_support_amount ??
+                            quoteDetailCall.my_quote.preapproved_support_amount ??
+                              quoteDetailCall.my_quote.estimated_support_amount ??
                               quoteDetailCall.my_quote.sponsor_support_amount ??
                               0,
                           )}
@@ -1285,6 +1307,14 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
+                          기사 예상 지원금
+                        </dt>
+                        <dd className="mt-1 font-black text-blue-900">
+                          {formatPrice(quoteDetailCall.my_quote.driver_support_amount ?? 0)}
+                        </dd>
+                      </div>
+                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                        <dt className="text-[11px] font-bold text-blue-500">
                           지원금 적용 고객가
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
@@ -1296,6 +1326,50 @@ export default function PartnerDashboardPage() {
                           )}
                         </dd>
                       </div>
+                      {(quoteDetailCall.my_quote.approved_support_amount ?? 0) > 0 ||
+                      quoteDetailCall.my_quote.final_member_price != null ? (
+                        <>
+                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                            <dt className="text-[11px] font-bold text-emerald-600">
+                              최종승인 지원금
+                            </dt>
+                            <dd className="mt-1 font-black text-emerald-900">
+                              {formatPrice(quoteDetailCall.my_quote.approved_support_amount ?? 0)}
+                            </dd>
+                          </div>
+                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                            <dt className="text-[11px] font-bold text-emerald-600">
+                              최종 고객 반영 지원금
+                            </dt>
+                            <dd className="mt-1 font-black text-emerald-900">
+                              {formatPrice(
+                                quoteDetailCall.my_quote.final_customer_support_amount ?? 0,
+                              )}
+                            </dd>
+                          </div>
+                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                            <dt className="text-[11px] font-bold text-emerald-600">
+                              최종 기사 지원금
+                            </dt>
+                            <dd className="mt-1 font-black text-emerald-900">
+                              {formatPrice(
+                                quoteDetailCall.my_quote.final_driver_support_amount ?? 0,
+                              )}
+                            </dd>
+                          </div>
+                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                            <dt className="text-[11px] font-bold text-emerald-600">
+                              최종 지원견적가
+                            </dt>
+                            <dd className="mt-1 font-black text-emerald-900">
+                              {formatPrice(quoteDetailCall.my_quote.final_member_price ?? null)}
+                            </dd>
+                          </div>
+                        </>
+                      ) : null}
+                      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100 sm:col-span-2">
+                        후원업체 최종 승인 결과에 따라 지원견적가는 변경될 수 있습니다.
+                      </p>
                     </>
                   ) : null}
                   <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
@@ -2021,6 +2095,53 @@ export default function PartnerDashboardPage() {
                             <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">
                               후원사 심사 결과에 따라 최종 지원금은 변경될 수 있습니다.
                             </p>
+                          </div>
+                          <div className="rounded-xl border border-blue-100 bg-white p-3 sm:col-span-2">
+                            <p className="text-xs font-bold text-blue-600">
+                              지원금 분배방식
+                            </p>
+                            <div className="mt-3 grid gap-2">
+                              {[
+                                {
+                                  value: "client_priority" as const,
+                                  title: "클라이언트 지원금 우선보장",
+                                  description:
+                                    "후원업체 최종 지원금이 줄어도 고객에게 제시한 지원금부터 우선 보장하고, 남은 금액을 기사 지원금으로 계산합니다.",
+                                },
+                                {
+                                  value: "ratio" as const,
+                                  title: "비율정산",
+                                  description:
+                                    "최종 승인 지원금이 줄어들면 고객 지원금과 기사 지원금을 기존 비율대로 자동 재계산합니다.",
+                                },
+                              ].map((option) => (
+                                <label
+                                  key={option.value}
+                                  className="flex gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`support-settlement-${call.id}`}
+                                    checked={quoteForm.supportSettlementType === option.value}
+                                    onChange={() =>
+                                      setQuoteForm((prev) => ({
+                                        ...prev,
+                                        supportSettlementType: option.value,
+                                      }))
+                                    }
+                                    className="mt-1"
+                                  />
+                                  <span>
+                                    <span className="block text-sm font-black text-slate-900">
+                                      {option.title}
+                                    </span>
+                                    <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
+                                      {option.description}
+                                    </span>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
                           <label className="block sm:col-span-2">
                             <span className="text-xs font-bold text-slate-500">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
+import { calculateSupportSettlement } from "@/lib/driver-quote-support";
 import {
   isApplicationQuoteAccepting,
   processApplicationQuoteLifecycle,
@@ -21,6 +22,7 @@ type Body = {
   price?: unknown;
   sponsor_discounted_price?: unknown;
   support_discount_amount?: unknown;
+  support_settlement_type?: unknown;
   vehicle_type?: unknown;
   available_time?: unknown;
   message?: unknown;
@@ -147,6 +149,8 @@ export async function POST(request: Request) {
   const price = parsePrice(body.price);
   const requestedDiscountedPrice = parsePrice(body.sponsor_discounted_price);
   const requestedSupportDiscountAmount = parsePrice(body.support_discount_amount);
+  const supportSettlementType =
+    safeText(body.support_settlement_type) === "ratio" ? "ratio" : "client_priority";
   const vehicleType = safeText(body.vehicle_type);
   const availableTime = safeText(body.available_time);
   const message = safeText(body.message);
@@ -245,6 +249,24 @@ export async function POST(request: Request) {
     );
   }
   const memberPrice = Math.max(0, price - supportDiscountAmount);
+  const preapprovedSupportAmount = supportLimit;
+  const approvedSupportAmount = Math.max(0, sponsorSummary.approved_support_amount_total);
+  const driverSupportAmount = Math.max(
+    preapprovedSupportAmount - supportDiscountAmount,
+    0,
+  );
+  const finalSettlement =
+    approvedSupportAmount > 0
+      ? calculateSupportSettlement({
+          price,
+          supportSettlementType,
+          preapprovedSupportAmount,
+          approvedSupportAmount,
+          customerSupportAmount: supportDiscountAmount,
+          driverSupportAmount,
+          fallbackMemberPrice: memberPrice,
+        })
+      : null;
   if (requestedDiscountedPrice != null && requestedDiscountedPrice > price) {
     return NextResponse.json(
       { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
@@ -355,6 +377,9 @@ export async function POST(request: Request) {
     message,
     status: "submitted",
     estimated_support_amount: supportLimit,
+    support_settlement_type: supportSettlementType,
+    preapproved_support_amount: preapprovedSupportAmount,
+    approved_support_amount: approvedSupportAmount,
     support_discount_amount: supportDiscountAmount,
     customer_support_amount: supportDiscountAmount,
     member_price: memberPrice,
@@ -365,10 +390,11 @@ export async function POST(request: Request) {
     sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
     sponsor_discounted_price: memberPrice,
     sponsor_quote_enabled: true,
-    driver_support_amount: Math.max(
-      supportLimit - supportDiscountAmount,
-      0,
-    ),
+    driver_support_amount: driverSupportAmount,
+    final_customer_support_amount: finalSettlement?.finalCustomerSupportAmount ?? 0,
+    final_driver_support_amount: finalSettlement?.finalDriverSupportAmount ?? 0,
+    final_member_price: finalSettlement?.finalMemberPrice ?? null,
+    support_recalculated_at: finalSettlement ? new Date().toISOString() : null,
     client_reward_amount: supportDiscountAmount,
   };
 
@@ -376,7 +402,7 @@ export async function POST(request: Request) {
     .from("driver_quotes")
     .insert(insertPayload)
     .select(
-      "id, price, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      "id, price, estimated_support_amount, support_settlement_type, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
     )
     .single();
   let inserted: unknown = insertResult.data;
@@ -384,7 +410,7 @@ export async function POST(request: Request) {
 
   if (
     insertError &&
-    /estimated_support_amount|support_discount_amount|customer_support_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_support_status|sponsor_approved_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|client_reward_amount|does not exist|42703/i.test(
+    /estimated_support_amount|support_settlement_type|preapproved_support_amount|approved_support_amount|support_discount_amount|customer_support_amount|member_price|final_member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_support_status|sponsor_approved_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|final_customer_support_amount|final_driver_support_amount|client_reward_amount|does not exist|42703/i.test(
       insertError.message,
     )
   ) {

@@ -43,6 +43,7 @@ type QuoteCandidate = {
   source: QuoteSource;
   price: number | null;
   memberPrice: number | null;
+  finalMemberPrice: number | null;
   customerSupportAmount: number | null;
   sponsorSupportStatus: string;
   isSupportQuote: boolean;
@@ -279,6 +280,7 @@ function formatDateTimeKorean(value: string): string {
 
 function effectiveQuotePrice(quote: QuoteCandidate): number | null {
   if (quote.source === "member" && quote.isSupportQuote) {
+    if (quote.finalMemberPrice != null) return quote.finalMemberPrice;
     if (quote.memberPrice != null) return quote.memberPrice;
     if (quote.price != null && quote.customerSupportAmount != null) {
       return Math.max(0, quote.price - quote.customerSupportAmount);
@@ -370,7 +372,7 @@ async function fetchQuoteCandidates(
   const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
     admin
       .from("driver_quotes")
-      .select("id, price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
+      .select("id, price, final_member_price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
       .eq("application_id", applicationId),
     admin.from("guest_driver_quotes").select("id, price").eq("application_id", applicationId),
   ]);
@@ -379,6 +381,7 @@ async function fetchQuoteCandidates(
     const row = raw as Record<string, unknown>;
     const memberPrice =
       parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price);
+    const finalMemberPrice = parseInteger(row.final_member_price);
     const customerSupportAmount =
       parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
     const hasApprovedSupport = parseInteger(row.sponsor_approved_support_amount) != null &&
@@ -388,13 +391,14 @@ async function fetchQuoteCandidates(
       source: "member" as const,
       price: parseInteger(row.price),
       memberPrice,
+      finalMemberPrice,
       customerSupportAmount,
       sponsorSupportStatus: hasApprovedSupport
         ? "approved"
         : safeText(row.sponsor_support_status, "none"),
       isSupportQuote:
         row.sponsor_quote_enabled === true &&
-        (memberPrice != null || customerSupportAmount != null),
+        (finalMemberPrice != null || memberPrice != null || customerSupportAmount != null),
     };
   });
 
@@ -405,6 +409,7 @@ async function fetchQuoteCandidates(
       source: "guest" as const,
       price: parseInteger(row.price),
       memberPrice: null,
+      finalMemberPrice: null,
       customerSupportAmount: null,
       sponsorSupportStatus: "none",
       isSupportQuote: false,
@@ -859,6 +864,7 @@ async function autoFinalConfirmIfDue(
     source,
     price: null,
     memberPrice: null,
+    finalMemberPrice: null,
     customerSupportAmount: null,
     sponsorSupportStatus: "none",
     isSupportQuote: false,
@@ -932,8 +938,8 @@ function closingReasonFor(
     candidates.some(
       (quote) =>
         quote.source === "member" &&
-        quote.memberPrice != null &&
-        quote.memberPrice <= targetMember,
+        (quote.finalMemberPrice ?? quote.memberPrice) != null &&
+        (quote.finalMemberPrice ?? quote.memberPrice ?? Number.MAX_SAFE_INTEGER) <= targetMember,
     )
   ) {
     return { status: "closed_by_price", reason: "target_member_price" };

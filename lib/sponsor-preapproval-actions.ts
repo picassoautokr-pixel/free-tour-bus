@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { recalculateDriverQuoteSupport } from "@/lib/driver-quote-support";
 import { formatWon, sendNotificationSms, siteBaseUrl } from "@/lib/notification-service";
 import { parseInteger, safeText } from "@/lib/sponsor";
 import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
@@ -109,6 +110,7 @@ export async function approveSponsorPreapproval(
   if (error) throw new Error(error.message);
   const applicationId = safeText(ctx.preapproval.application_id);
   await refreshApplicationSponsorSupportSummary(admin, applicationId);
+  await recalculateDriverQuoteSupport(admin, applicationId);
 
   await sendNotificationSms(admin, {
     target_type: "customer",
@@ -192,14 +194,16 @@ export async function rejectSponsorPreapproval(
     })
     .eq("id", params.preapprovalId);
   if (error) throw new Error(error.message);
-  await refreshApplicationSponsorSupportSummary(admin, safeText(ctx.preapproval.application_id));
+  const applicationId = safeText(ctx.preapproval.application_id);
+  await refreshApplicationSponsorSupportSummary(admin, applicationId);
+  await recalculateDriverQuoteSupport(admin, applicationId);
 
   await sendNotificationSms(admin, {
     target_type: "admin",
     target_phone: "admin",
     target_name: "관리자",
     notification_type: "sponsor_preapproval_rejected",
-    application_id: safeText(ctx.preapproval.application_id),
+    application_id: applicationId,
     quote_id: params.preapprovalId,
     quote_source: "sponsor_preapproval",
     message: `후원업체 지원이 취소되었습니다: ${safeText(params.decisionMemo, "사유 없음")}`,
