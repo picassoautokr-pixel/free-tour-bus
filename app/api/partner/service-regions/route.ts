@@ -17,6 +17,10 @@ function safeText(value: unknown, emptyLabel = ""): string {
   return s === "" ? emptyLabel : s;
 }
 
+function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return error?.code === "42703" || /does not exist|column .* does not exist/i.test(error?.message ?? "");
+}
+
 async function resolveApprovedDriver(): Promise<DriverContext> {
   const sessionClient = await createSupabaseRouteHandlerClient("partner");
   if (!sessionClient) {
@@ -119,6 +123,15 @@ export async function PATCH(request: Request) {
     .single();
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "DB 컬럼 업데이트 필요: sql/partner_driver_service_regions.sql을 적용해 주세요.",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 502 });
   }
 

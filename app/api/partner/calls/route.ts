@@ -14,6 +14,10 @@ export const runtime = "nodejs";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
 
+function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return error?.code === "42703" || /does not exist|column .* does not exist/i.test(error?.message ?? "");
+}
+
 function hyphenKoreanMobile(digits: string): string {
   if (digits.length !== 11) return digits;
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
@@ -102,12 +106,21 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
     };
   }
 
-  const { data: driver, error: driverError } = await admin
+  let driverResult = await admin
     .from("partner_drivers")
-    .select("id, status, service_regions, company_name, manager_name, name, phone")
+    .select("id, status, service_regions, company_name, manager_name, phone")
     .eq("id", partnerDriverId)
     .eq("auth_user_id", user.id)
     .maybeSingle();
+  if (isMissingColumnError(driverResult.error)) {
+    driverResult = await admin
+      .from("partner_drivers")
+      .select("id, status, company_name, manager_name, phone")
+      .eq("id", partnerDriverId)
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+  }
+  const { data: driver, error: driverError } = driverResult;
 
   if (driverError) {
     return { ok: false, status: 502, error: driverError.message };
@@ -128,9 +141,7 @@ async function resolveApprovedDriver(): Promise<DriverContext> {
     phoneDigits,
     driverInfo: {
       company_name: safeText((driver as { company_name?: unknown } | null)?.company_name, ""),
-      manager_name:
-        safeText((driver as { manager_name?: unknown } | null)?.manager_name, "") ||
-        safeText((driver as { name?: unknown } | null)?.name, ""),
+      manager_name: safeText((driver as { manager_name?: unknown } | null)?.manager_name, ""),
       phone: safeText((driver as { phone?: unknown } | null)?.phone, ""),
     },
     serviceRegions: normalizeServiceRegions(
@@ -153,7 +164,10 @@ export async function GET() {
     );
   }
 
-  const { data: applications, error: applicationsError } = await admin
+  let applicationsResult: {
+    data: unknown[] | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
     .from("applications")
     .select(
       "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_number, contract_pdf_generated_at, contract_pdf_url",
@@ -161,6 +175,17 @@ export async function GET() {
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
     .limit(50);
+  if (isMissingColumnError(applicationsResult.error)) {
+    applicationsResult = await admin
+      .from("applications")
+      .select(
+        "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_number",
+      )
+      .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
+      .order("created_at", { ascending: false })
+      .limit(50);
+  }
+  const { data: applications, error: applicationsError } = applicationsResult;
 
   if (applicationsError) {
     return NextResponse.json(
@@ -261,7 +286,10 @@ export async function GET() {
     }
 
     const orFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
-    const { data: memberQuotes, error: memberQuotesError } = await admin
+    let memberQuotesResult: {
+      data: unknown[] | null;
+      error: { message: string; code?: string } | null;
+    } = await admin
       .from("driver_quotes")
       .select(
         "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
@@ -269,6 +297,15 @@ export async function GET() {
       .in("application_id", ids)
       .or(orFilter)
       .order("created_at", { ascending: false });
+    if (isMissingColumnError(memberQuotesResult.error)) {
+      memberQuotesResult = await admin
+        .from("driver_quotes")
+        .select("id, application_id, price, vehicle_type, available_time, message, status, created_at")
+        .in("application_id", ids)
+        .or(orFilter)
+        .order("created_at", { ascending: false });
+    }
+    const { data: memberQuotes, error: memberQuotesError } = memberQuotesResult;
 
     if (memberQuotesError) {
       return NextResponse.json(
