@@ -7,6 +7,7 @@ import {
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
+import { sendNotificationSms } from "@/lib/notification-service";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -81,6 +82,43 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
     return { error: "견적요청을 찾을 수 없습니다.", status: 404 } as const;
   }
   return { app } as const;
+}
+
+async function resolveApplicationsByLookupPassword(
+  admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>,
+  request: Request,
+) {
+  const { searchParams } = new URL(request.url);
+  const phoneDigits = digits(searchParams.get("phone"));
+  const lookupPassword = safeText(searchParams.get("lookup_password"));
+  if (phoneDigits === "" || lookupPassword === "") {
+    return { error: "휴대폰번호와 간단 비밀번호가 필요합니다.", status: 400 } as const;
+  }
+  if (lookupPassword.length < 4) {
+    return { error: "간단 비밀번호는 4자리 이상 입력해 주세요.", status: 400 } as const;
+  }
+  let result: {
+    data: unknown[] | null;
+    error: { message: string; code?: string } | null;
+  } = await admin
+    .from("applications")
+    .select("id, phone, client_lookup_password")
+    .eq("client_lookup_password", lookupPassword)
+    .order("created_at", { ascending: false });
+  if (isMissingColumnError(result.error)) {
+    return {
+      error: "DB 컬럼 업데이트 필요: sql/client_lookup_password.sql을 적용해 주세요.",
+      status: 503,
+    } as const;
+  }
+  if (result.error) return { error: result.error.message, status: 502 } as const;
+  const rows = (Array.isArray(result.data) ? result.data : []).filter(
+    (row) => digits((row as Record<string, unknown>).phone) === phoneDigits,
+  );
+  if (rows.length === 0) {
+    return { error: "일치하는 견적요청을 찾을 수 없습니다.", status: 404 } as const;
+  }
+  return { rows: rows as Record<string, unknown>[] } as const;
 }
 
 async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>, app: Record<string, unknown>) {
@@ -200,6 +238,16 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         partnerById.get(safeText(row.partner_driver_id)) ??
         partnerByAuthUserId.get(safeText(row.auth_user_id)) ??
         {};
+      const price = parseInteger(row.price);
+      const supportDiscountedPrice =
+        parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price);
+      const supportAmount =
+        parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
+      const memberPrice =
+        supportDiscountedPrice ??
+        (price != null && supportAmount != null && supportAmount > 0
+          ? Math.max(0, price - supportAmount)
+          : null);
       return {
         source: "member",
         id: safeText(row.id),
@@ -211,17 +259,9 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
           safeText(row.id) === finalSelectedQuoteId
             ? safeText(partner?.phone)
             : "",
-        price: parseInteger(row.price),
-        estimated_support_amount: parseInteger(row.estimated_support_amount),
-        support_discount_amount: parseInteger(row.support_discount_amount),
-        customer_support_amount:
-          parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount),
-        member_price:
-          parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price),
+        price,
+        member_price: memberPrice,
         sponsor_support_status: safeText(row.sponsor_support_status),
-        sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
-        driver_support_amount: parseInteger(row.driver_support_amount),
-        client_reward_amount: parseInteger(row.client_reward_amount),
         sponsor_quote_enabled: row.sponsor_quote_enabled === true,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
@@ -276,11 +316,6 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   const hasRejectedSponsor =
     sponsorRows.length > 0 &&
     sponsorRows.every((row) => ["rejected", "cancelled", "expired"].includes(safeText(row.status)));
-  const approvedSupportAmount = sponsorRows.reduce((sum, row) => {
-    if (safeText(row.status) !== "approved") return sum;
-    const amount = parseInteger(row.approved_support_amount) ?? parseInteger(row.estimated_support_amount);
-    return amount != null && amount > 0 ? sum + amount : sum;
-  }, 0);
   const derivedSponsorSupportStatus = hasApprovedSponsor
     ? "approved"
     : hasRejectedSponsor
@@ -336,10 +371,6 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         storedSponsorSupportStatus && storedSponsorSupportStatus !== "none"
           ? storedSponsorSupportStatus
           : derivedSponsorSupportStatus,
-      sponsor_approved_support_amount:
-        (parseInteger(current.sponsor_approved_support_amount) ?? 0) > 0
-          ? parseInteger(current.sponsor_approved_support_amount)
-          : approvedSupportAmount,
       sponsor_preapproved_count: parseInteger(current.sponsor_preapproved_count) ?? 0,
       sponsor_approved_count: parseInteger(current.sponsor_approved_count) ?? 0,
       sponsor_rejected_count: parseInteger(current.sponsor_rejected_count) ?? 0,
@@ -350,6 +381,29 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
 
 export async function GET(request: Request) {
   const admin = createServiceRoleSupabase();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
+      { status: 503 },
+    );
+  }
+  const { searchParams } = new URL(request.url);
+  if (safeText(searchParams.get("lookup_password")) !== "") {
+    const resolvedList = await resolveApplicationsByLookupPassword(admin, request);
+    if ("error" in resolvedList) {
+      return NextResponse.json({ error: resolvedList.error }, { status: resolvedList.status });
+    }
+    const payloads = await Promise.all(
+      resolvedList.rows.map((row) => loadPayload(admin, row)),
+    );
+    return NextResponse.json({
+      ok: true,
+      applications: payloads.map((payload) => ({
+        ...payload.application,
+        quotes: payload.quotes,
+      })),
+    });
+  }
   const resolved = await resolveApplication(admin, request);
   if ("error" in resolved) {
     return NextResponse.json({ error: resolved.error }, { status: resolved.status });
@@ -475,6 +529,66 @@ export async function POST(request: Request) {
           : { status: "final_selected", match_result: "selected" },
       )
       .eq("id", selectedId);
+    let driverPhone = "";
+    let driverName = "기사님";
+    if (selectedSource === "guest") {
+      const { data: guestQuote } = await admin
+        .from("guest_driver_quotes")
+        .select("guest_phone, guest_driver_name, guest_company_name")
+        .eq("id", selectedId)
+        .maybeSingle();
+      const guest = (guestQuote ?? {}) as Record<string, unknown>;
+      driverPhone = safeText(guest.guest_phone);
+      driverName = safeText(guest.guest_driver_name, safeText(guest.guest_company_name, "기사님"));
+    } else {
+      const { data: memberQuote } = await admin
+        .from("driver_quotes")
+        .select("partner_driver_id, auth_user_id")
+        .eq("id", selectedId)
+        .maybeSingle();
+      const member = (memberQuote ?? {}) as Record<string, unknown>;
+      const partnerDriverId = safeText(member.partner_driver_id);
+      const authUserId = safeText(member.auth_user_id);
+      const { data: partner } =
+        partnerDriverId !== ""
+          ? await admin
+              .from("partner_drivers")
+              .select("phone, manager_name, company_name")
+              .eq("id", partnerDriverId)
+              .maybeSingle()
+          : await admin
+              .from("partner_drivers")
+              .select("phone, manager_name, company_name")
+              .eq("auth_user_id", authUserId)
+              .maybeSingle();
+      const partnerRow = (partner ?? {}) as Record<string, unknown>;
+      driverPhone = safeText(partnerRow.phone);
+      driverName = safeText(partnerRow.manager_name, safeText(partnerRow.company_name, "기사님"));
+    }
+    await Promise.all([
+      sendNotificationSms(admin, {
+        target_type: "customer",
+        target_phone: safeText(app.phone),
+        target_name: safeText(app.applicant_name),
+        notification_type: "final_selected_customer",
+        application_id: applicationId,
+        quote_id: selectedId,
+        quote_source: selectedSource,
+        message: `[무료전세버스] 최종 견적 선택이 완료되었습니다. 선택한 기사 연락처를 대시보드에서 확인해 주세요.`,
+      }),
+      driverPhone
+        ? sendNotificationSms(admin, {
+            target_type: selectedSource === "guest" ? "guest_driver" : "driver",
+            target_phone: driverPhone,
+            target_name: driverName,
+            notification_type: "final_selected_driver",
+            application_id: applicationId,
+            quote_id: selectedId,
+            quote_source: selectedSource,
+            message: `[무료전세버스] 고객이 견적을 최종 선택했습니다. 대시보드에서 고객 연락처를 확인해 주세요.`,
+          })
+        : Promise.resolve(),
+    ]);
     return NextResponse.json({ ok: true, ...(await loadPayload(admin, app)) });
   }
 

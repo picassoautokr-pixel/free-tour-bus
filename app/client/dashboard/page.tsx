@@ -10,6 +10,13 @@ import {
 } from "@/hooks/useSupabaseRealtimeRefresh";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
+const applicationTabs = [
+  { id: "collecting", label: "견적 수집중" },
+  { id: "needs_selection", label: "선택 필요" },
+  { id: "matched", label: "매칭 완료" },
+] as const;
+
+type ApplicationTab = (typeof applicationTabs)[number]["id"];
 
 type ClientQuote = {
   source: "member" | "guest";
@@ -18,14 +25,8 @@ type ClientQuote = {
   driver_name: string;
   phone: string;
   price: number | null;
-  estimated_support_amount?: number | null;
-  support_discount_amount?: number | null;
-  customer_support_amount?: number | null;
   member_price: number | null;
   sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected" | "mixed" | "";
-  sponsor_approved_support_amount?: number | null;
-  driver_support_amount?: number | null;
-  client_reward_amount?: number | null;
   sponsor_quote_enabled: boolean;
   vehicle_type: string;
   available_time: string;
@@ -75,21 +76,33 @@ type ClientApplication = {
   contract_memo: string;
   quote_count: number;
   sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected" | "mixed";
-  sponsor_approved_support_amount?: number | null;
   sponsor_preapproved_count?: number;
   sponsor_approved_count?: number;
   sponsor_rejected_count?: number;
+  quotes?: ClientQuote[];
 };
 
 function formatPrice(value: number | null): string {
   return value == null ? "금액 확인 중" : `${value.toLocaleString("ko-KR")}원`;
 }
 
+function applicationTabFor(application: ClientApplication): ApplicationTab {
+  if (application.final_selected_quote_id) return "matched";
+  if (application.quote_count > 0) return "needs_selection";
+  return "collecting";
+}
+
 export default function ClientDashboardPage() {
   const [receiptNumber, setReceiptNumber] = useState("");
   const [phone, setPhone] = useState("");
+  const [lookupPhone, setLookupPhone] = useState("");
+  const [lookupPassword, setLookupPassword] = useState("");
+  const [showReceiptLookup, setShowReceiptLookup] = useState(false);
+  const [activeTab, setActiveTab] = useState<ApplicationTab>("collecting");
+  const [applications, setApplications] = useState<ClientApplication[]>([]);
   const [application, setApplication] = useState<ClientApplication | null>(null);
   const [quotes, setQuotes] = useState<ClientQuote[]>([]);
+  const [confirmQuote, setConfirmQuote] = useState<ClientQuote | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const quoteCountRef = useRef(0);
@@ -127,6 +140,7 @@ export default function ClientDashboardPage() {
       const nextQuotes = Array.isArray(json.quotes) ? json.quotes : [];
       quoteCountRef.current = nextQuotes.length;
       setQuotes(nextQuotes);
+      setApplications(json.application ? [{ ...json.application, quotes: nextQuotes }] : []);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -134,12 +148,59 @@ export default function ClientDashboardPage() {
     }
   }, [phone, receiptNumber]);
 
+  const loadApplications = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+      setMessage(null);
+    }
+    try {
+      const query = new URLSearchParams({
+        phone: lookupPhone,
+        lookup_password: lookupPassword,
+      });
+      const res = await fetch(`/api/client/quotes?${query.toString()}`);
+      const json = (await res.json()) as {
+        error?: string;
+        applications?: ClientApplication[];
+      };
+      if (!res.ok) {
+        setMessage(json.error ?? "견적요청을 찾을 수 없습니다.");
+        setApplications([]);
+        setApplication(null);
+        setQuotes([]);
+        return;
+      }
+      const nextApplications = Array.isArray(json.applications) ? json.applications : [];
+      setApplications(nextApplications);
+      const nextApplication =
+        nextApplications.find((item) => item.id === application?.id) ?? nextApplications[0] ?? null;
+      setApplication(nextApplication);
+      const nextQuotes = Array.isArray(nextApplication?.quotes) ? nextApplication.quotes : [];
+      quoteCountRef.current = nextQuotes.length;
+      setQuotes(nextQuotes);
+      if (!options?.silent) setMessage(`견적요청 ${nextApplications.length}건을 불러왔습니다.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (!options?.silent) setLoading(false);
+    }
+  }, [application?.id, lookupPassword, lookupPhone]);
+
+  const selectApplication = (nextApplication: ClientApplication) => {
+    setApplication(nextApplication);
+    setQuotes(Array.isArray(nextApplication.quotes) ? nextApplication.quotes : []);
+    setMessage(null);
+  };
+
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "client-dashboard-live",
     tables: ["applications", "driver_quotes", "guest_driver_quotes", "sponsor_preapprovals"],
     enabled: application != null,
     debounceMs: 800,
-    onRefresh: () => load({ silent: true }),
+    onRefresh: () =>
+      lookupPassword.trim() !== ""
+        ? loadApplications({ silent: true })
+        : load({ silent: true }),
   });
 
   const runAction = async (
@@ -153,8 +214,8 @@ export default function ClientDashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          receipt_number: receiptNumber,
-          phone,
+          receipt_number: application?.receipt_number ?? receiptNumber,
+          phone: application?.phone ?? phone,
           action,
           quote_id: quote?.id,
           quote_source: quote?.source,
@@ -170,13 +231,21 @@ export default function ClientDashboardPage() {
         return;
       }
       setApplication(json.application ?? null);
-      setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
+      const nextQuotes = Array.isArray(json.quotes) ? json.quotes : [];
+      setQuotes(nextQuotes);
+      if (json.application) {
+        setApplications((prev) =>
+          prev.map((item) =>
+            item.id === json.application?.id ? { ...json.application, quotes: nextQuotes } : item,
+          ),
+        );
+      }
       setMessage(
         action === "reopen"
           ? "견적을 재오픈했습니다."
           : action === "select_quote"
-            ? "다른 견적으로 자동확정을 변경했습니다."
-            : "지원금 가승인을 확정했습니다. 기사 연락처가 공개됩니다.",
+            ? "선택 후보가 변경되었습니다."
+            : "최종 견적을 선택했습니다. 선택한 기사 연락처가 공개됩니다.",
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
@@ -199,6 +268,9 @@ export default function ClientDashboardPage() {
             quote.source === application.auto_selected_quote_source,
         ) ??
         null;
+  const filteredApplications = applications.filter(
+    (item) => applicationTabFor(item) === activeTab,
+  );
   const contactRevealed =
     application != null &&
     application.contact_revealed_at.trim() !== "" &&
@@ -214,40 +286,212 @@ export default function ClientDashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f8fb] px-5 py-10">
+      {confirmQuote ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 px-4 py-8">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-black text-slate-950">
+              이 견적을 최종 선택하시겠습니까?
+            </h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <p className="font-black text-slate-950">{confirmQuote.company_name}</p>
+              <p className="font-semibold text-slate-600">
+                {confirmQuote.vehicle_type} · {confirmQuote.available_time}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <p className="text-xs font-bold text-slate-500">일반견적가</p>
+                  <p className="mt-1 font-black text-slate-950">{formatPrice(confirmQuote.price)}</p>
+                </div>
+                <div className="rounded-xl bg-blue-50 p-3">
+                  <p className="text-xs font-bold text-blue-500">지원견적가</p>
+                  <p className="mt-1 font-black text-blue-950">
+                    {confirmQuote.member_price != null
+                      ? formatPrice(confirmQuote.member_price)
+                      : "지원견적 없음"}
+                  </p>
+                </div>
+              </div>
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900">
+                최종 선택 후 선택한 기사/업체 연락처가 공개됩니다.
+              </p>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setConfirmQuote(null)}
+                className="min-h-11 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const quote = confirmQuote;
+                  setConfirmQuote(null);
+                  void runAction("final_confirm", quote);
+                }}
+                className="min-h-11 rounded-xl bg-blue-600 text-sm font-black text-white"
+              >
+                최종 선택
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <section className="mx-auto w-full max-w-2xl rounded-[2rem] bg-white p-7 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100">
         <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600">
           지원금 전세버스
         </p>
         <h1 className="mt-3 text-2xl font-black tracking-[-0.04em] text-slate-950">
-          내 견적요청서 조회
+          내 견적요청 모아보기
         </h1>
+        <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+          휴대폰번호와 견적 조회용 간단 비밀번호로 내 신청서를 한 번에 확인합니다.
+        </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <input
-            value={receiptNumber}
-            onChange={(event) => setReceiptNumber(event.target.value)}
-            placeholder="접수번호"
+            value={lookupPhone}
+            onChange={(event) => setLookupPhone(event.target.value)}
+            placeholder="휴대폰번호"
             className="min-h-12 rounded-xl border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-500"
           />
           <input
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="휴대폰번호"
+            type="password"
+            value={lookupPassword}
+            onChange={(event) => setLookupPassword(event.target.value)}
+            placeholder="견적 조회용 간단 비밀번호"
             className="min-h-12 rounded-xl border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-500"
           />
         </div>
         <button
           type="button"
-          onClick={() => void load()}
-          disabled={loading || receiptNumber.trim() === "" || phone.trim() === ""}
+          onClick={() => void loadApplications()}
+          disabled={loading || lookupPhone.trim() === "" || lookupPassword.trim().length < 4}
           className="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl bg-blue-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
           style={tapStyle}
         >
-          {loading ? "조회 중…" : "견적 조회"}
+          {loading ? "조회 중…" : "내 견적요청 조회"}
         </button>
+        <button
+          type="button"
+          onClick={() => setShowReceiptLookup((prev) => !prev)}
+          className="mt-3 text-sm font-black text-blue-700"
+        >
+          {showReceiptLookup ? "신청번호 조회 닫기" : "신청번호로 조회하기"}
+        </button>
+        {showReceiptLookup ? (
+          <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-100">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input
+                value={receiptNumber}
+                onChange={(event) => setReceiptNumber(event.target.value)}
+                placeholder="신청번호"
+                className="min-h-12 rounded-xl border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-500"
+              />
+              <input
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="휴대폰번호"
+                className="min-h-12 rounded-xl border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-blue-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading || receiptNumber.trim() === "" || phone.trim() === ""}
+              className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white disabled:opacity-50"
+            >
+              신청번호로 조회
+            </button>
+          </div>
+        ) : null}
         {message ? (
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200">
             {message}
           </p>
+        ) : null}
+        {applications.length > 0 ? (
+          <div className="mt-6 space-y-3">
+            <h2 className="text-lg font-black text-slate-950">내 견적요청</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {applicationTabs.map((tab) => {
+                const count = applications.filter((item) => applicationTabFor(item) === tab.id).length;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`min-h-10 rounded-xl text-xs font-black ${
+                      activeTab === tab.id
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-50 text-slate-600 ring-1 ring-slate-100"
+                    }`}
+                  >
+                    {tab.label} {count}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid gap-3">
+              {filteredApplications.length === 0 ? (
+                <p className="rounded-2xl bg-slate-50 px-4 py-5 text-sm font-bold text-slate-500">
+                  이 상태의 견적요청이 없습니다.
+                </p>
+              ) : null}
+              {filteredApplications.map((item) => {
+                const active = item.id === application?.id;
+                const statusLabel =
+                  applicationTabFor(item) === "matched"
+                    ? "매칭 완료"
+                    : applicationTabFor(item) === "needs_selection"
+                      ? "선택 필요"
+                      : "견적 수집중";
+                const supportLabel =
+                  item.sponsor_support_status === "approved"
+                    ? "지원금 승인완료"
+                    : item.sponsor_support_status === "rejected"
+                      ? "지원금 미승인"
+                      : item.sponsor_support_status === "none"
+                        ? "지원금 없음"
+                        : "지원금 검토중";
+                return (
+                  <article
+                    key={item.id}
+                    className={`rounded-2xl border p-4 ${
+                      active ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black text-slate-500">{item.receipt_number}</p>
+                        <p className="mt-1 text-sm font-black text-slate-950">
+                          {[item.departure, ...item.stopovers, item.destination].filter(Boolean).join(" → ")}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          {item.departure_date} {item.departure_time} · {item.passenger_count ?? "—"}명 · 견적 {item.quote_count}건
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-blue-700 ring-1 ring-blue-100">
+                          {statusLabel}
+                        </span>
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">
+                          {supportLabel}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => selectApplication(item)}
+                          className="min-h-10 rounded-xl bg-slate-950 px-4 text-xs font-black text-white"
+                        >
+                          보기
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
         ) : null}
         {application ? (
           <div className="mt-6 space-y-4">
@@ -365,28 +609,27 @@ export default function ClientDashboardPage() {
                   </div>
                 </div>
                 <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-                  지원금 조건과 기사 매칭 상태를 중심으로 확인하면 됩니다.
+                  후원업체 지원 여부에 따라 지원견적가가 적용될 수 있습니다.
+                  후원업체의 세부 지원금액은 공개되지 않습니다.
                 </p>
                 <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-900">
                   {application.sponsor_support_status === "approved"
-                    ? `지원금 승인완료${
-                        application.sponsor_approved_support_amount != null
-                          ? ` · ${application.sponsor_approved_support_amount.toLocaleString("ko-KR")}원`
-                          : ""
-                      }`
+                    ? "지원금 승인완료"
                     : application.sponsor_support_status === "rejected"
                       ? "지원금 미승인 또는 조건 불일치"
-                      : "지원금 검토중"}
+                      : application.sponsor_support_status === "none"
+                        ? "지원금 없음"
+                        : "지원금 검토중"}
                 </p>
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
                   disabled={loading || !selectedQuote}
-                  onClick={() => void runAction("final_confirm", selectedQuote ?? undefined)}
+                  onClick={() => selectedQuote ? setConfirmQuote(selectedQuote) : undefined}
                   className="min-h-11 rounded-xl bg-slate-950 px-3 text-sm font-black text-white disabled:opacity-50"
                 >
-                  지원금 가승인 확정
+                  선택 견적 최종확정
                 </button>
                 <button
                   type="button"
@@ -462,13 +705,22 @@ export default function ClientDashboardPage() {
                         ) : null}
                       </div>
                       <p className="text-right text-sm font-black text-slate-950">
-                        <span className="block text-xs text-slate-500">일반가</span>
+                        <span className="block text-xs text-slate-500">일반견적가</span>
                         {formatPrice(quote.price)}
-                        {quote.member_price != null ? (
-                          <span className="block text-xs text-blue-700">
-                            지원금 적용가 {formatPrice(quote.member_price)}
-                          </span>
-                        ) : null}
+                        <span className={`block text-xs ${
+                          quote.member_price != null &&
+                          quote.price != null &&
+                          quote.member_price < quote.price
+                            ? "font-black text-blue-700"
+                            : "text-slate-500"
+                        }`}>
+                          지원견적가{" "}
+                          {quote.source === "member" && quote.member_price != null
+                            ? formatPrice(quote.member_price)
+                            : quote.source === "member"
+                              ? "지원견적 없음"
+                              : "회원 기사 전용 지원견적 없음"}
+                        </span>
                         <span className="mt-1 block text-[11px] text-slate-500">
                           {supportStatusLabel}
                         </span>
@@ -477,10 +729,10 @@ export default function ClientDashboardPage() {
                     <button
                       type="button"
                       disabled={loading || selected}
-                      onClick={() => void runAction("select_quote", quote)}
+                      onClick={() => setConfirmQuote(quote)}
                       className="mt-3 min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-50"
                     >
-                      {selected ? "선택된 견적" : "다른 견적 선택"}
+                      {selected ? "선택된 견적" : "이 견적 선택"}
                     </button>
                   </article>
                 );

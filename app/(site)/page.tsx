@@ -84,6 +84,8 @@ type ApplicationInsertPayload = {
   extension_round?: number;
   support_client_reward_ratio?: number;
   support_driver_ratio?: number;
+  client_lookup_password?: string;
+  client_lookup_password_set_at?: string;
 };
 
 const DRAFT_STORAGE_KEY = "freeTourBusFormDraft";
@@ -200,6 +202,8 @@ type FormData = {
   passengerCount: string;
   applicantName: string;
   phone: string;
+  lookupPassword: string;
+  lookupPasswordConfirm: string;
   organizationName: string;
   organizationType: string;
   requestMessage: string;
@@ -227,6 +231,8 @@ const INITIAL_FORM_DATA: FormData = {
   passengerCount: "",
   applicantName: "",
   phone: "",
+  lookupPassword: "",
+  lookupPasswordConfirm: "",
   organizationName: "",
   organizationType: "",
   requestMessage: "",
@@ -246,6 +252,7 @@ export default function Home() {
   }));
 
   const [phoneError, setPhoneError] = useState(false);
+  const [lookupPasswordError, setLookupPasswordError] = useState<string | null>(null);
   const [passengerCountError, setPassengerCountError] = useState(false);
   const [departureError, setDepartureError] = useState<string | null>(null);
   const [departureRegionError, setDepartureRegionError] = useState<string | null>(
@@ -309,9 +316,18 @@ export default function Home() {
     const headcountOk = Number.isFinite(parsedCount) && parsedCount >= 10;
 
     setPhoneError(!phoneOk);
+    const lookupPassword = formData.lookupPassword.trim();
+    const lookupPasswordConfirm = formData.lookupPasswordConfirm.trim();
+    const lookupPasswordErr =
+      lookupPassword.length < 4
+        ? "견적 조회용 간단 비밀번호는 4자리 이상 입력해 주세요."
+        : lookupPassword !== lookupPasswordConfirm
+          ? "견적 조회용 비밀번호가 서로 일치하지 않습니다."
+          : null;
+    setLookupPasswordError(lookupPasswordErr);
     setPassengerCountError(!headcountOk);
 
-    if (!phoneOk || !headcountOk) return;
+    if (!phoneOk || !headcountOk || lookupPasswordErr) return;
 
     const depTrim = formData.departure.trim();
     const destTrim = formData.destination.trim();
@@ -441,6 +457,9 @@ export default function Home() {
         extension_round: 0,
         support_client_reward_ratio: 0,
         support_driver_ratio: 100,
+        // TODO: 운영 보안 강화를 위해 hash 저장으로 전환 필요.
+        client_lookup_password: lookupPassword,
+        client_lookup_password_set_at: new Date().toISOString(),
       };
 
       console.log(
@@ -1280,6 +1299,62 @@ export default function Home() {
                   </p>
                 ) : null}
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block px-1 text-xs font-black text-slate-500">
+                    견적 조회용 간단 비밀번호
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
+                      lookupPasswordError
+                        ? "border-red-400 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-500"
+                    }`}
+                    placeholder="4자리 이상"
+                    value={formData.lookupPassword}
+                    onChange={(event) => {
+                      setLookupPasswordError(null);
+                      setFormData((prev) => ({
+                        ...prev,
+                        lookupPassword: event.target.value,
+                      }));
+                    }}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block px-1 text-xs font-black text-slate-500">
+                    간단 비밀번호 확인
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    className={`h-14 w-full rounded-2xl border bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 ${
+                      lookupPasswordError
+                        ? "border-red-400 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-500"
+                    }`}
+                    placeholder="한 번 더 입력"
+                    value={formData.lookupPasswordConfirm}
+                    onChange={(event) => {
+                      setLookupPasswordError(null);
+                      setFormData((prev) => ({
+                        ...prev,
+                        lookupPasswordConfirm: event.target.value,
+                      }));
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="px-1 text-xs font-semibold leading-5 text-slate-500">
+                나중에 내 견적요청을 다시 확인할 때 사용합니다.
+              </p>
+              {lookupPasswordError ? (
+                <p className="px-1 text-xs font-medium leading-5 text-red-500">
+                  {lookupPasswordError}
+                </p>
+              ) : null}
               <input
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold tracking-[-0.03em] outline-none placeholder:text-slate-400 focus:border-blue-500"
                 placeholder="단체명 입력"
