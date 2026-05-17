@@ -8,6 +8,7 @@ import {
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { sendNotificationSms } from "@/lib/notification-service";
+import { getQuoteDisplayPrices } from "@/lib/quote-display-prices";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -247,18 +248,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         partnerById.get(safeText(row.partner_driver_id)) ??
         partnerByAuthUserId.get(safeText(row.auth_user_id)) ??
         {};
-      const price = parseInteger(row.price);
-      const supportDiscountedPrice =
-        parseInteger(row.final_member_price) ??
-        parseInteger(row.member_price) ??
-        parseInteger(row.sponsor_discounted_price);
-      const supportAmount =
-        parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
-      const memberPrice =
-        supportDiscountedPrice ??
-        (price != null && supportAmount != null && supportAmount > 0
-          ? Math.max(0, price - supportAmount)
-          : null);
+      const displayPrices = getQuoteDisplayPrices(row);
       return {
         source: "member",
         id: safeText(row.id),
@@ -270,10 +260,13 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
           safeText(row.id) === finalSelectedQuoteId
             ? safeText(partner?.phone)
             : "",
-        price,
-        member_price: memberPrice,
+        price: displayPrices.normalPrice,
+        member_price: displayPrices.supportPrice,
         sponsor_support_status: safeText(row.sponsor_support_status),
-        sponsor_quote_enabled: row.sponsor_quote_enabled === true,
+        sponsor_quote_enabled:
+          row.sponsor_quote_enabled === true ||
+          displayPrices.supportPrice != null ||
+          displayPrices.supportCustomerAmount > 0,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
         memo: safeText(row.message),

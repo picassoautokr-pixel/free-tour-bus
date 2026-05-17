@@ -8,6 +8,7 @@ import {
   supportRewardAmounts,
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
+import { getQuoteDisplayPrices } from "@/lib/quote-display-prices";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -201,30 +202,23 @@ export async function GET(request: Request) {
     const row = raw as Record<string, unknown>;
     const partnerDriverId = safeText(row.partner_driver_id);
     const partner = partnerById.get(partnerDriverId);
-    const price = parseInteger(row.price);
-    const customerSupportAmount =
-      parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
-    const memberPrice =
-      parseInteger(row.member_price) ??
-      parseInteger(row.sponsor_discounted_price) ??
-      (price != null && customerSupportAmount != null
-        ? Math.max(0, price - customerSupportAmount)
-        : null);
+    const displayPrices = getQuoteDisplayPrices(row);
+    const finalCustomerSupportAmount = parseInteger(row.final_customer_support_amount);
     return {
       id: safeText(row.id),
       created_at: safeText(row.created_at),
       application_id: safeText(row.application_id),
       partner_driver_id: partnerDriverId,
       auth_user_id: safeText(row.auth_user_id),
-      price,
+      price: displayPrices.normalPrice,
       estimated_support_amount: parseInteger(row.estimated_support_amount),
       support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
       preapproved_support_amount: parseInteger(row.preapproved_support_amount),
       approved_support_amount: parseInteger(row.approved_support_amount),
       support_discount_amount: parseInteger(row.support_discount_amount),
-      customer_support_amount: customerSupportAmount,
-      member_price: memberPrice,
-      final_customer_support_amount: parseInteger(row.final_customer_support_amount),
+      customer_support_amount: displayPrices.supportCustomerAmount,
+      member_price: displayPrices.supportPrice,
+      final_customer_support_amount: finalCustomerSupportAmount,
       final_driver_support_amount: parseInteger(row.final_driver_support_amount),
       final_member_price: parseInteger(row.final_member_price),
       support_recalculated_at: safeText(row.support_recalculated_at),
@@ -236,8 +230,8 @@ export async function GET(request: Request) {
       sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
       sponsor_quote_enabled:
         row.sponsor_quote_enabled === true ||
-        memberPrice != null ||
-        customerSupportAmount != null,
+        displayPrices.supportPrice != null ||
+        displayPrices.supportCustomerAmount > 0,
       driver_support_amount: parseInteger(row.driver_support_amount),
       client_reward_amount: parseInteger(row.client_reward_amount),
       vehicle_type: safeText(row.vehicle_type, "—"),

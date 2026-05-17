@@ -251,6 +251,10 @@ export async function POST(request: Request) {
   const memberPrice = Math.max(0, price - supportDiscountAmount);
   const preapprovedSupportAmount = supportLimit;
   const approvedSupportAmount = Math.max(0, sponsorSummary.approved_support_amount_total);
+  const sponsorSupportStatus =
+    sponsorSummary.status === "none" && supportLimit > 0
+      ? "preapproved"
+      : sponsorSummary.status;
   const driverSupportAmount = Math.max(
     preapprovedSupportAmount - supportDiscountAmount,
     0,
@@ -386,7 +390,7 @@ export async function POST(request: Request) {
     is_member_quote: true,
     converted_from_guest_quote_id: convertingGuestQuoteId,
     sponsor_support_amount: supportDiscountAmount,
-    sponsor_support_status: sponsorSummary.status,
+    sponsor_support_status: sponsorSupportStatus,
     sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
     sponsor_discounted_price: memberPrice,
     sponsor_quote_enabled: true,
@@ -430,7 +434,7 @@ export async function POST(request: Request) {
       is_member_quote: true,
       converted_from_guest_quote_id: convertingGuestQuoteId,
       sponsor_support_amount: supportDiscountAmount,
-      sponsor_support_status: sponsorSummary.status,
+      sponsor_support_status: sponsorSupportStatus,
       sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
       sponsor_discounted_price: memberPrice,
       sponsor_quote_enabled: true,
