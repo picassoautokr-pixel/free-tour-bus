@@ -58,15 +58,26 @@ export function calculateSupportSettlement(input: {
   const preapprovedSupportAmount = Math.max(0, input.preapprovedSupportAmount);
 
   if (approvedSupportAmount <= 0) {
+    const displayCustomerSupportAmount = Math.min(
+      customerSupportAmount,
+      preapprovedSupportAmount,
+    );
     return {
-      finalCustomerSupportAmount: 0,
-      finalDriverSupportAmount: 0,
-      finalMemberPrice: price == null ? input.fallbackMemberPrice ?? null : price,
+      finalCustomerSupportAmount: displayCustomerSupportAmount,
+      finalDriverSupportAmount: Math.max(
+        preapprovedSupportAmount - displayCustomerSupportAmount,
+        0,
+      ),
+      finalMemberPrice:
+        price == null
+          ? input.fallbackMemberPrice ?? null
+          : Math.max(price - displayCustomerSupportAmount, 0),
     };
   }
 
   if (input.supportSettlementType === "ratio" && preapprovedSupportAmount > 0) {
-    const customerRatio = customerSupportAmount / preapprovedSupportAmount;
+    const customerRatio =
+      Math.min(customerSupportAmount, preapprovedSupportAmount) / preapprovedSupportAmount;
     const finalCustomerSupportAmount = Math.round(approvedSupportAmount * customerRatio);
     const finalDriverSupportAmount = Math.max(
       approvedSupportAmount - finalCustomerSupportAmount,
@@ -136,12 +147,23 @@ export async function recalculateDriverQuoteSupport(
     const driverSupportAmount =
       parseInteger(row.driver_support_amount) ??
       Math.max(preapprovedSupportAmount - customerSupportAmount, 0);
+    const activePreapprovedSupportAmount =
+      approvedSupportAmount > 0 ||
+      sponsorSummary.status === "preapproved" ||
+      sponsorSummary.status === "mixed"
+        ? preapprovedSupportAmount
+        : 0;
+    const cappedCustomerSupportAmount = Math.min(
+      customerSupportAmount,
+      activePreapprovedSupportAmount,
+      price ?? Number.MAX_SAFE_INTEGER,
+    );
     const settlement = calculateSupportSettlement({
       price,
       supportSettlementType: safeText(row.support_settlement_type, "client_priority"),
-      preapprovedSupportAmount,
+      preapprovedSupportAmount: activePreapprovedSupportAmount,
       approvedSupportAmount,
-      customerSupportAmount,
+      customerSupportAmount: cappedCustomerSupportAmount,
       driverSupportAmount,
       fallbackMemberPrice:
         parseInteger(row.member_price) ?? parseInteger(row.sponsor_discounted_price),
@@ -154,7 +176,7 @@ export async function recalculateDriverQuoteSupport(
           safeText(row.support_settlement_type) === "ratio" ? "ratio" : "client_priority",
         preapproved_support_amount: preapprovedSupportAmount,
         approved_support_amount: approvedSupportAmount,
-        customer_support_amount: customerSupportAmount,
+        customer_support_amount: cappedCustomerSupportAmount,
         driver_support_amount: driverSupportAmount,
         final_customer_support_amount: settlement.finalCustomerSupportAmount,
         final_driver_support_amount: settlement.finalDriverSupportAmount,

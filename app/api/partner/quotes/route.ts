@@ -238,13 +238,15 @@ export async function POST(request: Request) {
   const sponsorSummary = await getApprovedSponsorSupport(admin, applicationId);
   const supportLimit = supportLimitForQuote({
     approvedSupportAmountTotal: sponsorSummary.approved_support_amount_total,
+    preapprovedSupportAmountTotal: sponsorSummary.preapproved_support_amount_total,
     estimatedSupportAmount: supportEstimate.estimated_support_amount,
   });
+  const supportInputLimit = Math.min(supportLimit, price);
   const supportDiscountAmount =
-    requestedSupportDiscountAmount ?? supportLimit;
-  if (supportDiscountAmount > supportLimit) {
+    requestedSupportDiscountAmount ?? supportInputLimit;
+  if (supportDiscountAmount < 0 || supportDiscountAmount > supportInputLimit) {
     return NextResponse.json(
-      { error: "고객에게 반영할 지원금은 적용 가능한 지원금 한도보다 클 수 없습니다." },
+      { error: "고객 지원금은 가승인 지원금과 일반견적가를 초과할 수 없습니다." },
       { status: 400 },
     );
   }

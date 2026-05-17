@@ -1528,7 +1528,7 @@ function DriverQuotesSection({
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-bold text-slate-400">고객 반영 지원금</dt>
+                  <dt className="font-bold text-slate-400">고객 지원금</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {quote.sponsor_quote_enabled
                       ? `${(quote.customer_support_amount ?? quote.support_discount_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
@@ -1546,11 +1546,21 @@ function DriverQuotesSection({
                 <div>
                   <dt className="font-bold text-slate-400">지원금 상태</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.sponsor_support_status || "—"}
+                    {quote.sponsor_support_status === "approved"
+                      ? "승인확정"
+                      : quote.sponsor_support_status === "preapproved" ||
+                          quote.sponsor_support_status === "pending" ||
+                          quote.sponsor_support_status === "mixed"
+                        ? "검토중"
+                        : ["rejected", "cancelled", "expired"].includes(
+                              quote.sponsor_support_status ?? "",
+                            )
+                          ? "미승인"
+                          : "일반/지원 없음"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-bold text-slate-400">지원금 적용 고객가</dt>
+                  <dt className="font-bold text-slate-400">지원금 견적가</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {(quote.final_member_price ??
                       quote.member_price ??
@@ -1584,7 +1594,7 @@ function DriverQuotesSection({
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-bold text-slate-400">최종 지원견적가</dt>
+                  <dt className="font-bold text-slate-400">최종 지원금 견적가</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {quote.final_member_price != null
                       ? `${quote.final_member_price.toLocaleString("ko-KR")}원`

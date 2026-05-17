@@ -36,11 +36,52 @@ function estimateSupport(params: {
   supportPerPerson: number;
   supportPerCase: number;
   maxSupportAmount: number;
+  maxPassengerCount: number;
+  remainingDailyBudget: number | null;
 }): number {
+  const eligiblePassengerCount =
+    params.maxPassengerCount > 0
+      ? Math.min(params.passengerCount ?? 0, params.maxPassengerCount)
+      : (params.passengerCount ?? 0);
   const raw =
-    (params.passengerCount ?? 0) * params.supportPerPerson + params.supportPerCase;
-  if (params.maxSupportAmount > 0) return Math.min(raw, params.maxSupportAmount);
-  return raw;
+    eligiblePassengerCount * params.supportPerPerson + params.supportPerCase;
+  const limits = [raw];
+  if (params.maxSupportAmount > 0) limits.push(params.maxSupportAmount);
+  if (params.remainingDailyBudget != null) limits.push(params.remainingDailyBudget);
+  return Math.max(0, Math.min(...limits));
+}
+
+function seoulTodayRange(): { start: string; end: string } {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const ymd = formatter.format(new Date());
+  const start = new Date(`${ymd}T00:00:00+09:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+async function todayApprovedTotal(
+  supabase: SupabaseClient,
+  sponsorCompanyId: string,
+): Promise<number> {
+  const { start, end } = seoulTodayRange();
+  const { data } = await supabase
+    .from("sponsor_preapprovals")
+    .select("approved_support_amount, estimated_support_amount")
+    .eq("sponsor_company_id", sponsorCompanyId)
+    .eq("status", "approved")
+    .gte("approved_at", start)
+    .lt("approved_at", end);
+  return (Array.isArray(data) ? data : []).reduce((sum, raw) => {
+    const row = raw as Record<string, unknown>;
+    const amount =
+      parseInteger(row.approved_support_amount) ?? parseInteger(row.estimated_support_amount) ?? 0;
+    return sum + Math.max(0, amount);
+  }, 0);
 }
 
 export async function matchSponsorPreapprovals(
@@ -92,8 +133,11 @@ export async function matchSponsorPreapprovals(
     .in("sponsor_company_id", approvedCompanyIds);
   if (rulesError) throw new Error(rulesError.message);
 
-  const rowsToInsert: Array<Record<string, unknown>> = [];
-  const matched: MatchResult["matched"] = [];
+  const bestByCompany = new Map<
+    string,
+    { row: Record<string, unknown>; matched: MatchResult["matched"][number] }
+  >();
+  const dailyApprovedByCompany = new Map<string, number>();
 
   for (const rawRule of Array.isArray(rules) ? rules : []) {
     const rule = rawRule as Record<string, unknown>;
@@ -119,14 +163,27 @@ export async function matchSponsorPreapprovals(
     const supportPerPerson = parseInteger(rule.support_per_person) ?? 0;
     const supportPerCase = parseInteger(rule.support_per_case) ?? 0;
     const maxSupportAmount = parseInteger(rule.max_support_amount) ?? 0;
+    const maxPassengerCount = parseInteger(rule.max_passenger_count) ?? 0;
+    const dailyBudget = parseInteger(rule.daily_budget) ?? 0;
+    let remainingDailyBudget: number | null = null;
+    if (dailyBudget > 0) {
+      let approvedTotal = dailyApprovedByCompany.get(sponsorCompanyId);
+      if (approvedTotal == null) {
+        approvedTotal = await todayApprovedTotal(supabase, sponsorCompanyId);
+        dailyApprovedByCompany.set(sponsorCompanyId, approvedTotal);
+      }
+      remainingDailyBudget = Math.max(dailyBudget - approvedTotal, 0);
+    }
     const estimatedSupportAmount = estimateSupport({
       passengerCount,
       supportPerPerson,
       supportPerCase,
       maxSupportAmount,
+      maxPassengerCount,
+      remainingDailyBudget,
     });
 
-    rowsToInsert.push({
+    const row = {
       application_id: id,
       sponsor_company_id: sponsorCompanyId,
       sponsor_rule_id: sponsorRuleId,
@@ -141,14 +198,25 @@ export async function matchSponsorPreapprovals(
           ? "전국 조건"
           : `지역 ${departureRegion}`,
         passengerCount != null ? `인원 ${passengerCount}명` : "인원 미정",
+        dailyBudget > 0 ? `일 예산 잔여 ${remainingDailyBudget?.toLocaleString("ko-KR")}원` : "",
       ].join(" · "),
-    });
-    matched.push({
+    };
+    const matchedItem = {
       sponsor_company_id: sponsorCompanyId,
       sponsor_rule_id: sponsorRuleId,
       estimated_support_amount: estimatedSupportAmount,
-    });
+    };
+    const current = bestByCompany.get(sponsorCompanyId);
+    if (
+      !current ||
+      estimatedSupportAmount > (Number(current.row.estimated_support_amount) || 0)
+    ) {
+      bestByCompany.set(sponsorCompanyId, { row, matched: matchedItem });
+    }
   }
+
+  const rowsToInsert = [...bestByCompany.values()].map((item) => item.row);
+  const matched = [...bestByCompany.values()].map((item) => item.matched);
 
   if (rowsToInsert.length === 0) {
     await refreshApplicationSponsorSupportSummary(supabase, id);

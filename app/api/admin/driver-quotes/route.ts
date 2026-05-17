@@ -204,6 +204,12 @@ export async function GET(request: Request) {
     const partner = partnerById.get(partnerDriverId);
     const displayPrices = getQuoteDisplayPrices(row);
     const finalCustomerSupportAmount = parseInteger(row.final_customer_support_amount);
+    const preapprovedSupportAmount =
+      (parseInteger(row.preapproved_support_amount) ?? 0) > 0
+        ? parseInteger(row.preapproved_support_amount)
+        : (parseInteger(row.estimated_support_amount) ?? 0) > 0
+          ? parseInteger(row.estimated_support_amount)
+          : parseInteger(row.sponsor_support_amount);
     return {
       id: safeText(row.id),
       created_at: safeText(row.created_at),
@@ -213,7 +219,7 @@ export async function GET(request: Request) {
       price: displayPrices.normalPrice,
       estimated_support_amount: parseInteger(row.estimated_support_amount),
       support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
-      preapproved_support_amount: parseInteger(row.preapproved_support_amount),
+      preapproved_support_amount: preapprovedSupportAmount,
       approved_support_amount: parseInteger(row.approved_support_amount),
       support_discount_amount: parseInteger(row.support_discount_amount),
       customer_support_amount: displayPrices.supportCustomerAmount,

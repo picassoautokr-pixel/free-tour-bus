@@ -281,6 +281,13 @@ function supportQuotePrice(quote: PartnerMyQuote): number | null {
   return Math.max(0, quote.price - customerSupportAmount);
 }
 
+function supportStatusLabel(status?: string): string {
+  if (status === "approved") return "승인확정";
+  if (status === "preapproved" || status === "pending" || status === "mixed") return "검토중";
+  if (["rejected", "cancelled", "expired"].includes(status ?? "")) return "미승인";
+  return "일반/지원 없음";
+}
+
 function formatSubmittedAt(iso: string): string {
   const t = iso.trim();
   if (t === "" || t === "—") return "—";
@@ -1279,15 +1286,23 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          가승인 지원금
+                          {quoteDetailCall.my_quote.sponsor_support_status === "approved"
+                            ? "확정 지원금"
+                            : "가승인 지원금"}
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           약{" "}
                           {formatPrice(
-                            quoteDetailCall.my_quote.preapproved_support_amount ??
-                              quoteDetailCall.my_quote.estimated_support_amount ??
-                              quoteDetailCall.my_quote.sponsor_support_amount ??
-                              0,
+                            quoteDetailCall.my_quote.sponsor_support_status === "approved"
+                              ? (quoteDetailCall.my_quote.approved_support_amount ??
+                                  quoteDetailCall.my_quote.sponsor_approved_support_amount ??
+                                  quoteDetailCall.my_quote.preapproved_support_amount ??
+                                  quoteDetailCall.my_quote.estimated_support_amount ??
+                                  0)
+                              : (quoteDetailCall.my_quote.preapproved_support_amount ??
+                                  quoteDetailCall.my_quote.estimated_support_amount ??
+                                  quoteDetailCall.my_quote.sponsor_support_amount ??
+                                  0),
                           )}
                         </dd>
                       </div>
@@ -1296,20 +1311,17 @@ export default function PartnerDashboardPage() {
                           후원업체 승인 상태
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
-                          {quoteDetailCall.my_quote.sponsor_support_status === "approved"
-                            ? "지원금 승인완료"
-                            : quoteDetailCall.my_quote.sponsor_support_status === "preapproved"
-                              ? "지원금 검토중"
-                              : "일반/검토 없음"}
+                          {supportStatusLabel(quoteDetailCall.my_quote.sponsor_support_status)}
                         </dd>
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          고객 반영 지원금
+                          고객 지원금
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           {formatPrice(
-                            quoteDetailCall.my_quote.support_discount_amount ??
+                            quoteDetailCall.my_quote.customer_support_amount ??
+                              quoteDetailCall.my_quote.support_discount_amount ??
                               quoteDetailCall.my_quote.sponsor_support_amount ??
                               0,
                           )}
@@ -1317,7 +1329,7 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          기사 예상 지원금
+                          기사 지원금
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           {formatPrice(quoteDetailCall.my_quote.driver_support_amount ?? 0)}
@@ -1325,7 +1337,7 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          지원금견적가
+                          지원금 견적가
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           {formatPrice(supportQuotePrice(quoteDetailCall.my_quote))}
@@ -1344,7 +1356,7 @@ export default function PartnerDashboardPage() {
                           </div>
                           <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
                             <dt className="text-[11px] font-bold text-emerald-600">
-                              최종 고객 반영 지원금
+                              최종 고객 지원금
                             </dt>
                             <dd className="mt-1 font-black text-emerald-900">
                               {formatPrice(
@@ -1364,7 +1376,7 @@ export default function PartnerDashboardPage() {
                           </div>
                           <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
                             <dt className="text-[11px] font-bold text-emerald-600">
-                              최종 지원견적가
+                              최종 지원금 견적가
                             </dt>
                             <dd className="mt-1 font-black text-emerald-900">
                               {formatPrice(quoteDetailCall.my_quote.final_member_price ?? null)}
@@ -1373,7 +1385,7 @@ export default function PartnerDashboardPage() {
                         </>
                       ) : null}
                       <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100 sm:col-span-2">
-                        후원업체 최종 승인 결과에 따라 지원견적가는 변경될 수 있습니다.
+                        후원업체 최종 승인 결과에 따라 지원금 견적가는 변경될 수 있습니다.
                       </p>
                     </>
                   ) : null}
@@ -1580,7 +1592,7 @@ export default function PartnerDashboardPage() {
                       </dt>
                       <dd className="mt-1 font-semibold text-slate-800">
                         {customerDetailCall.sponsor_support_status === "approved"
-                          ? "지원금 승인완료"
+                          ? "지원금 승인확정"
                           : customerDetailCall.sponsor_support_status === "rejected"
                             ? "지원금 미승인 또는 조건 불일치"
                             : customerDetailCall.sponsor_support_status === "preapproved"
@@ -1691,14 +1703,18 @@ export default function PartnerDashboardPage() {
                   quoteForm.supportDiscountAmount,
                 );
                 const quotePriceValue = parsePriceInput(quoteForm.price);
+                const supportInputLimit =
+                  quotePriceValue == null
+                    ? call.estimated_support_amount
+                    : Math.min(call.estimated_support_amount, quotePriceValue);
                 const supportDiscountInvalid =
-                  supportDiscountValue > call.estimated_support_amount;
+                  supportDiscountValue > supportInputLimit;
                 const customerPerceivedPrice =
                   quotePriceValue == null
                     ? null
-                    : Math.max(0, quotePriceValue - supportDiscountValue);
+                    : Math.max(0, quotePriceValue - Math.min(supportDiscountValue, supportInputLimit));
                 const quoteDriverSupportAmount = Math.max(
-                  call.estimated_support_amount - supportDiscountValue,
+                  call.estimated_support_amount - Math.min(supportDiscountValue, supportInputLimit),
                   0,
                 );
                 return (
@@ -2009,7 +2025,7 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          기사 예상 지원금
+                          기사 지원금
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
                           약 {formatPrice(driverSupportAmount)}
@@ -2150,7 +2166,7 @@ export default function PartnerDashboardPage() {
                           </div>
                           <label className="block sm:col-span-2">
                             <span className="text-xs font-bold text-slate-500">
-                              고객에게 반영할 지원금
+                              고객 지원금
                             </span>
                             <input
                               type="text"
@@ -2167,15 +2183,20 @@ export default function PartnerDashboardPage() {
                             />
                             <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
                               기사님이 후원 지원금을 얼마나 고객에게 반영할지 직접 결정할 수 있습니다.
-                              예상 지원금 한도 내에서 입력해 주세요.
+                              가승인 지원금과 일반견적가 중 더 작은 금액까지만 입력해 주세요.
                             </span>
                             <span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-500">
-                              기사 예상 수령 지원금: {formatPrice(quoteDriverSupportAmount)}
+                              기사 지원금: {formatPrice(quoteDriverSupportAmount)}
                             </span>
+                            {supportDiscountInvalid ? (
+                              <span className="mt-1 block text-[11px] font-black leading-5 text-red-500">
+                                고객 지원금은 {formatPrice(supportInputLimit)} 이하로 입력해 주세요.
+                              </span>
+                            ) : null}
                           </label>
                           <label className="block sm:col-span-2">
                             <span className="text-xs font-bold text-slate-500">
-                              고객 체감가
+                              지원금 견적가 / 고객 체감가
                             </span>
                             <input
                               type="text"

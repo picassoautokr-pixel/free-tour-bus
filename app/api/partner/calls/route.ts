@@ -249,7 +249,14 @@ export async function GET() {
   const quoteCountByApplication = new Map<string, number>();
   const sponsorSupportByApplication = new Map<
     string,
-    { status: string; approvedAmount: number | null; estimatedAmount: number | null }
+    {
+      status: string;
+      approvedAmount: number;
+      estimatedAmount: number;
+      approvedCount: number;
+      pendingCount: number;
+      rejectedCount: number;
+    }
   >();
   if (ids.length > 0) {
     const [{ data: memberCountRows }, { data: guestCountRows }, { data: sponsorRows }] = await Promise.all([
@@ -278,19 +285,44 @@ export async function GET() {
       const row = raw as Record<string, unknown>;
       const applicationId = safeText(row.application_id, "");
       if (!applicationId) continue;
-      const current = sponsorSupportByApplication.get(applicationId);
+      const current =
+        sponsorSupportByApplication.get(applicationId) ?? {
+          status: "none",
+          approvedAmount: 0,
+          estimatedAmount: 0,
+          approvedCount: 0,
+          pendingCount: 0,
+          rejectedCount: 0,
+        };
       const status = safeText(row.status, "preapproved");
-      const rank = status === "approved" ? 3 : status === "preapproved" ? 2 : 1;
-      const currentRank =
-        current?.status === "approved" ? 3 : current?.status === "preapproved" ? 2 : 1;
-      if (!current || rank >= currentRank) {
-        sponsorSupportByApplication.set(applicationId, {
-          status,
-          approvedAmount:
-            parseInteger(row.approved_support_amount) ?? parseInteger(row.estimated_support_amount),
-          estimatedAmount: parseInteger(row.estimated_support_amount),
-        });
+      if (status === "approved") {
+        current.approvedCount += 1;
+        current.approvedAmount +=
+          parseInteger(row.approved_support_amount) ??
+          parseInteger(row.estimated_support_amount) ??
+          0;
+      } else if (status === "preapproved" || status === "pending") {
+        current.pendingCount += 1;
+        current.estimatedAmount += parseInteger(row.estimated_support_amount) ?? 0;
+      } else if (["rejected", "cancelled", "expired"].includes(status)) {
+        current.rejectedCount += 1;
       }
+      const activeKinds = [
+        current.approvedCount > 0,
+        current.pendingCount > 0,
+        current.rejectedCount > 0,
+      ].filter(Boolean).length;
+      current.status =
+        activeKinds > 1
+          ? "mixed"
+          : current.approvedCount > 0
+            ? "approved"
+            : current.pendingCount > 0
+              ? "preapproved"
+              : current.rejectedCount > 0
+                ? "rejected"
+                : "none";
+      sponsorSupportByApplication.set(applicationId, current);
     }
 
     const orFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
@@ -352,13 +384,19 @@ export async function GET() {
       seenMemberApp.add(applicationId);
       const displayPrices = getQuoteDisplayPrices(row);
       const finalCustomerSupportAmount = parseInteger(row.final_customer_support_amount);
+      const preapprovedSupportAmount =
+        (parseInteger(row.preapproved_support_amount) ?? 0) > 0
+          ? parseInteger(row.preapproved_support_amount)
+          : (parseInteger(row.estimated_support_amount) ?? 0) > 0
+            ? parseInteger(row.estimated_support_amount)
+            : parseInteger(row.sponsor_support_amount);
       quotedByApplication.set(applicationId, {
         source: "member",
         id: safeText(row.id, ""),
         price: displayPrices.normalPrice,
         estimated_support_amount: parseInteger(row.estimated_support_amount),
         support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
-        preapproved_support_amount: parseInteger(row.preapproved_support_amount),
+        preapproved_support_amount: preapprovedSupportAmount,
         approved_support_amount: parseInteger(row.approved_support_amount),
         support_discount_amount: parseInteger(row.support_discount_amount),
         customer_support_amount: displayPrices.supportCustomerAmount,
@@ -474,7 +512,9 @@ export async function GET() {
     const supportAmount =
       approvedSupportAmount > 0
         ? approvedSupportAmount
-        : supportEstimate.supportAmount;
+        : (sponsorSupport?.estimatedAmount ?? 0) > 0
+          ? sponsorSupport?.estimatedAmount ?? 0
+          : supportEstimate.supportAmount;
     const customerInfoVisible =
       quote != null &&
       finalSelectedQuoteId !== "" &&

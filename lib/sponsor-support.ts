@@ -4,6 +4,7 @@ type SupabaseLike = Pick<SupabaseClient, "from">;
 
 export type ApplicationSponsorSupportSummary = {
   approved_support_amount_total: number;
+  preapproved_support_amount_total: number;
   approved_count: number;
   pending_count: number;
   rejected_count: number;
@@ -51,6 +52,7 @@ export async function getApprovedSponsorSupport(
     .eq("application_id", applicationId);
 
   let approvedTotal = 0;
+  let preapprovedTotal = 0;
   let approvedCount = 0;
   let pendingCount = 0;
   let rejectedCount = 0;
@@ -63,7 +65,9 @@ export async function getApprovedSponsorSupport(
         parseInteger(row.approved_support_amount) ?? parseInteger(row.estimated_support_amount);
       if (amount != null && amount > 0) approvedTotal += amount;
       approvedCount += 1;
-    } else if (status === "preapproved") {
+    } else if (status === "preapproved" || status === "pending") {
+      const amount = parseInteger(row.estimated_support_amount);
+      if (amount != null && amount > 0) preapprovedTotal += amount;
       pendingCount += 1;
     } else if (["rejected", "cancelled", "expired"].includes(status)) {
       rejectedCount += 1;
@@ -72,6 +76,7 @@ export async function getApprovedSponsorSupport(
 
   return {
     approved_support_amount_total: approvedTotal,
+    preapproved_support_amount_total: preapprovedTotal,
     approved_count: approvedCount,
     pending_count: pendingCount,
     rejected_count: rejectedCount,
@@ -100,9 +105,12 @@ export async function refreshApplicationSponsorSupportSummary(
 
 export function supportLimitForQuote(params: {
   approvedSupportAmountTotal?: number | null;
+  preapprovedSupportAmountTotal?: number | null;
   estimatedSupportAmount?: number | null;
 }): number {
   const approved = params.approvedSupportAmountTotal ?? 0;
   if (approved > 0) return approved;
+  const preapproved = params.preapprovedSupportAmountTotal ?? 0;
+  if (preapproved > 0) return preapproved;
   return Math.max(0, params.estimatedSupportAmount ?? 0);
 }

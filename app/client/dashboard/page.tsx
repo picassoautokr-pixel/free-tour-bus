@@ -307,7 +307,7 @@ export default function ClientDashboardPage() {
                   <p className="mt-1 font-black text-slate-950">{formatPrice(confirmQuote.price)}</p>
                 </div>
                 <div className="rounded-xl bg-blue-50 p-3">
-                  <p className="text-xs font-bold text-blue-500">지원금견적가</p>
+                  <p className="text-xs font-bold text-blue-500">지원금 견적가</p>
                   <p className="mt-1 font-black text-blue-950">
                     {supportQuotePrice(confirmQuote) != null
                       ? formatPrice(supportQuotePrice(confirmQuote))
@@ -452,7 +452,7 @@ export default function ClientDashboardPage() {
                       : "견적 수집중";
                 const supportLabel =
                   item.sponsor_support_status === "approved"
-                    ? "지원금 승인완료"
+                    ? "지원금 승인확정"
                     : item.sponsor_support_status === "rejected"
                       ? "지원금 미승인"
                       : item.sponsor_support_status === "none"
@@ -553,7 +553,7 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="rounded-xl bg-blue-50 p-3">
                       <p className="text-[11px] font-bold text-blue-500">
-                        지원금견적가
+                        지원금 견적가
                       </p>
                       <p className="mt-1 font-black text-blue-900">
                         {supportQuotePrice(selectedQuote) != null
@@ -618,7 +618,7 @@ export default function ClientDashboardPage() {
                 </p>
                 <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-900">
                   {application.sponsor_support_status === "approved"
-                    ? "지원금 승인완료"
+                    ? "지원금 승인확정"
                     : application.sponsor_support_status === "rejected"
                       ? "지원금 미승인 또는 조건 불일치"
                       : application.sponsor_support_status === "none"
@@ -664,7 +664,7 @@ export default function ClientDashboardPage() {
                   (supportQuotePrice(quote) != null ? application.sponsor_support_status : "none");
                 const supportStatusLabel =
                   supportStatus === "approved"
-                    ? "지원금 승인완료"
+                    ? "지원금 승인확정"
                     : supportStatus === "preapproved" || supportStatus === "mixed"
                       ? "지원금 검토중"
                       : supportStatus === "rejected"
@@ -691,7 +691,7 @@ export default function ClientDashboardPage() {
                           </span>
                           {supportQuotePrice(quote) != null ? (
                             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
-                              지원금견적가
+                              지원금 견적가
                             </span>
                           ) : null}
                         </div>
@@ -718,7 +718,7 @@ export default function ClientDashboardPage() {
                             ? "font-black text-blue-700"
                             : "text-slate-500"
                         }`}>
-                          지원금견적가{" "}
+                          지원금 견적가{" "}
                           {supportQuotePrice(quote) != null
                             ? formatPrice(supportQuotePrice(quote))
                             : quote.source === "member"
