@@ -454,6 +454,61 @@ export async function POST(request: Request) {
       insertError.message,
     )
   ) {
+    const minimalSupportPayload = {
+      application_id: applicationId,
+      partner_driver_id: driver.partnerDriverId,
+      auth_user_id: driver.userId,
+      price,
+      vehicle_type: vehicleType,
+      available_time: availableTime,
+      message,
+      status: "submitted",
+      support_discount_amount: supportDiscountAmount,
+      customer_support_amount: supportDiscountAmount,
+      member_price: memberPrice,
+      sponsor_discounted_price: memberPrice,
+    };
+    const minimalSupport = await admin
+      .from("driver_quotes")
+      .insert(minimalSupportPayload)
+      .select("id, price, support_discount_amount, customer_support_amount, member_price, sponsor_discounted_price")
+      .single();
+    inserted = minimalSupport.data;
+    insertError = minimalSupport.error;
+  }
+
+  if (
+    insertError &&
+    /support_discount_amount|customer_support_amount|member_price|sponsor_discounted_price|does not exist|42703/i.test(
+      insertError.message,
+    )
+  ) {
+    const memberPriceOnlyPayload = {
+      application_id: applicationId,
+      partner_driver_id: driver.partnerDriverId,
+      auth_user_id: driver.userId,
+      price,
+      vehicle_type: vehicleType,
+      available_time: availableTime,
+      message,
+      status: "submitted",
+      member_price: memberPrice,
+    };
+    const memberPriceOnly = await admin
+      .from("driver_quotes")
+      .insert(memberPriceOnlyPayload)
+      .select("id, price, member_price")
+      .single();
+    inserted = memberPriceOnly.data;
+    insertError = memberPriceOnly.error;
+  }
+
+  if (
+    insertError &&
+    /member_price|does not exist|42703/i.test(
+      insertError.message,
+    )
+  ) {
     const fallbackPayload = {
       application_id: applicationId,
       partner_driver_id: driver.partnerDriverId,

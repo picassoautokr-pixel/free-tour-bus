@@ -337,18 +337,26 @@ export async function GET() {
       const applicationId = safeText(row.application_id, "");
       if (applicationId === "" || seenMemberApp.has(applicationId)) continue;
       seenMemberApp.add(applicationId);
+      const price = parseInteger(row.price);
+      const customerSupportAmount =
+        parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
+      const memberPrice =
+        parseInteger(row.member_price) ??
+        parseInteger(row.sponsor_discounted_price) ??
+        (price != null && customerSupportAmount != null
+          ? Math.max(0, price - customerSupportAmount)
+          : null);
       quotedByApplication.set(applicationId, {
         source: "member",
         id: safeText(row.id, ""),
-        price: parseInteger(row.price),
+        price,
         estimated_support_amount: parseInteger(row.estimated_support_amount),
         support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
         preapproved_support_amount: parseInteger(row.preapproved_support_amount),
         approved_support_amount: parseInteger(row.approved_support_amount),
         support_discount_amount: parseInteger(row.support_discount_amount),
-        customer_support_amount:
-          parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount),
-        member_price: parseInteger(row.member_price),
+        customer_support_amount: customerSupportAmount,
+        member_price: memberPrice,
         final_customer_support_amount: parseInteger(row.final_customer_support_amount),
         final_driver_support_amount: parseInteger(row.final_driver_support_amount),
         final_member_price: parseInteger(row.final_member_price),
@@ -359,7 +367,10 @@ export async function GET() {
         sponsor_support_status: safeText(row.sponsor_support_status),
         sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
         sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
-        sponsor_quote_enabled: row.sponsor_quote_enabled === true,
+        sponsor_quote_enabled:
+          row.sponsor_quote_enabled === true ||
+          memberPrice != null ||
+          customerSupportAmount != null,
         driver_support_amount: parseInteger(row.driver_support_amount),
         client_reward_amount: parseInteger(row.client_reward_amount),
         vehicle_type: safeText(row.vehicle_type, "—"),
