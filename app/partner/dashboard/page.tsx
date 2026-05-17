@@ -272,7 +272,8 @@ function averageStatusLabel(call: PartnerCall): string {
 }
 
 function supportQuotePrice(quote: PartnerMyQuote): number | null {
-  const storedPrice = quote.member_price ?? quote.sponsor_discounted_price;
+  const storedPrice =
+    quote.final_member_price ?? quote.member_price ?? quote.sponsor_discounted_price;
   if (storedPrice != null) return storedPrice;
   const customerSupportAmount =
     quote.customer_support_amount ?? quote.support_discount_amount ?? null;

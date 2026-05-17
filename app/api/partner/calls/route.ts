@@ -307,6 +307,16 @@ export async function GET() {
     if (isMissingColumnError(memberQuotesResult.error)) {
       memberQuotesResult = await admin
         .from("driver_quotes")
+        .select(
+          "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
+        )
+        .in("application_id", ids)
+        .or(orFilter)
+        .order("created_at", { ascending: false });
+    }
+    if (isMissingColumnError(memberQuotesResult.error)) {
+      memberQuotesResult = await admin
+        .from("driver_quotes")
         .select("id, application_id, price, vehicle_type, available_time, message, status, created_at")
         .in("application_id", ids)
         .or(orFilter)

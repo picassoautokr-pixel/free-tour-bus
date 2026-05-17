@@ -410,7 +410,47 @@ export async function POST(request: Request) {
 
   if (
     insertError &&
-    /estimated_support_amount|support_settlement_type|preapproved_support_amount|approved_support_amount|support_discount_amount|customer_support_amount|member_price|final_member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_support_status|sponsor_approved_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|final_customer_support_amount|final_driver_support_amount|client_reward_amount|does not exist|42703/i.test(
+    /support_settlement_type|preapproved_support_amount|approved_support_amount|final_member_price|final_customer_support_amount|final_driver_support_amount|support_recalculated_at|does not exist|42703/i.test(
+      insertError.message,
+    )
+  ) {
+    const legacyPayload = {
+      application_id: applicationId,
+      partner_driver_id: driver.partnerDriverId,
+      auth_user_id: driver.userId,
+      price,
+      vehicle_type: vehicleType,
+      available_time: availableTime,
+      message,
+      status: "submitted",
+      estimated_support_amount: supportLimit,
+      support_discount_amount: supportDiscountAmount,
+      customer_support_amount: supportDiscountAmount,
+      member_price: memberPrice,
+      is_member_quote: true,
+      converted_from_guest_quote_id: convertingGuestQuoteId,
+      sponsor_support_amount: supportDiscountAmount,
+      sponsor_support_status: sponsorSummary.status,
+      sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
+      sponsor_discounted_price: memberPrice,
+      sponsor_quote_enabled: true,
+      driver_support_amount: driverSupportAmount,
+      client_reward_amount: supportDiscountAmount,
+    };
+    const legacy = await admin
+      .from("driver_quotes")
+      .insert(legacyPayload)
+      .select(
+        "id, price, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      )
+      .single();
+    inserted = legacy.data;
+    insertError = legacy.error;
+  }
+
+  if (
+    insertError &&
+    /estimated_support_amount|support_discount_amount|customer_support_amount|member_price|is_member_quote|converted_from_guest_quote_id|sponsor_support_amount|sponsor_support_status|sponsor_approved_support_amount|sponsor_discounted_price|sponsor_quote_enabled|driver_support_amount|client_reward_amount|does not exist|42703/i.test(
       insertError.message,
     )
   ) {

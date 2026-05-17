@@ -76,6 +76,16 @@ function parseInteger(value: unknown): number | null {
   return null;
 }
 
+function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    /does not exist|column .* does not exist|could not find .* column|schema cache/i.test(
+      error?.message ?? "",
+    )
+  );
+}
+
 function addHours(isoOrDate: string | Date, hours: number): string {
   const base = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
   const time = Number.isNaN(base.getTime()) ? Date.now() : base.getTime();
@@ -369,13 +379,26 @@ async function fetchQuoteCandidates(
   admin: SupabaseLike,
   applicationId: string,
 ): Promise<QuoteCandidate[]> {
-  const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
-    admin
+  let memberResult = await admin
+    .from("driver_quotes")
+    .select("id, price, final_member_price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
+    .eq("application_id", applicationId);
+  if (isMissingColumnError(memberResult.error)) {
+    memberResult = await admin
       .from("driver_quotes")
-      .select("id, price, final_member_price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
-      .eq("application_id", applicationId),
+      .select("id, price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
+      .eq("application_id", applicationId);
+  }
+  if (isMissingColumnError(memberResult.error)) {
+    memberResult = await admin
+      .from("driver_quotes")
+      .select("id, price")
+      .eq("application_id", applicationId);
+  }
+  const [{ data: guestRows }] = await Promise.all([
     admin.from("guest_driver_quotes").select("id, price").eq("application_id", applicationId),
   ]);
+  const memberRows = memberResult.error ? [] : memberResult.data;
 
   const members = (Array.isArray(memberRows) ? memberRows : []).map((raw) => {
     const row = raw as Record<string, unknown>;
@@ -397,7 +420,10 @@ async function fetchQuoteCandidates(
         ? "approved"
         : safeText(row.sponsor_support_status, "none"),
       isSupportQuote:
-        row.sponsor_quote_enabled === true &&
+        (row.sponsor_quote_enabled === true ||
+          finalMemberPrice != null ||
+          memberPrice != null ||
+          customerSupportAmount != null) &&
         (finalMemberPrice != null || memberPrice != null || customerSupportAmount != null),
     };
   });
