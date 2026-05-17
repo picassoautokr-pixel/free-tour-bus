@@ -271,6 +271,15 @@ function averageStatusLabel(call: PartnerCall): string {
   return "평균가 대비 상태 확인 중";
 }
 
+function supportQuotePrice(quote: PartnerMyQuote): number | null {
+  const storedPrice = quote.member_price ?? quote.sponsor_discounted_price;
+  if (storedPrice != null) return storedPrice;
+  const customerSupportAmount =
+    quote.customer_support_amount ?? quote.support_discount_amount ?? null;
+  if (quote.price == null || customerSupportAmount == null) return null;
+  return Math.max(0, quote.price - customerSupportAmount);
+}
+
 function formatSubmittedAt(iso: string): string {
   const t = iso.trim();
   if (t === "" || t === "—") return "—";
@@ -1255,7 +1264,7 @@ export default function PartnerDashboardPage() {
                     </dd>
                   </div>
                   {quoteDetailCall.my_quote.source === "member" &&
-                  quoteDetailCall.my_quote.sponsor_quote_enabled ? (
+                  supportQuotePrice(quoteDetailCall.my_quote) != null ? (
                     <>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
@@ -1315,15 +1324,10 @@ export default function PartnerDashboardPage() {
                       </div>
                       <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                         <dt className="text-[11px] font-bold text-blue-500">
-                          지원금 적용 고객가
+                          지원금견적가
                         </dt>
                         <dd className="mt-1 font-black text-blue-900">
-                          {formatPrice(
-                            quoteDetailCall.my_quote.member_price ??
-                              quoteDetailCall.my_quote
-                                .sponsor_discounted_price ??
-                              null,
-                          )}
+                          {formatPrice(supportQuotePrice(quoteDetailCall.my_quote))}
                         </dd>
                       </div>
                       {(quoteDetailCall.my_quote.approved_support_amount ?? 0) > 0 ||

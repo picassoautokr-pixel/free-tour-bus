@@ -97,7 +97,7 @@ async function resolveApplicationsByLookupPassword(
   if (lookupPassword.length < 4) {
     return { error: "간단 비밀번호는 4자리 이상 입력해 주세요.", status: 400 } as const;
   }
-  let result: {
+  const result: {
     data: unknown[] | null;
     error: { message: string; code?: string } | null;
   } = await admin
@@ -150,7 +150,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, customer_support_amount, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, customer_support_amount, support_discount_amount, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -240,9 +240,9 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         {};
       const price = parseInteger(row.price);
       const supportDiscountedPrice =
-        parseInteger(row.final_member_price) ??
         parseInteger(row.member_price) ??
-        parseInteger(row.sponsor_discounted_price);
+        parseInteger(row.sponsor_discounted_price) ??
+        parseInteger(row.final_member_price);
       const supportAmount =
         parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
       const memberPrice =

@@ -86,6 +86,10 @@ function formatPrice(value: number | null): string {
   return value == null ? "금액 확인 중" : `${value.toLocaleString("ko-KR")}원`;
 }
 
+function supportQuotePrice(quote: ClientQuote): number | null {
+  return quote.source === "member" ? quote.member_price : null;
+}
+
 function applicationTabFor(application: ClientApplication): ApplicationTab {
   if (application.final_selected_quote_id) return "matched";
   if (application.quote_count > 0) return "needs_selection";
@@ -303,10 +307,10 @@ export default function ClientDashboardPage() {
                   <p className="mt-1 font-black text-slate-950">{formatPrice(confirmQuote.price)}</p>
                 </div>
                 <div className="rounded-xl bg-blue-50 p-3">
-                  <p className="text-xs font-bold text-blue-500">지원견적가</p>
+                  <p className="text-xs font-bold text-blue-500">지원금견적가</p>
                   <p className="mt-1 font-black text-blue-950">
-                    {confirmQuote.member_price != null
-                      ? formatPrice(confirmQuote.member_price)
+                    {supportQuotePrice(confirmQuote) != null
+                      ? formatPrice(supportQuotePrice(confirmQuote))
                       : "지원견적 없음"}
                   </p>
                 </div>
@@ -541,22 +545,22 @@ export default function ClientDashboardPage() {
                   <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                     <div className="rounded-xl bg-slate-50 p-3">
                       <p className="text-[11px] font-bold text-slate-400">
-                        견적금액
+                        일반견적가
                       </p>
                       <p className="mt-1 font-black text-slate-900">
                         {formatPrice(selectedQuote.price)}
                       </p>
                     </div>
-                    {selectedQuote.member_price != null ? (
-                      <div className="rounded-xl bg-blue-50 p-3">
-                        <p className="text-[11px] font-bold text-blue-500">
-                          지원금 적용가
-                        </p>
-                        <p className="mt-1 font-black text-blue-900">
-                          {formatPrice(selectedQuote.member_price)}
-                        </p>
-                      </div>
-                    ) : null}
+                    <div className="rounded-xl bg-blue-50 p-3">
+                      <p className="text-[11px] font-bold text-blue-500">
+                        지원금견적가
+                      </p>
+                      <p className="mt-1 font-black text-blue-900">
+                        {supportQuotePrice(selectedQuote) != null
+                          ? formatPrice(supportQuotePrice(selectedQuote))
+                          : "지원견적 없음"}
+                      </p>
+                    </div>
                   </div>
                   {contactRevealed && selectedQuote.phone ? (
                     <div className="mt-3 rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
@@ -657,7 +661,7 @@ export default function ClientDashboardPage() {
                     quote.source === application.final_selected_quote_source);
                 const supportStatus =
                   quote.sponsor_support_status ||
-                  (quote.member_price != null ? application.sponsor_support_status : "none");
+                  (supportQuotePrice(quote) != null ? application.sponsor_support_status : "none");
                 const supportStatusLabel =
                   supportStatus === "approved"
                     ? "지원금 승인완료"
@@ -685,9 +689,9 @@ export default function ClientDashboardPage() {
                           }`}>
                             {quote.source === "member" ? "제휴기사 견적" : "비회원 견적"}
                           </span>
-                          {quote.member_price != null ? (
+                          {supportQuotePrice(quote) != null ? (
                             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
-                              지원금 적용가
+                              지원금견적가
                             </span>
                           ) : null}
                         </div>
@@ -708,15 +712,15 @@ export default function ClientDashboardPage() {
                         <span className="block text-xs text-slate-500">일반견적가</span>
                         {formatPrice(quote.price)}
                         <span className={`block text-xs ${
-                          quote.member_price != null &&
+                          supportQuotePrice(quote) != null &&
                           quote.price != null &&
-                          quote.member_price < quote.price
+                          supportQuotePrice(quote)! < quote.price
                             ? "font-black text-blue-700"
                             : "text-slate-500"
                         }`}>
-                          지원견적가{" "}
-                          {quote.source === "member" && quote.member_price != null
-                            ? formatPrice(quote.member_price)
+                          지원금견적가{" "}
+                          {supportQuotePrice(quote) != null
+                            ? formatPrice(supportQuotePrice(quote))
                             : quote.source === "member"
                               ? "지원견적 없음"
                               : "회원 기사 전용 지원견적 없음"}
