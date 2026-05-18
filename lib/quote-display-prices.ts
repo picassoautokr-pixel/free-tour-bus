@@ -1,17 +1,23 @@
-export type QuoteDisplayPriceInput = {
-  price?: unknown;
+import {
+  buildQuoteSupportBreakdown,
+  type QuoteSupportBreakdown,
+  type QuoteSupportInput,
+} from "@/lib/support-calculation";
+
+export type QuoteDisplayPriceInput = QuoteSupportInput & {
   final_member_price?: unknown;
   member_price?: unknown;
   sponsor_discounted_price?: unknown;
-  final_customer_support_amount?: unknown;
-  customer_support_amount?: unknown;
-  support_discount_amount?: unknown;
 };
 
 export type QuoteDisplayPrices = {
   normalPrice: number | null;
-  supportCustomerAmount: number;
+  supportCustomerAmount: number | null;
   supportPrice: number | null;
+  supportDiscountPlannedPrice: number | null;
+  supportDiscountAppliedPrice: number | null;
+  finalDiscountAppliedPrice: number | null;
+  breakdown: QuoteSupportBreakdown;
 };
 
 export function parseDisplayInteger(value: unknown): number | null {
@@ -23,34 +29,50 @@ export function parseDisplayInteger(value: unknown): number | null {
   return null;
 }
 
-export function getQuoteDisplayPrices(quote: QuoteDisplayPriceInput): QuoteDisplayPrices {
-  const normalPrice = parseDisplayInteger(quote.price);
-  const finalCustomerSupportAmount = parseDisplayInteger(quote.final_customer_support_amount);
-  const customerSupportAmount = parseDisplayInteger(quote.customer_support_amount);
-  const supportDiscountAmount = parseDisplayInteger(quote.support_discount_amount);
-  const storedSupportPrice =
-    parseDisplayInteger(quote.final_member_price) ??
-    parseDisplayInteger(quote.member_price) ??
-    parseDisplayInteger(quote.sponsor_discounted_price);
-  const supportCustomerAmount =
-    (finalCustomerSupportAmount ?? 0) > 0
-      ? finalCustomerSupportAmount ?? 0
-      : (customerSupportAmount ?? 0) > 0
-        ? customerSupportAmount ?? 0
-        : (supportDiscountAmount ?? 0) > 0
-          ? supportDiscountAmount ?? 0
-          : normalPrice != null && storedSupportPrice != null && storedSupportPrice < normalPrice
-            ? normalPrice - storedSupportPrice
-            : 0;
-  const supportPrice =
-    storedSupportPrice ??
-    (normalPrice != null && supportCustomerAmount > 0
-      ? Math.max(normalPrice - supportCustomerAmount, 0)
-      : null);
+export function getQuoteDisplayPrices(
+  quote: QuoteDisplayPriceInput,
+  options?: { applicationApprovedSupportTotal?: number | null },
+): QuoteDisplayPrices {
+  const breakdown = buildQuoteSupportBreakdown(quote, options);
+  const customerAmount =
+    breakdown.isConfirmed && breakdown.customerConfirmedSupport != null
+      ? breakdown.customerConfirmedSupport
+      : breakdown.customerPlannedSupport;
 
   return {
-    normalPrice,
-    supportCustomerAmount,
-    supportPrice,
+    normalPrice: breakdown.normalPrice,
+    supportCustomerAmount: customerAmount,
+    supportPrice: breakdown.isConfirmed
+      ? breakdown.supportDiscountAppliedPrice
+      : breakdown.supportDiscountPlannedPrice,
+    supportDiscountPlannedPrice: breakdown.supportDiscountPlannedPrice,
+    supportDiscountAppliedPrice: breakdown.supportDiscountAppliedPrice,
+    finalDiscountAppliedPrice: breakdown.finalDiscountAppliedPrice,
+    breakdown,
+  };
+}
+
+/** API/대시보드 공통 응답 필드 */
+export function mapQuoteWithSupport(
+  row: QuoteDisplayPriceInput,
+  options?: { applicationApprovedSupportTotal?: number | null },
+) {
+  const display = getQuoteDisplayPrices(row, options);
+  const b = display.breakdown;
+  return {
+    price: display.normalPrice,
+    member_price: display.supportDiscountPlannedPrice,
+    support_discount_planned_price: display.supportDiscountPlannedPrice,
+    support_discount_applied_price: display.supportDiscountAppliedPrice,
+    final_discount_applied_price: display.finalDiscountAppliedPrice,
+    total_planned_support: b.totalPlannedSupport,
+    customer_planned_support: b.customerPlannedSupport,
+    partner_planned_support: b.partnerPlannedSupport,
+    total_confirmed_support: b.totalConfirmedSupport,
+    customer_confirmed_support: b.customerConfirmedSupport,
+    partner_confirmed_support: b.partnerConfirmedSupport,
+    extension_support: b.extensionSupport,
+    support_breakdown: b,
+    sponsor_quote_enabled: b.sponsorQuoteEnabled,
   };
 }

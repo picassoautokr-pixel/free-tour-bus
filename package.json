@@ -6,7 +6,8 @@
     "dev": "next dev -H 0.0.0.0 --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx --yes tsx --test lib/support-calculation.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

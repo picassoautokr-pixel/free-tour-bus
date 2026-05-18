@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
-import { calculateSupportSettlement } from "@/lib/driver-quote-support";
+import { calculateSupportSettlementResult } from "@/lib/support-calculation";
 import {
   isApplicationQuoteAccepting,
   processApplicationQuoteLifecycle,
@@ -242,37 +242,31 @@ export async function POST(request: Request) {
     estimatedSupportAmount: supportEstimate.estimated_support_amount,
   });
   const supportInputLimit = Math.min(supportLimit, price);
-  const supportDiscountAmount =
+  const customerPlannedSupport =
     requestedSupportDiscountAmount ?? supportInputLimit;
-  if (supportDiscountAmount < 0 || supportDiscountAmount > supportInputLimit) {
+  if (customerPlannedSupport < 0 || customerPlannedSupport > supportInputLimit) {
     return NextResponse.json(
-      { error: "고객 지원금은 가승인 지원금과 일반견적가를 초과할 수 없습니다." },
+      { error: "고객 예정 지원금은 총 예정 지원금과 일반견적가를 초과할 수 없습니다." },
       { status: 400 },
     );
   }
-  const memberPrice = Math.max(0, price - supportDiscountAmount);
-  const preapprovedSupportAmount = supportLimit;
+  const totalPlannedSupport = supportLimit;
+  const partnerPlannedSupport = Math.max(totalPlannedSupport - customerPlannedSupport, 0);
+  const plannedDiscountPrice = Math.max(0, price - customerPlannedSupport);
   const approvedSupportAmount = Math.max(0, sponsorSummary.approved_support_amount_total);
   const sponsorSupportStatus =
     sponsorSummary.status === "none" && supportLimit > 0
       ? "preapproved"
       : sponsorSummary.status;
-  const driverSupportAmount = Math.max(
-    preapprovedSupportAmount - supportDiscountAmount,
-    0,
-  );
-  const finalSettlement =
-    approvedSupportAmount > 0
-      ? calculateSupportSettlement({
-          price,
-          supportSettlementType,
-          preapprovedSupportAmount,
-          approvedSupportAmount,
-          customerSupportAmount: supportDiscountAmount,
-          driverSupportAmount,
-          fallbackMemberPrice: memberPrice,
-        })
-      : null;
+  const settlement = calculateSupportSettlementResult({
+    price,
+    supportSettlementType,
+    preapprovedSupportAmount: totalPlannedSupport,
+    approvedSupportAmount,
+    customerSupportAmount: customerPlannedSupport,
+    driverSupportAmount: partnerPlannedSupport,
+    fallbackMemberPrice: plannedDiscountPrice,
+  });
   if (requestedDiscountedPrice != null && requestedDiscountedPrice > price) {
     return NextResponse.json(
       { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
@@ -382,26 +376,27 @@ export async function POST(request: Request) {
     available_time: availableTime,
     message,
     status: "submitted",
-    estimated_support_amount: supportLimit,
+    estimated_support_amount: totalPlannedSupport,
     support_settlement_type: supportSettlementType,
-    preapproved_support_amount: preapprovedSupportAmount,
-    approved_support_amount: approvedSupportAmount,
-    support_discount_amount: supportDiscountAmount,
-    customer_support_amount: supportDiscountAmount,
-    member_price: memberPrice,
+    preapproved_support_amount: totalPlannedSupport,
+    approved_support_amount: approvedSupportAmount > 0 ? approvedSupportAmount : null,
+    support_discount_amount: customerPlannedSupport,
+    customer_support_amount: customerPlannedSupport,
+    member_price: plannedDiscountPrice,
     is_member_quote: true,
     converted_from_guest_quote_id: convertingGuestQuoteId,
-    sponsor_support_amount: supportDiscountAmount,
+    sponsor_support_amount: totalPlannedSupport,
     sponsor_support_status: sponsorSupportStatus,
     sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
-    sponsor_discounted_price: memberPrice,
+    sponsor_discounted_price: plannedDiscountPrice,
     sponsor_quote_enabled: true,
-    driver_support_amount: driverSupportAmount,
-    final_customer_support_amount: finalSettlement?.finalCustomerSupportAmount ?? 0,
-    final_driver_support_amount: finalSettlement?.finalDriverSupportAmount ?? 0,
-    final_member_price: finalSettlement?.finalMemberPrice ?? null,
-    support_recalculated_at: finalSettlement ? new Date().toISOString() : null,
-    client_reward_amount: supportDiscountAmount,
+    driver_support_amount: partnerPlannedSupport,
+    final_customer_support_amount:
+      approvedSupportAmount > 0 ? settlement.finalCustomerSupportAmount : null,
+    final_driver_support_amount:
+      approvedSupportAmount > 0 ? settlement.finalDriverSupportAmount : null,
+    final_member_price: approvedSupportAmount > 0 ? settlement.finalMemberPrice : null,
+    support_recalculated_at: approvedSupportAmount > 0 ? new Date().toISOString() : null,
   };
 
   const insertResult = await admin
@@ -429,19 +424,18 @@ export async function POST(request: Request) {
       available_time: availableTime,
       message,
       status: "submitted",
-      estimated_support_amount: supportLimit,
-      support_discount_amount: supportDiscountAmount,
-      customer_support_amount: supportDiscountAmount,
-      member_price: memberPrice,
+      estimated_support_amount: totalPlannedSupport,
+      support_discount_amount: customerPlannedSupport,
+      customer_support_amount: customerPlannedSupport,
+      member_price: plannedDiscountPrice,
       is_member_quote: true,
       converted_from_guest_quote_id: convertingGuestQuoteId,
-      sponsor_support_amount: supportDiscountAmount,
+      sponsor_support_amount: totalPlannedSupport,
       sponsor_support_status: sponsorSupportStatus,
       sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
-      sponsor_discounted_price: memberPrice,
+      sponsor_discounted_price: plannedDiscountPrice,
       sponsor_quote_enabled: true,
-      driver_support_amount: driverSupportAmount,
-      client_reward_amount: supportDiscountAmount,
+      driver_support_amount: partnerPlannedSupport,
     };
     const legacy = await admin
       .from("driver_quotes")
@@ -469,10 +463,10 @@ export async function POST(request: Request) {
       available_time: availableTime,
       message,
       status: "submitted",
-      support_discount_amount: supportDiscountAmount,
-      customer_support_amount: supportDiscountAmount,
-      member_price: memberPrice,
-      sponsor_discounted_price: memberPrice,
+      support_discount_amount: customerPlannedSupport,
+      customer_support_amount: customerPlannedSupport,
+      member_price: plannedDiscountPrice,
+      sponsor_discounted_price: plannedDiscountPrice,
     };
     const minimalSupport = await admin
       .from("driver_quotes")
@@ -498,7 +492,7 @@ export async function POST(request: Request) {
       available_time: availableTime,
       message,
       status: "submitted",
-      member_price: memberPrice,
+      member_price: plannedDiscountPrice,
     };
     const memberPriceOnly = await admin
       .from("driver_quotes")

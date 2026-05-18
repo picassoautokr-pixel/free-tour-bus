@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
+import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
+import { buildQuoteSupportBreakdown } from "@/lib/support-calculation";
 import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
@@ -54,6 +57,10 @@ type PartnerMyQuote = {
   sponsor_quote_enabled?: boolean;
   driver_support_amount?: number | null;
   client_reward_amount?: number | null;
+  support_breakdown?: QuoteSupportBreakdown | null;
+  support_discount_planned_price?: number | null;
+  support_discount_applied_price?: number | null;
+  final_discount_applied_price?: number | null;
   vehicle_type: string;
   available_time: string;
   message: string;
@@ -282,10 +289,20 @@ function supportQuotePrice(quote: PartnerMyQuote): number | null {
 }
 
 function supportStatusLabel(status?: string): string {
-  if (status === "approved") return "승인확정";
-  if (status === "preapproved" || status === "pending" || status === "mixed") return "검토중";
+  if (status === "approved") return "확정 지원금";
+  if (status === "preapproved" || status === "pending" || status === "mixed") return "예상 지원금 검토중";
   if (["rejected", "cancelled", "expired"].includes(status ?? "")) return "미승인";
   return "일반/지원 없음";
+}
+
+function quoteSupportBreakdown(quote: PartnerMyQuote): QuoteSupportBreakdown {
+  return (
+    quote.support_breakdown ??
+    buildQuoteSupportBreakdown({
+      ...quote,
+      sponsor_quote_enabled: quote.sponsor_quote_enabled,
+    })
+  );
 }
 
 function formatSubmittedAt(iso: string): string {
@@ -1272,122 +1289,15 @@ export default function PartnerDashboardPage() {
                     </dd>
                   </div>
                   {quoteDetailCall.my_quote.source === "member" &&
-                  supportQuotePrice(quoteDetailCall.my_quote) != null ? (
-                    <>
-                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                        <dt className="text-[11px] font-bold text-blue-500">
-                          지원금 분배방식
-                        </dt>
-                        <dd className="mt-1 font-black text-blue-900">
-                          {quoteDetailCall.my_quote.support_settlement_type === "ratio"
-                            ? "비율정산"
-                            : "클라이언트 지원금 우선보장"}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                        <dt className="text-[11px] font-bold text-blue-500">
-                          {quoteDetailCall.my_quote.sponsor_support_status === "approved"
-                            ? "확정 지원금"
-                            : "가승인 지원금"}
-                        </dt>
-                        <dd className="mt-1 font-black text-blue-900">
-                          약{" "}
-                          {formatPrice(
-                            quoteDetailCall.my_quote.sponsor_support_status === "approved"
-                              ? (quoteDetailCall.my_quote.approved_support_amount ??
-                                  quoteDetailCall.my_quote.sponsor_approved_support_amount ??
-                                  quoteDetailCall.my_quote.preapproved_support_amount ??
-                                  quoteDetailCall.my_quote.estimated_support_amount ??
-                                  0)
-                              : (quoteDetailCall.my_quote.preapproved_support_amount ??
-                                  quoteDetailCall.my_quote.estimated_support_amount ??
-                                  quoteDetailCall.my_quote.sponsor_support_amount ??
-                                  0),
-                          )}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                        <dt className="text-[11px] font-bold text-blue-500">
-                          후원업체 승인 상태
-                        </dt>
-                        <dd className="mt-1 font-black text-blue-900">
-                          {supportStatusLabel(quoteDetailCall.my_quote.sponsor_support_status)}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                        <dt className="text-[11px] font-bold text-blue-500">
-                          고객 지원금
-                        </dt>
-                        <dd className="mt-1 font-black text-blue-900">
-                          {formatPrice(
-                            quoteDetailCall.my_quote.customer_support_amount ??
-                              quoteDetailCall.my_quote.support_discount_amount ??
-                              quoteDetailCall.my_quote.sponsor_support_amount ??
-                              0,
-                          )}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                        <dt className="text-[11px] font-bold text-blue-500">
-                          기사 지원금
-                        </dt>
-                        <dd className="mt-1 font-black text-blue-900">
-                          {formatPrice(quoteDetailCall.my_quote.driver_support_amount ?? 0)}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                        <dt className="text-[11px] font-bold text-blue-500">
-                          지원금 견적가
-                        </dt>
-                        <dd className="mt-1 font-black text-blue-900">
-                          {formatPrice(supportQuotePrice(quoteDetailCall.my_quote))}
-                        </dd>
-                      </div>
-                      {(quoteDetailCall.my_quote.approved_support_amount ?? 0) > 0 ||
-                      quoteDetailCall.my_quote.final_member_price != null ? (
-                        <>
-                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                            <dt className="text-[11px] font-bold text-emerald-600">
-                              최종승인 지원금
-                            </dt>
-                            <dd className="mt-1 font-black text-emerald-900">
-                              {formatPrice(quoteDetailCall.my_quote.approved_support_amount ?? 0)}
-                            </dd>
-                          </div>
-                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                            <dt className="text-[11px] font-bold text-emerald-600">
-                              최종 고객 지원금
-                            </dt>
-                            <dd className="mt-1 font-black text-emerald-900">
-                              {formatPrice(
-                                quoteDetailCall.my_quote.final_customer_support_amount ?? 0,
-                              )}
-                            </dd>
-                          </div>
-                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                            <dt className="text-[11px] font-bold text-emerald-600">
-                              최종 기사 지원금
-                            </dt>
-                            <dd className="mt-1 font-black text-emerald-900">
-                              {formatPrice(
-                                quoteDetailCall.my_quote.final_driver_support_amount ?? 0,
-                              )}
-                            </dd>
-                          </div>
-                          <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                            <dt className="text-[11px] font-bold text-emerald-600">
-                              최종 지원금 견적가
-                            </dt>
-                            <dd className="mt-1 font-black text-emerald-900">
-                              {formatPrice(quoteDetailCall.my_quote.final_member_price ?? null)}
-                            </dd>
-                          </div>
-                        </>
-                      ) : null}
-                      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100 sm:col-span-2">
-                        후원업체 최종 승인 결과에 따라 지원금 견적가는 변경될 수 있습니다.
+                  quoteDetailCall.my_quote.sponsor_quote_enabled ? (
+                    <div className="sm:col-span-2">
+                      <SupportQuoteBreakdown
+                        breakdown={quoteSupportBreakdown(quoteDetailCall.my_quote)}
+                      />
+                      <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100">
+                        후원업체 확정 지원금 변경 시 아래 금액이 자동 재계산됩니다.
                       </p>
-                    </>
+                    </div>
                   ) : null}
                   <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
                     <dt className="text-[11px] font-bold text-slate-400">

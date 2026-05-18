@@ -8,7 +8,7 @@ import {
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { sendNotificationSms } from "@/lib/notification-service";
-import { getQuoteDisplayPrices } from "@/lib/quote-display-prices";
+import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -151,7 +151,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, customer_support_amount, support_discount_amount, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, customer_support_amount, support_discount_amount, driver_support_amount, preapproved_support_amount, approved_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status, support_settlement_type, estimated_support_amount, extension_support_amount",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -248,11 +248,14 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         partnerById.get(safeText(row.partner_driver_id)) ??
         partnerByAuthUserId.get(safeText(row.auth_user_id)) ??
         {};
-      const displayPrices = getQuoteDisplayPrices(row);
+      const appApproved = parseInteger(current.sponsor_approved_support_amount);
+      const supportFields = mapQuoteWithSupport(row, {
+        applicationApprovedSupportTotal: appApproved,
+      });
       return {
         source: "member",
         id: safeText(row.id),
-        company_name: safeText(partner?.company_name, "회원 기사"),
+        company_name: safeText(partner?.company_name, "제휴기사"),
         driver_name: safeText(partner?.manager_name, "—"),
         phone:
           canRevealSelectedContact &&
@@ -260,13 +263,14 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
           safeText(row.id) === finalSelectedQuoteId
             ? safeText(partner?.phone)
             : "",
-        price: displayPrices.normalPrice,
-        member_price: displayPrices.supportPrice,
+        price: supportFields.price,
+        member_price: supportFields.support_discount_planned_price,
+        support_discount_planned_price: supportFields.support_discount_planned_price,
+        support_discount_applied_price: supportFields.support_discount_applied_price,
+        final_discount_applied_price: supportFields.final_discount_applied_price,
+        support_breakdown: supportFields.support_breakdown,
         sponsor_support_status: safeText(row.sponsor_support_status),
-        sponsor_quote_enabled:
-          row.sponsor_quote_enabled === true ||
-          displayPrices.supportPrice != null ||
-          displayPrices.supportCustomerAmount > 0,
+        sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
         memo: safeText(row.message),
@@ -289,7 +293,11 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
             ? safeText(row.guest_phone)
             : "",
         price: parseInteger(row.price),
-        member_price: null,
+        member_price: parseInteger(row.price),
+        support_discount_planned_price: parseInteger(row.price),
+        support_discount_applied_price: null,
+        final_discount_applied_price: parseInteger(row.price),
+        support_breakdown: null,
         sponsor_quote_enabled: false,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),

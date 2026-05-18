@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { parseInteger, safeText } from "@/lib/sponsor";
+import { calculateTotalPlannedSupport } from "@/lib/support-calculation";
 import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
@@ -39,16 +40,14 @@ function estimateSupport(params: {
   maxPassengerCount: number;
   remainingDailyBudget: number | null;
 }): number {
-  const eligiblePassengerCount =
-    params.maxPassengerCount > 0
-      ? Math.min(params.passengerCount ?? 0, params.maxPassengerCount)
-      : (params.passengerCount ?? 0);
-  const raw =
-    eligiblePassengerCount * params.supportPerPerson + params.supportPerCase;
-  const limits = [raw];
-  if (params.maxSupportAmount > 0) limits.push(params.maxSupportAmount);
-  if (params.remainingDailyBudget != null) limits.push(params.remainingDailyBudget);
-  return Math.max(0, Math.min(...limits));
+  return calculateTotalPlannedSupport({
+    passengerCount: params.passengerCount ?? 0,
+    supportPerPerson: params.supportPerPerson,
+    supportPerCase: params.supportPerCase,
+    maxSupportAmount: params.maxSupportAmount,
+    maxPassengerCount: params.maxPassengerCount,
+    dailyBudgetRemaining: params.remainingDailyBudget,
+  });
 }
 
 function seoulTodayRange(): { start: string; end: string } {

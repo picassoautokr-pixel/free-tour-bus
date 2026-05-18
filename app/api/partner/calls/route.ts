@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
-import { getQuoteDisplayPrices } from "@/lib/quote-display-prices";
+import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
+import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
 import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
 import { USER_ROLES } from "@/lib/roles";
 import { parseStopovers } from "@/lib/stopovers";
@@ -237,6 +238,17 @@ export async function GET() {
     sponsor_quote_enabled?: boolean;
     driver_support_amount?: number | null;
     client_reward_amount?: number | null;
+    support_discount_planned_price?: number | null;
+    support_discount_applied_price?: number | null;
+    final_discount_applied_price?: number | null;
+    extension_support_amount?: number | null;
+    support_breakdown?: QuoteSupportBreakdown;
+    total_planned_support?: number | null;
+    customer_planned_support?: number | null;
+    partner_planned_support?: number | null;
+    total_confirmed_support?: number | null;
+    customer_confirmed_support?: number | null;
+    partner_confirmed_support?: number | null;
     vehicle_type: string;
     available_time: string;
     message: string;
@@ -382,41 +394,44 @@ export async function GET() {
       const applicationId = safeText(row.application_id, "");
       if (applicationId === "" || seenMemberApp.has(applicationId)) continue;
       seenMemberApp.add(applicationId);
-      const displayPrices = getQuoteDisplayPrices(row);
-      const finalCustomerSupportAmount = parseInteger(row.final_customer_support_amount);
-      const preapprovedSupportAmount =
-        (parseInteger(row.preapproved_support_amount) ?? 0) > 0
-          ? parseInteger(row.preapproved_support_amount)
-          : (parseInteger(row.estimated_support_amount) ?? 0) > 0
-            ? parseInteger(row.estimated_support_amount)
-            : parseInteger(row.sponsor_support_amount);
+      const sponsorForApp = sponsorSupportByApplication.get(applicationId);
+      const supportFields = mapQuoteWithSupport(row, {
+        applicationApprovedSupportTotal: sponsorForApp?.approvedAmount ?? null,
+      });
       quotedByApplication.set(applicationId, {
         source: "member",
         id: safeText(row.id, ""),
-        price: displayPrices.normalPrice,
-        estimated_support_amount: parseInteger(row.estimated_support_amount),
+        price: supportFields.price,
+        estimated_support_amount: supportFields.total_planned_support,
         support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
-        preapproved_support_amount: preapprovedSupportAmount,
-        approved_support_amount: parseInteger(row.approved_support_amount),
+        preapproved_support_amount: supportFields.total_planned_support,
+        approved_support_amount: supportFields.total_confirmed_support,
         support_discount_amount: parseInteger(row.support_discount_amount),
-        customer_support_amount: displayPrices.supportCustomerAmount,
-        member_price: displayPrices.supportPrice,
-        final_customer_support_amount: finalCustomerSupportAmount,
-        final_driver_support_amount: parseInteger(row.final_driver_support_amount),
-        final_member_price: parseInteger(row.final_member_price),
+        customer_support_amount: supportFields.customer_planned_support,
+        member_price: supportFields.support_discount_planned_price,
+        support_discount_planned_price: supportFields.support_discount_planned_price,
+        support_discount_applied_price: supportFields.support_discount_applied_price,
+        final_discount_applied_price: supportFields.final_discount_applied_price,
+        final_customer_support_amount: supportFields.customer_confirmed_support,
+        final_driver_support_amount: supportFields.partner_confirmed_support,
+        final_member_price: supportFields.support_discount_applied_price,
+        extension_support_amount: supportFields.extension_support,
+        support_breakdown: supportFields.support_breakdown,
         support_recalculated_at: safeText(row.support_recalculated_at),
         is_member_quote: row.is_member_quote === true,
         converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id, ""),
-        sponsor_support_amount: parseInteger(row.sponsor_support_amount),
+        sponsor_support_amount: supportFields.total_planned_support,
         sponsor_support_status: safeText(row.sponsor_support_status),
         sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
         sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
-        sponsor_quote_enabled:
-          row.sponsor_quote_enabled === true ||
-          displayPrices.supportPrice != null ||
-          displayPrices.supportCustomerAmount > 0,
-        driver_support_amount: parseInteger(row.driver_support_amount),
-        client_reward_amount: parseInteger(row.client_reward_amount),
+        sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
+        driver_support_amount: supportFields.partner_planned_support,
+        total_planned_support: supportFields.total_planned_support,
+        customer_planned_support: supportFields.customer_planned_support,
+        partner_planned_support: supportFields.partner_planned_support,
+        total_confirmed_support: supportFields.total_confirmed_support,
+        customer_confirmed_support: supportFields.customer_confirmed_support,
+        partner_confirmed_support: supportFields.partner_confirmed_support,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
         message: safeText(row.message),
