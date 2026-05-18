@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
+import {
+  buildQuoteSupportBreakdown,
+  formatSupportAmount,
+  type QuoteSupportBreakdown,
+} from "@/lib/support-calculation";
 import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
@@ -26,6 +32,10 @@ type ClientQuote = {
   phone: string;
   price: number | null;
   member_price: number | null;
+  support_discount_planned_price?: number | null;
+  support_discount_applied_price?: number | null;
+  final_discount_applied_price?: number | null;
+  support_breakdown?: QuoteSupportBreakdown | null;
   sponsor_support_status?: "none" | "preapproved" | "approved" | "rejected" | "mixed" | "";
   sponsor_quote_enabled: boolean;
   vehicle_type: string;
@@ -82,12 +92,38 @@ type ClientApplication = {
   quotes?: ClientQuote[];
 };
 
-function formatPrice(value: number | null): string {
-  return value == null ? "금액 확인 중" : `${value.toLocaleString("ko-KR")}원`;
+function quoteBreakdown(quote: ClientQuote): QuoteSupportBreakdown {
+  if (quote.support_breakdown) return quote.support_breakdown;
+  if (quote.source === "guest") {
+    return buildQuoteSupportBreakdown({
+      price: quote.price,
+      sponsor_quote_enabled: false,
+    });
+  }
+  return buildQuoteSupportBreakdown({
+    price: quote.price,
+    member_price: quote.member_price,
+    final_member_price: quote.support_discount_applied_price,
+    sponsor_quote_enabled: quote.sponsor_quote_enabled,
+    customer_support_amount: quote.member_price != null && quote.price != null
+      ? quote.price - quote.member_price
+      : null,
+  });
 }
 
-function supportQuotePrice(quote: ClientQuote): number | null {
-  return quote.source === "member" ? quote.member_price : null;
+function QuotePriceSummary({ quote }: { quote: ClientQuote }) {
+  const breakdown = quoteBreakdown(quote);
+  if (quote.source === "guest") {
+    return (
+      <dl className="grid gap-1 text-xs">
+        <dt className="font-semibold text-slate-500">일반견적가</dt>
+        <dd className="font-black text-slate-900">
+          {formatSupportAmount(quote.price, { phase: "planned" })}
+        </dd>
+      </dl>
+    );
+  }
+  return <SupportQuoteBreakdown breakdown={breakdown} mode="customer" compact />;
 }
 
 function applicationTabFor(application: ClientApplication): ApplicationTab {
@@ -301,19 +337,8 @@ export default function ClientDashboardPage() {
               <p className="font-semibold text-slate-600">
                 {confirmQuote.vehicle_type} · {confirmQuote.available_time}
               </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs font-bold text-slate-500">일반견적가</p>
-                  <p className="mt-1 font-black text-slate-950">{formatPrice(confirmQuote.price)}</p>
-                </div>
-                <div className="rounded-xl bg-blue-50 p-3">
-                  <p className="text-xs font-bold text-blue-500">지원금 견적가</p>
-                  <p className="mt-1 font-black text-blue-950">
-                    {supportQuotePrice(confirmQuote) != null
-                      ? formatPrice(supportQuotePrice(confirmQuote))
-                      : "지원견적 없음"}
-                  </p>
-                </div>
+              <div className="rounded-xl bg-slate-50 p-3">
+                <QuotePriceSummary quote={confirmQuote} />
               </div>
               <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900">
                 최종 선택 후 선택한 기사/업체 연락처가 공개됩니다.
@@ -452,7 +477,7 @@ export default function ClientDashboardPage() {
                       : "견적 수집중";
                 const supportLabel =
                   item.sponsor_support_status === "approved"
-                    ? "지원금 승인확정"
+                    ? "확정 지원금"
                     : item.sponsor_support_status === "rejected"
                       ? "지원금 미승인"
                       : item.sponsor_support_status === "none"
@@ -542,25 +567,8 @@ export default function ClientDashboardPage() {
                   <p className="mt-1 text-sm font-semibold text-slate-600">
                     {selectedQuote.vehicle_type} · {selectedQuote.available_time}
                   </p>
-                  <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-[11px] font-bold text-slate-400">
-                        일반견적가
-                      </p>
-                      <p className="mt-1 font-black text-slate-900">
-                        {formatPrice(selectedQuote.price)}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-blue-50 p-3">
-                      <p className="text-[11px] font-bold text-blue-500">
-                        지원금 견적가
-                      </p>
-                      <p className="mt-1 font-black text-blue-900">
-                        {supportQuotePrice(selectedQuote) != null
-                          ? formatPrice(supportQuotePrice(selectedQuote))
-                          : "지원견적 없음"}
-                      </p>
-                    </div>
+                  <div className="mt-3 rounded-xl bg-slate-50 p-3">
+                    <QuotePriceSummary quote={selectedQuote} />
                   </div>
                   {contactRevealed && selectedQuote.phone ? (
                     <div className="mt-3 rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
@@ -595,15 +603,15 @@ export default function ClientDashboardPage() {
               <p className="mt-3 text-xs font-semibold leading-5 text-blue-800">
                 {contactRevealed
                   ? "매칭이 확정되어 기사 연락처가 공개되었습니다."
-                  : "지원금 가승인 후 매칭 확정 시 기사 연락처가 공개됩니다."}
+                  : "예상 지원금 검토 후 매칭 확정 시 제휴기사 연락처가 공개됩니다."}
               </p>
               <div className="mt-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
                 <p className="text-sm font-black text-emerald-950">
-                  지원금 가승인 진행
+                  예상 지원금 검토 진행
                 </p>
                 <div className="mt-3 grid gap-2 text-xs font-bold text-slate-700 sm:grid-cols-3">
                   <div className="rounded-xl bg-emerald-50 p-3 text-emerald-900">
-                    후원 조건 {subsidyPreApproved ? "가승인" : "검토중"}
+                    후원 조건 {subsidyPreApproved ? "예상 지원금" : "검토중"}
                   </div>
                   <div className="rounded-xl bg-blue-50 p-3 text-blue-900">
                     기사 견적 {selectedQuote ? "선정됨" : "수집중"}
@@ -618,7 +626,7 @@ export default function ClientDashboardPage() {
                 </p>
                 <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-900">
                   {application.sponsor_support_status === "approved"
-                    ? "지원금 승인확정"
+                    ? "확정 지원금"
                     : application.sponsor_support_status === "rejected"
                       ? "지원금 미승인 또는 조건 불일치"
                       : application.sponsor_support_status === "none"
@@ -661,12 +669,12 @@ export default function ClientDashboardPage() {
                     quote.source === application.final_selected_quote_source);
                 const supportStatus =
                   quote.sponsor_support_status ||
-                  (supportQuotePrice(quote) != null ? application.sponsor_support_status : "none");
+                  (quote.sponsor_quote_enabled ? application.sponsor_support_status : "none");
                 const supportStatusLabel =
                   supportStatus === "approved"
-                    ? "지원금 승인확정"
+                    ? "확정 지원금"
                     : supportStatus === "preapproved" || supportStatus === "mixed"
-                      ? "지원금 검토중"
+                      ? "예상 지원금 검토중"
                       : supportStatus === "rejected"
                         ? "지원금 미승인"
                         : "일반견적";
@@ -687,11 +695,11 @@ export default function ClientDashboardPage() {
                               ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100"
                               : "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
                           }`}>
-                            {quote.source === "member" ? "제휴기사 견적" : "비회원 견적"}
+                            {quote.source === "member" ? "제휴기사 견적" : "일반기사 견적"}
                           </span>
-                          {supportQuotePrice(quote) != null ? (
+                          {quote.sponsor_quote_enabled ? (
                             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
-                              지원금 견적가
+                              지원금 할인 견적
                             </span>
                           ) : null}
                         </div>
@@ -708,27 +716,12 @@ export default function ClientDashboardPage() {
                           </p>
                         ) : null}
                       </div>
-                      <p className="text-right text-sm font-black text-slate-950">
-                        <span className="block text-xs text-slate-500">일반견적가</span>
-                        {formatPrice(quote.price)}
-                        <span className={`block text-xs ${
-                          supportQuotePrice(quote) != null &&
-                          quote.price != null &&
-                          supportQuotePrice(quote)! < quote.price
-                            ? "font-black text-blue-700"
-                            : "text-slate-500"
-                        }`}>
-                          지원금 견적가{" "}
-                          {supportQuotePrice(quote) != null
-                            ? formatPrice(supportQuotePrice(quote))
-                            : quote.source === "member"
-                              ? "지원견적 없음"
-                              : "회원 기사 전용 지원견적 없음"}
-                        </span>
-                        <span className="mt-1 block text-[11px] text-slate-500">
+                      <div className="min-w-[11rem] text-right text-sm">
+                        <QuotePriceSummary quote={quote} />
+                        <p className="mt-2 text-[11px] font-semibold text-slate-500">
                           {supportStatusLabel}
-                        </span>
-                      </p>
+                        </p>
+                      </div>
                     </div>
                     <button
                       type="button"

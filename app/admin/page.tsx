@@ -12,6 +12,11 @@ import {
 import * as XLSX from "xlsx";
 
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
+import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
+import {
+  formatSupportAmount,
+  formatSupportAmountFromBreakdown,
+} from "@/lib/support-calculation";
 import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
@@ -86,6 +91,11 @@ type DriverQuoteDetail = {
   final_member_price?: number | null;
   support_recalculated_at?: string;
   client_reward_amount?: number | null;
+  support_breakdown?: import("@/lib/support-calculation").QuoteSupportBreakdown | null;
+  support_discount_planned_price?: number | null;
+  support_discount_applied_price?: number | null;
+  final_discount_applied_price?: number | null;
+  extension_support_amount?: number | null;
   vehicle_type: string;
   available_time: string;
   message: string;
@@ -1438,7 +1448,7 @@ function DriverQuotesSection({
           </p>
         ) : (
           <>
-            <p className="text-xs font-black text-indigo-950">회원 기사 견적</p>
+            <p className="text-xs font-black text-indigo-950">제휴기사 견적</p>
             {quotes.length === 0 ? (
               <p className="rounded-xl bg-white px-3 py-4 text-center text-sm font-semibold text-slate-500 ring-1 ring-indigo-100">
                 회원 기사 견적이 없습니다.
@@ -1470,20 +1480,29 @@ function DriverQuotesSection({
                   {quote.price == null
                     ? "금액 미입력"
                     : `${quote.price.toLocaleString("ko-KR")}원`}
-                  {quote.sponsor_quote_enabled &&
-                  (quote.final_member_price ??
-                    quote.member_price ??
-                    quote.sponsor_discounted_price) != null ? (
+                  {quote.support_breakdown?.sponsorQuoteEnabled ? (
                     <span className="mt-1 block text-xs font-bold text-blue-700">
-                      지원금 적용{" "}
-                      {(quote.final_member_price ??
-                        quote.member_price ??
-                        quote.sponsor_discounted_price ??
-                        0).toLocaleString("ko-KR")}원
+                      지원금 할인 예정가{" "}
+                      {formatSupportAmountFromBreakdown(
+                        quote.support_breakdown,
+                        quote.support_breakdown.supportDiscountPlannedPrice,
+                        "planned",
+                      )}
+                    </span>
+                  ) : quote.sponsor_quote_enabled ? (
+                    <span className="mt-1 block text-xs font-bold text-blue-700">
+                      지원금 할인 예정가 {formatSupportAmount(quote.member_price, { phase: "planned" })}
                     </span>
                   ) : null}
                 </p>
               </div>
+              {quote.support_breakdown ? (
+                <div>
+                  <SupportQuoteBreakdown breakdown={quote.support_breakdown} />
+                </div>
+              ) : quote.sponsor_quote_enabled ? (
+                <p className="mt-3 text-xs font-bold text-red-700">계산 실패</p>
+              ) : null}
               <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                 <div>
                   <dt className="font-bold text-slate-400">차량유형</dt>
@@ -1510,99 +1529,7 @@ function DriverQuotesSection({
                   </dd>
                 </div>
                 <div>
-                  <dt className="font-bold text-slate-400">가승인 지원금</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.sponsor_quote_enabled
-                      ? `${(quote.preapproved_support_amount ?? quote.estimated_support_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">분배방식</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.sponsor_quote_enabled
-                      ? quote.support_settlement_type === "ratio"
-                        ? "비율정산"
-                        : "클라이언트 지원금 우선보장"
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">고객 지원금</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.sponsor_quote_enabled
-                      ? `${(quote.customer_support_amount ?? quote.support_discount_amount ?? quote.sponsor_support_amount ?? 0).toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">기사 지원금</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.driver_support_amount != null
-                      ? `${quote.driver_support_amount.toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">지원금 상태</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.sponsor_support_status === "approved"
-                      ? "승인확정"
-                      : quote.sponsor_support_status === "preapproved" ||
-                          quote.sponsor_support_status === "pending" ||
-                          quote.sponsor_support_status === "mixed"
-                        ? "검토중"
-                        : ["rejected", "cancelled", "expired"].includes(
-                              quote.sponsor_support_status ?? "",
-                            )
-                          ? "미승인"
-                          : "일반/지원 없음"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">지원금 견적가</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {(quote.final_member_price ??
-                      quote.member_price ??
-                      quote.sponsor_discounted_price) != null
-                      ? `${(quote.final_member_price ?? quote.member_price ?? quote.sponsor_discounted_price ?? 0).toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">최종승인 지원금</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.approved_support_amount != null
-                      ? `${quote.approved_support_amount.toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">최종 고객 지원금</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.final_customer_support_amount != null
-                      ? `${quote.final_customer_support_amount.toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">최종 기사 지원금</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.final_driver_support_amount != null
-                      ? `${quote.final_driver_support_amount.toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">최종 지원금 견적가</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-800">
-                    {quote.final_member_price != null
-                      ? `${quote.final_member_price.toLocaleString("ko-KR")}원`
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-slate-400">비회원 견적 전환</dt>
+                  <dt className="font-bold text-slate-400">일반기사 견적 전환</dt>
                   <dd className="mt-0.5 font-semibold text-slate-800">
                     {quote.converted_from_guest_quote_id?.trim()
                       ? `전환됨${
