@@ -114,3 +114,13 @@ export function supportLimitForQuote(params: {
   if (preapproved > 0) return preapproved;
   return Math.max(0, params.estimatedSupportAmount ?? 0);
 }
+
+/** 견적 제출 시 총 예정 지원금 — 확정(approved) 금액을 예정으로 쓰지 않음 */
+export function supportPlannedLimitForQuote(params: {
+  preapprovedSupportAmountTotal?: number | null;
+  estimatedSupportAmount?: number | null;
+}): number {
+  const preapproved = params.preapprovedSupportAmountTotal ?? 0;
+  if (preapproved > 0) return preapproved;
+  return Math.max(0, params.estimatedSupportAmount ?? 0);
+}

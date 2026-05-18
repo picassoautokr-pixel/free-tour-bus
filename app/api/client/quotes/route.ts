@@ -151,7 +151,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   } = await admin
     .from("driver_quotes")
     .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, customer_support_amount, support_discount_amount, driver_support_amount, preapproved_support_amount, approved_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status, support_settlement_type, estimated_support_amount, extension_support_amount",
+      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, planned_final_price, confirmed_total_support, confirmed_customer_support, confirmed_driver_support, confirmed_discount_price, confirmed_final_price, customer_support_amount, support_discount_amount, driver_support_amount, preapproved_support_amount, approved_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, sponsor_support_status, support_settlement_type, estimated_support_amount, extension_support_amount",
     )
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });

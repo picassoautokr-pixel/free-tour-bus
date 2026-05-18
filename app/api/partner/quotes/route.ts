@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
-import { calculateSupportSettlementResult } from "@/lib/support-calculation";
 import {
   isApplicationQuoteAccepting,
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
-import { getApprovedSponsorSupport, supportLimitForQuote } from "@/lib/sponsor-support";
+import {
+  buildConfirmedDbPayload,
+  buildPlannedDbPayload,
+  computeConfirmedFromPlanned,
+} from "@/lib/quote-support-snapshot";
+import { resolveSettlementType } from "@/lib/support-calculation";
+import { getApprovedSponsorSupport, supportPlannedLimitForQuote } from "@/lib/sponsor-support";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -236,12 +241,11 @@ export async function POST(request: Request) {
     price,
   });
   const sponsorSummary = await getApprovedSponsorSupport(admin, applicationId);
-  const supportLimit = supportLimitForQuote({
-    approvedSupportAmountTotal: sponsorSummary.approved_support_amount_total,
+  const totalPlannedSupport = supportPlannedLimitForQuote({
     preapprovedSupportAmountTotal: sponsorSummary.preapproved_support_amount_total,
     estimatedSupportAmount: supportEstimate.estimated_support_amount,
   });
-  const supportInputLimit = Math.min(supportLimit, price);
+  const supportInputLimit = Math.min(totalPlannedSupport, price);
   const customerPlannedSupport =
     requestedSupportDiscountAmount ?? supportInputLimit;
   if (customerPlannedSupport < 0 || customerPlannedSupport > supportInputLimit) {
@@ -250,23 +254,32 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const totalPlannedSupport = supportLimit;
   const partnerPlannedSupport = Math.max(totalPlannedSupport - customerPlannedSupport, 0);
   const plannedDiscountPrice = Math.max(0, price - customerPlannedSupport);
-  const approvedSupportAmount = Math.max(0, sponsorSummary.approved_support_amount_total);
+  const plannedSnapshot = {
+    total: totalPlannedSupport,
+    customer: customerPlannedSupport,
+    driver: partnerPlannedSupport,
+    discountPrice: plannedDiscountPrice,
+    finalPrice: plannedDiscountPrice,
+  };
+  const confirmedTotal = Math.max(0, sponsorSummary.approved_support_amount_total);
   const sponsorSupportStatus =
-    sponsorSummary.status === "none" && supportLimit > 0
+    sponsorSummary.status === "none" && totalPlannedSupport > 0
       ? "preapproved"
       : sponsorSummary.status;
-  const settlement = calculateSupportSettlementResult({
-    price,
-    supportSettlementType,
-    preapprovedSupportAmount: totalPlannedSupport,
-    approvedSupportAmount,
-    customerSupportAmount: customerPlannedSupport,
-    driverSupportAmount: partnerPlannedSupport,
-    fallbackMemberPrice: plannedDiscountPrice,
-  });
+  const confirmedPayload =
+    confirmedTotal > 0
+      ? (() => {
+          const computed = computeConfirmedFromPlanned({
+            normalPrice: price,
+            settlementType: resolveSettlementType(supportSettlementType),
+            planned: plannedSnapshot,
+            confirmedTotal,
+          });
+          return "error" in computed ? null : buildConfirmedDbPayload(computed);
+        })()
+      : null;
   if (requestedDiscountedPrice != null && requestedDiscountedPrice > price) {
     return NextResponse.json(
       { error: "지원금 적용가는 일반 견적가보다 높을 수 없습니다." },
@@ -376,34 +389,21 @@ export async function POST(request: Request) {
     available_time: availableTime,
     message,
     status: "submitted",
-    estimated_support_amount: totalPlannedSupport,
     support_settlement_type: supportSettlementType,
-    preapproved_support_amount: totalPlannedSupport,
-    approved_support_amount: approvedSupportAmount > 0 ? approvedSupportAmount : null,
-    support_discount_amount: customerPlannedSupport,
-    customer_support_amount: customerPlannedSupport,
-    member_price: plannedDiscountPrice,
     is_member_quote: true,
     converted_from_guest_quote_id: convertingGuestQuoteId,
-    sponsor_support_amount: totalPlannedSupport,
     sponsor_support_status: sponsorSupportStatus,
     sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
-    sponsor_discounted_price: plannedDiscountPrice,
     sponsor_quote_enabled: true,
-    driver_support_amount: partnerPlannedSupport,
-    final_customer_support_amount:
-      approvedSupportAmount > 0 ? settlement.finalCustomerSupportAmount : null,
-    final_driver_support_amount:
-      approvedSupportAmount > 0 ? settlement.finalDriverSupportAmount : null,
-    final_member_price: approvedSupportAmount > 0 ? settlement.finalMemberPrice : null,
-    support_recalculated_at: approvedSupportAmount > 0 ? new Date().toISOString() : null,
+    ...buildPlannedDbPayload(plannedSnapshot),
+    ...(confirmedPayload ?? {}),
   };
 
   const insertResult = await admin
     .from("driver_quotes")
     .insert(insertPayload)
     .select(
-      "id, price, estimated_support_amount, support_settlement_type, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
+      "id, price, estimated_support_amount, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, confirmed_total_support, confirmed_customer_support, confirmed_driver_support, confirmed_discount_price, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
     )
     .single();
   let inserted: unknown = insertResult.data;

@@ -2,6 +2,13 @@
  * 지원금 계산 단일 소스 (DB 저장 · API · 대시보드 공통)
  */
 
+import {
+  computeConfirmedFromPlanned,
+  readPlannedSupport,
+  readStoredConfirmedSupport,
+  type QuoteSupportRow,
+} from "@/lib/quote-support-snapshot";
+
 export const DEFAULT_SUPPORT_PER_PERSON = 20_000;
 export const DEFAULT_MAX_SUPPORT_AMOUNT = 800_000;
 
@@ -29,6 +36,16 @@ export type QuoteSupportBreakdown = {
 export type QuoteSupportInput = {
   price?: unknown;
   support_settlement_type?: unknown;
+  planned_total_support?: unknown;
+  planned_customer_support?: unknown;
+  planned_driver_support?: unknown;
+  planned_discount_price?: unknown;
+  planned_final_price?: unknown;
+  confirmed_total_support?: unknown;
+  confirmed_customer_support?: unknown;
+  confirmed_driver_support?: unknown;
+  confirmed_discount_price?: unknown;
+  confirmed_final_price?: unknown;
   preapproved_support_amount?: unknown;
   approved_support_amount?: unknown;
   estimated_support_amount?: unknown;
@@ -141,10 +158,12 @@ export function buildQuoteSupportBreakdown(
   quote: QuoteSupportInput,
   options?: { applicationApprovedSupportTotal?: number | null },
 ): QuoteSupportBreakdown {
+  const row = quote as QuoteSupportRow;
   const settlementType = resolveSettlementType(quote.support_settlement_type);
   const normalPrice = parseSupportInteger(quote.price);
   const sponsorQuoteEnabled =
     quote.sponsor_quote_enabled === true ||
+    parseSupportInteger(quote.planned_total_support) != null ||
     parseSupportInteger(quote.customer_support_amount) != null ||
     parseSupportInteger(quote.support_discount_amount) != null ||
     parseSupportInteger(quote.preapproved_support_amount) != null ||
@@ -165,129 +184,108 @@ export function buildQuoteSupportBreakdown(
       partnerConfirmedSupport: null,
       supportDiscountAppliedPrice: null,
       extensionSupport: null,
-      finalDiscountAppliedPrice: normalPrice,
+      finalDiscountAppliedPrice: null,
       isConfirmed: false,
     };
   }
 
   try {
-    const totalPlanned =
-      parseSupportInteger(quote.preapproved_support_amount) ??
-      parseSupportInteger(quote.estimated_support_amount) ??
-      null;
+    const planned = readPlannedSupport(row, normalPrice);
+    if (!planned) {
+      return {
+        calculationStatus: "failed",
+        calculationError: "예정 지원금 데이터가 없습니다.",
+        settlementType,
+        sponsorQuoteEnabled,
+        normalPrice,
+        totalPlannedSupport: null,
+        customerPlannedSupport: null,
+        partnerPlannedSupport: null,
+        supportDiscountPlannedPrice: null,
+        totalConfirmedSupport: null,
+        customerConfirmedSupport: null,
+        partnerConfirmedSupport: null,
+        supportDiscountAppliedPrice: null,
+        extensionSupport: null,
+        finalDiscountAppliedPrice: null,
+        isConfirmed: false,
+      };
+    }
 
-    const customerPlannedRaw =
-      parseSupportInteger(quote.customer_support_amount) ??
-      parseSupportInteger(quote.support_discount_amount);
-    const customerPlanned =
-      customerPlannedRaw != null && totalPlanned != null
-        ? Math.min(customerPlannedRaw, totalPlanned, normalPrice)
-        : customerPlannedRaw;
+    const confirmedTotal =
+      parseSupportInteger(quote.confirmed_total_support) ??
+      (parseSupportInteger(quote.approved_support_amount) != null &&
+      (parseSupportInteger(quote.approved_support_amount) ?? 0) > 0
+        ? parseSupportInteger(quote.approved_support_amount)
+        : null) ??
+      (options?.applicationApprovedSupportTotal != null &&
+      options.applicationApprovedSupportTotal > 0
+        ? options.applicationApprovedSupportTotal
+        : null);
 
-    const partnerPlannedStored = parseSupportInteger(quote.driver_support_amount);
-    const partnerPlanned =
-      partnerPlannedStored != null
-        ? partnerPlannedStored
-        : totalPlanned != null && customerPlanned != null
-          ? Math.max(totalPlanned - customerPlanned, 0)
-          : null;
-
-    const approvedOnQuote = parseSupportInteger(quote.approved_support_amount);
-    const appApproved = options?.applicationApprovedSupportTotal ?? null;
-    const totalConfirmed =
-      approvedOnQuote != null && approvedOnQuote > 0
-        ? approvedOnQuote
-        : appApproved != null && appApproved > 0
-          ? appApproved
-          : null;
-
-    const isConfirmed = totalConfirmed != null && totalConfirmed > 0;
+    const isConfirmed = confirmedTotal != null && confirmedTotal > 0;
 
     let customerConfirmed: number | null = null;
     let partnerConfirmed: number | null = null;
+    let supportDiscountAppliedPrice: number | null = null;
+    let extensionSupport: number | null = null;
+    let finalDiscountAppliedPrice: number | null = null;
 
-    if (isConfirmed && totalConfirmed != null) {
-      const storedFinalCustomer = parseSupportInteger(quote.final_customer_support_amount);
-      const storedFinalPartner = parseSupportInteger(quote.final_driver_support_amount);
-      if (
-        storedFinalCustomer != null &&
-        (storedFinalPartner != null || storedFinalCustomer <= totalConfirmed)
-      ) {
-        customerConfirmed = Math.min(storedFinalCustomer, totalConfirmed);
-        partnerConfirmed =
-          storedFinalPartner ?? Math.max(totalConfirmed - customerConfirmed, 0);
-      } else if (totalPlanned != null && customerPlanned != null) {
-        const distributed = calculateSupportDistribution({
-          settlementType,
-          totalPlanned,
-          customerPlanned,
-          partnerPlanned: partnerPlanned ?? Math.max(totalPlanned - customerPlanned, 0),
-          totalConfirmed,
-        });
-        customerConfirmed = distributed.customerAmount;
-        partnerConfirmed = distributed.partnerAmount;
+    if (isConfirmed && confirmedTotal != null) {
+      const stored = readStoredConfirmedSupport(row);
+      if (stored && stored.total === confirmedTotal) {
+        customerConfirmed = stored.customer;
+        partnerConfirmed = stored.driver;
+        supportDiscountAppliedPrice = stored.discountPrice;
+        extensionSupport = stored.extensionSupport;
+        finalDiscountAppliedPrice = stored.finalPrice;
       } else {
-        return {
-          calculationStatus: "failed",
-          calculationError: "확정 지원금 재계산에 필요한 예정 금액이 없습니다.",
-          settlementType,
-          sponsorQuoteEnabled,
+        const computed = computeConfirmedFromPlanned({
           normalPrice,
-          totalPlannedSupport: totalPlanned,
-          customerPlannedSupport: customerPlanned,
-          partnerPlannedSupport: partnerPlanned,
-          supportDiscountPlannedPrice:
-            customerPlanned != null
-              ? calculateSupportDiscountPrice(normalPrice, customerPlanned)
-              : null,
-          totalConfirmedSupport: totalConfirmed,
-          customerConfirmedSupport: null,
-          partnerConfirmedSupport: null,
-          supportDiscountAppliedPrice: null,
-          extensionSupport: null,
-          finalDiscountAppliedPrice: null,
-          isConfirmed: true,
-        };
+          settlementType,
+          planned,
+          confirmedTotal,
+          extensionApplied: quote.extension_applied,
+          extensionSupportAmount: parseSupportInteger(quote.extension_support_amount),
+        });
+        if ("error" in computed) {
+          return {
+            calculationStatus: "failed",
+            calculationError: computed.error,
+            settlementType,
+            sponsorQuoteEnabled,
+            normalPrice,
+            totalPlannedSupport: planned.total,
+            customerPlannedSupport: planned.customer,
+            partnerPlannedSupport: planned.driver,
+            supportDiscountPlannedPrice: planned.discountPrice,
+            totalConfirmedSupport: confirmedTotal,
+            customerConfirmedSupport: null,
+            partnerConfirmedSupport: null,
+            supportDiscountAppliedPrice: null,
+            extensionSupport: null,
+            finalDiscountAppliedPrice: null,
+            isConfirmed: true,
+          };
+        }
+        customerConfirmed = computed.customer;
+        partnerConfirmed = computed.driver;
+        supportDiscountAppliedPrice = computed.discountPrice;
+        extensionSupport = computed.extensionSupport;
+        finalDiscountAppliedPrice = computed.finalPrice;
       }
     }
-
-    const supportDiscountPlannedPrice =
-      customerPlanned != null
-        ? calculateSupportDiscountPrice(normalPrice, customerPlanned)
-        : parseSupportInteger(quote.member_price) ??
-          parseSupportInteger(quote.sponsor_discounted_price);
-
-    const supportDiscountAppliedPrice = isConfirmed
-      ? customerConfirmed != null
-        ? calculateSupportDiscountPrice(normalPrice, customerConfirmed)
-        : parseSupportInteger(quote.final_member_price)
-      : null;
-
-    const extensionStored = parseSupportInteger(quote.extension_support_amount);
-    const extensionSupport =
-      extensionStored != null
-        ? extensionStored
-        : quote.extension_applied === true && partnerConfirmed != null
-          ? calculateExtensionSupport(partnerConfirmed)
-          : null;
-
-    const finalDiscountAppliedPrice =
-      supportDiscountAppliedPrice != null
-        ? extensionSupport != null
-          ? Math.max(supportDiscountAppliedPrice - extensionSupport, 0)
-          : supportDiscountAppliedPrice
-        : null;
 
     return {
       calculationStatus: "ok",
       settlementType,
       sponsorQuoteEnabled,
       normalPrice,
-      totalPlannedSupport: totalPlanned,
-      customerPlannedSupport: customerPlanned,
-      partnerPlannedSupport: partnerPlanned,
-      supportDiscountPlannedPrice,
-      totalConfirmedSupport: totalConfirmed,
+      totalPlannedSupport: planned.total,
+      customerPlannedSupport: planned.customer,
+      partnerPlannedSupport: planned.driver,
+      supportDiscountPlannedPrice: planned.discountPrice,
+      totalConfirmedSupport: confirmedTotal,
       customerConfirmedSupport: customerConfirmed,
       partnerConfirmedSupport: partnerConfirmed,
       supportDiscountAppliedPrice,

@@ -213,11 +213,12 @@ describe("calculateExtensionSupport", () => {
   it("final discount applies extension after confirmed price", () => {
     const breakdown = buildQuoteSupportBreakdown({
       price: 500_000,
-      approved_support_amount: 600_000,
-      final_customer_support_amount: 180_000,
-      final_driver_support_amount: 420_000,
-      customer_support_amount: 300_000,
-      preapproved_support_amount: 1_000_000,
+      support_settlement_type: "ratio",
+      planned_total_support: 1_000_000,
+      planned_customer_support: 300_000,
+      planned_driver_support: 700_000,
+      planned_discount_price: 200_000,
+      confirmed_total_support: 600_000,
       sponsor_quote_enabled: true,
       extension_applied: true,
     });
