@@ -6,6 +6,7 @@ import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
 import { PartnerSupportSummary } from "@/components/partner/PartnerSupportSummary";
 import {
   LABEL,
+  MATCHED_RUN_FILTERS,
   SETTLEMENT_OPTIONS,
   SUPPORT_UI,
   type PartnerDashboardTab,
@@ -44,14 +45,14 @@ type ReferralResult = {
 };
 
 function formatWon(value: number | null | undefined): string {
-  if (value == null) return "???";
-  return `${value.toLocaleString("ko-KR")}?`;
+  if (value == null) return LABEL.unconfirmed;
+  return `${value.toLocaleString("ko-KR")}${LABEL.wonSuffix}`;
 }
 
 function formatDeparture(call: PartnerCallLike): string {
-  const date = call.departure_date.trim() || "??";
+  const date = call.departure_date.trim() || LABEL.undated;
   const time = call.departure_time.trim();
-  if (time === "" || time === "?") return date;
+  if (time === "" || time === LABEL.dash) return date;
   return `${date} ${time}`;
 }
 
@@ -139,6 +140,9 @@ export function PartnerCallCard({
   const breakdown = quoteBreakdownForCall(call);
   const memberQuoted = call.my_quote?.source === "member";
   const runStatus = matchedRunStatus(call);
+  const runLabel =
+    MATCHED_RUN_FILTERS.find((f) => f.id === runStatus)?.label ??
+    (runStatus === "in_progress" ? LABEL.inProgress : LABEL.completed);
 
   const quotePriceValue = parsePriceInput(quoteForm.price);
   const customerPlannedInput = parsePriceInput(quoteForm.supportDiscountAmount);
@@ -191,18 +195,22 @@ export function PartnerCallCard({
               {formatRouteWithStopovers(call.departure, call.stopovers, call.destination)}
             </h2>
             <p className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-              <span>{call.passenger_count ?? "?"}?</span>
-              <span>?</span>
-              <span>{call.trip_type || "?"}</span>
-              <span>?</span>
-              <span>{call.bus_grade || "?"}</span>
-              <span>?</span>
+              <span>
+                {call.passenger_count != null
+                  ? `${call.passenger_count}${LABEL.passengerUnit}`
+                  : LABEL.unconfirmed}
+              </span>
+              <span>{LABEL.separator}</span>
+              <span>{call.trip_type || LABEL.dash}</span>
+              <span>{LABEL.separator}</span>
+              <span>{call.bus_grade || LABEL.dash}</span>
+              <span>{LABEL.separator}</span>
               <span className="text-blue-700">
                 {call.quote_deadline_at
                   ? formatQuoteDeadline(call.quote_deadline_at)
-                  : "???"}
+                  : LABEL.unconfirmed}
               </span>
-              <span>?</span>
+              <span>{LABEL.separator}</span>
               <span>{formatQuoteProgress(call)}</span>
             </p>
           </div>
@@ -214,7 +222,7 @@ export function PartnerCallCard({
                   : "bg-slate-200 text-slate-700"
               }`}
             >
-              {runStatus === "in_progress" ? "???" : "????"}
+              {runLabel}
             </span>
           ) : null}
         </div>
@@ -228,7 +236,7 @@ export function PartnerCallCard({
               className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white disabled:bg-slate-300"
               style={tapStyle}
             >
-              {quoteClosed ? "???" : LABEL.submitQuote}
+              {quoteClosed ? LABEL.quoteClosed : LABEL.submitQuote}
             </button>
           ) : null}
           {stage === "quoted" && memberQuoted ? (
@@ -262,7 +270,7 @@ export function PartnerCallCard({
               className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white disabled:bg-slate-300"
               style={tapStyle}
             >
-              {customerInfoVisible ? LABEL.customerInfo : "?? ? ??"}
+              {customerInfoVisible ? LABEL.customerInfo : LABEL.matchedAfterReveal}
             </button>
           ) : null}
           {stage !== "matched" ? (
@@ -277,7 +285,7 @@ export function PartnerCallCard({
             </button>
           ) : null}
           <span className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-600">
-            {expanded ? "??" : "???"}
+            {expanded ? LABEL.collapse : LABEL.expand}
           </span>
         </div>
       </button>
@@ -285,14 +293,16 @@ export function PartnerCallCard({
       {expanded ? (
         <div className="border-t border-slate-100 px-4 pb-4 pt-2">
           <dl className="grid gap-2 sm:grid-cols-2">
-            <DetailRow label="???">{call.passenger_count ?? "???"}</DetailRow>
-            <DetailRow label={LABEL.tripType}>{call.trip_type || "?"}</DetailRow>
-            <DetailRow label={LABEL.busGrade}>{call.bus_grade || "?"}</DetailRow>
-            <DetailRow label="???">{call.departure}</DetailRow>
+            <DetailRow label={LABEL.passengerCount}>
+              {call.passenger_count ?? LABEL.unconfirmed}
+            </DetailRow>
+            <DetailRow label={LABEL.tripType}>{call.trip_type || LABEL.dash}</DetailRow>
+            <DetailRow label={LABEL.busGrade}>{call.bus_grade || LABEL.dash}</DetailRow>
+            <DetailRow label={LABEL.departure}>{call.departure}</DetailRow>
             {formatStopovers(call.stopovers) ? (
-              <DetailRow label="???">{formatStopovers(call.stopovers)}</DetailRow>
+              <DetailRow label={LABEL.waypoint}>{formatStopovers(call.stopovers)}</DetailRow>
             ) : null}
-            <DetailRow label="???">{call.destination}</DetailRow>
+            <DetailRow label={LABEL.destination}>{call.destination}</DetailRow>
           </dl>
 
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
@@ -316,10 +326,10 @@ export function PartnerCallCard({
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-sm text-slate-500">???? ?? ??</p>
+              <p className="mt-1 text-sm text-slate-500">{LABEL.noSponsorInfo}</p>
             )}
             <p className="mt-2 text-xs font-bold text-slate-500">
-              ???? ??: {sponsorStageLabel(call.sponsor_support_status)}
+              {LABEL.sponsorStagePrefix}: {sponsorStageLabel(call.sponsor_support_status)}
             </p>
           </div>
 
@@ -335,15 +345,17 @@ export function PartnerCallCard({
               </p>
             </div>
             <DetailRow label={LABEL.quoteDeadline}>
-              {call.quote_deadline_at ? formatQuoteDeadline(call.quote_deadline_at) : "???"}
+              {call.quote_deadline_at
+                ? formatQuoteDeadline(call.quote_deadline_at)
+                : LABEL.unconfirmed}
             </DetailRow>
             <DetailRow label={LABEL.quoteProgress}>{formatQuoteProgress(call)}</DetailRow>
             <DetailRow label={LABEL.priorityTarget}>
               <span className="block text-xs font-semibold text-slate-600">
-                ?? {formatWon(call.target_normal_price)}
+                {LABEL.priorityNormal} {formatWon(call.target_normal_price)}
               </span>
               <span className="mt-1 block text-xs font-semibold text-blue-700">
-                ?? {formatWon(call.target_member_price)}
+                {LABEL.priorityDiscount} {formatWon(call.target_member_price)}
               </span>
             </DetailRow>
           </div>
@@ -399,18 +411,22 @@ export function PartnerCallCard({
                   />
                   {supportDiscountInvalid ? (
                     <span className="mt-1 block text-xs font-black text-red-600">
-                      {formatWon(supportInputLimit)} ??? ??? ???.
+                      {formatWon(supportInputLimit)} {LABEL.supportLimitHint}
                     </span>
                   ) : null}
                 </label>
                 <div className={`rounded-xl p-3 ring-1 sm:col-span-2 ${SUPPORT_UI.extension}`}>
-                  <p className="text-xs font-bold">{LABEL.extensionSupport} (??)</p>
+                  <p className="text-xs font-bold">
+                    {LABEL.extensionSupport} ({LABEL.extensionAuto})
+                  </p>
                   <p className="mt-1 font-black">{formatWon(extensionPreview)}</p>
                 </div>
                 <div className={`rounded-xl p-3 ring-1 sm:col-span-2 ${SUPPORT_UI.planned}`}>
                   <p className="text-xs font-bold">{LABEL.supportDiscountPlannedPrice}</p>
                   <p className="mt-1 font-black">
-                    {plannedDiscountPreview == null ? "???" : formatWon(plannedDiscountPreview)}
+                    {plannedDiscountPreview == null
+                      ? LABEL.unconfirmed
+                      : formatWon(plannedDiscountPreview)}
                   </p>
                 </div>
                 <div className="sm:col-span-2">
@@ -443,7 +459,7 @@ export function PartnerCallCard({
                   </div>
                 </div>
                 <label className="block">
-                  <span className="text-xs font-bold text-slate-500">????</span>
+                  <span className="text-xs font-bold text-slate-500">{LABEL.vehicleType}</span>
                   <input
                     type="text"
                     value={quoteForm.vehicleType}
@@ -454,7 +470,7 @@ export function PartnerCallCard({
                   />
                 </label>
                 <label className="block sm:col-span-2">
-                  <span className="text-xs font-bold text-slate-500">?? ????</span>
+                  <span className="text-xs font-bold text-slate-500">{LABEL.availableTime}</span>
                   <input
                     type="text"
                     value={quoteForm.availableTime}
@@ -465,7 +481,7 @@ export function PartnerCallCard({
                   />
                 </label>
                 <label className="block sm:col-span-2">
-                  <span className="text-xs font-bold text-slate-500">?? ??</span>
+                  <span className="text-xs font-bold text-slate-500">{LABEL.memo}</span>
                   <textarea
                     value={quoteForm.message}
                     onChange={(e) => setQuoteForm((p) => ({ ...p, message: e.target.value }))}
@@ -487,7 +503,11 @@ export function PartnerCallCard({
                   className="min-h-11 flex-1 rounded-xl bg-blue-600 text-sm font-black text-white disabled:opacity-50"
                   style={tapStyle}
                 >
-                  {quoteBusy ? "?? ??" : isEditMode ? "?? ??" : LABEL.submitQuote}
+                  {quoteBusy
+                    ? LABEL.saving
+                    : isEditMode
+                      ? LABEL.saveEdit
+                      : LABEL.submitQuote}
                 </button>
                 <button
                   type="button"
@@ -496,7 +516,7 @@ export function PartnerCallCard({
                   className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black"
                   style={tapStyle}
                 >
-                  ??
+                  {LABEL.cancel}
                 </button>
               </div>
             </div>
@@ -505,7 +525,7 @@ export function PartnerCallCard({
           {referralOpen ? (
             <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
               <label className="block">
-                <span className="text-xs font-bold text-slate-500">???? ?????</span>
+                <span className="text-xs font-bold text-slate-500">{LABEL.colleaguePhones}</span>
                 <textarea
                   value={referralForm.phones}
                   onChange={(e) => setReferralForm({ phones: e.target.value })}
@@ -523,7 +543,7 @@ export function PartnerCallCard({
                   className="min-h-11 flex-1 rounded-xl bg-emerald-600 text-sm font-black text-white disabled:opacity-50"
                   style={tapStyle}
                 >
-                  {referralBusy ? "?? ??" : "?? ??"}
+                  {referralBusy ? LABEL.sending : LABEL.sendSms}
                 </button>
                 <button
                   type="button"
@@ -531,7 +551,7 @@ export function PartnerCallCard({
                   className="min-h-11 rounded-xl border bg-white px-4 text-sm font-black"
                   style={tapStyle}
                 >
-                  ??
+                  {LABEL.cancel}
                 </button>
               </div>
             </div>
