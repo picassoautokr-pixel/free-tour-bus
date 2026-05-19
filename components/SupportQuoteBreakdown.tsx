@@ -36,7 +36,7 @@ function buildRows(breakdown: QuoteSupportBreakdown, mode: "full" | "customer"):
       emphasis: "planned",
     });
     rows.push({
-      label: "제휴기사 예정 지원금",
+      label: "기사 예정 지원금",
       value: fmt(breakdown.partnerPlannedSupport, "planned"),
       emphasis: "planned",
     });
@@ -60,7 +60,7 @@ function buildRows(breakdown: QuoteSupportBreakdown, mode: "full" | "customer"):
       emphasis: "confirmed",
     });
     rows.push({
-      label: "제휴기사 확정 지원금",
+      label: "기사 확정 지원금",
       value: fmt(breakdown.partnerConfirmedSupport, "confirmed"),
       emphasis: "confirmed",
     });
@@ -117,7 +117,7 @@ export function SupportQuoteBreakdown({
             row.emphasis === "confirmed"
               ? "bg-emerald-50 ring-emerald-100"
               : row.emphasis === "final"
-                ? "bg-violet-50 ring-violet-100"
+                ? "bg-amber-50 ring-amber-100"
                 : "bg-blue-50 ring-blue-100"
           }`}
         >
@@ -126,7 +126,7 @@ export function SupportQuoteBreakdown({
               row.emphasis === "confirmed"
                 ? "text-emerald-600"
                 : row.emphasis === "final"
-                  ? "text-violet-600"
+                  ? "text-amber-600"
                   : "text-blue-500"
             }`}
           >

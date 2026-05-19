@@ -141,6 +141,16 @@ export function calculateSupportDiscountPrice(
 }
 
 /** 연장 지원금 = 제휴기사 확정 지원금 × 20% */
+/** 견적 작성 시 연장 지원금 = 기사 예정 지원금 × 회차별 고객 비율 */
+export function extensionPlannedFromPartnerSupport(
+  partnerPlannedSupport: number,
+  extensionRound: number,
+): number {
+  if (extensionRound <= 0 || partnerPlannedSupport <= 0) return 0;
+  const clientPct = extensionRound === 1 ? 20 : 40;
+  return Math.round((partnerPlannedSupport * clientPct) / 100);
+}
+
 export function calculateExtensionSupport(partnerConfirmedSupport: number): number {
   return Math.round(Math.max(0, partnerConfirmedSupport) * 0.2);
 }

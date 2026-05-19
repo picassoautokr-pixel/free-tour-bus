@@ -635,3 +635,156 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, quote: inserted });
 }
+
+export async function PATCH(request: Request) {
+  const driver = await resolveApprovedDriver();
+  if (!driver.ok) {
+    return NextResponse.json({ error: driver.error }, { status: driver.status });
+  }
+
+  let body: Body;
+  try {
+    body = (await request.json()) as Body;
+  } catch {
+    return NextResponse.json(
+      { error: "요청 본문이 올바르지 않습니다." },
+      { status: 400 },
+    );
+  }
+
+  const applicationId = safeText(body.application_id);
+  const price = parsePrice(body.price);
+  const requestedSupportDiscountAmount = parsePrice(body.support_discount_amount);
+  const supportSettlementType =
+    safeText(body.support_settlement_type) === "ratio" ? "ratio" : "client_priority";
+  const vehicleType = safeText(body.vehicle_type);
+  const availableTime = safeText(body.available_time);
+  const message = safeText(body.message);
+
+  if (applicationId === "" || price == null || price <= 0) {
+    return NextResponse.json({ error: "견적 정보가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (vehicleType === "" || availableTime === "") {
+    return NextResponse.json({ error: "차량유형과 가능 출발시간을 입력해 주세요." }, { status: 400 });
+  }
+
+  const admin = createServiceRoleSupabase();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
+      { status: 503 },
+    );
+  }
+
+  const memberOrFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
+  const { data: existing, error: existingError } = await admin
+    .from("driver_quotes")
+    .select("id")
+    .eq("application_id", applicationId)
+    .or(memberOrFilter)
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 502 });
+  }
+  if (!existing) {
+    return NextResponse.json({ error: "수정할 견적을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const quoteId = safeText((existing as { id?: unknown }).id);
+  await processApplicationQuoteLifecycle(admin, applicationId);
+  const { data: application } = await admin
+    .from("applications")
+    .select(`application_type, passenger_count, ${quoteLifecycleSelectColumns()}`)
+    .eq("id", applicationId)
+    .maybeSingle();
+
+  const appType = safeText(
+    (application as { application_type?: unknown } | null)?.application_type,
+  );
+  if (!application || appType !== APPLICATION_TYPE_NEW_BOOKING) {
+    return NextResponse.json({ error: "견적 수정 대상이 아닙니다." }, { status: 400 });
+  }
+  if (
+    !isApplicationQuoteAccepting(
+      application as unknown as Record<string, unknown>,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "견적이 마감되어 수정할 수 없습니다." },
+      { status: 409 },
+    );
+  }
+
+  const supportEstimate = estimateSponsorSupport({
+    passengerCount: (application as { passenger_count?: unknown }).passenger_count,
+    price,
+  });
+  const sponsorSummary = await getApprovedSponsorSupport(admin, applicationId);
+  const totalPlannedSupport = supportPlannedLimitForQuote({
+    preapprovedSupportAmountTotal: sponsorSummary.preapproved_support_amount_total,
+    estimatedSupportAmount: supportEstimate.estimated_support_amount,
+  });
+  const supportInputLimit = Math.min(totalPlannedSupport, price);
+  const customerPlannedSupport =
+    requestedSupportDiscountAmount ?? supportInputLimit;
+  if (customerPlannedSupport < 0 || customerPlannedSupport > supportInputLimit) {
+    return NextResponse.json(
+      { error: "고객 예정 지원금은 총 예정 지원금과 일반견적가를 초과할 수 없습니다." },
+      { status: 400 },
+    );
+  }
+  const partnerPlannedSupport = Math.max(totalPlannedSupport - customerPlannedSupport, 0);
+  const plannedDiscountPrice = Math.max(0, price - customerPlannedSupport);
+  const plannedSnapshot = {
+    total: totalPlannedSupport,
+    customer: customerPlannedSupport,
+    driver: partnerPlannedSupport,
+    discountPrice: plannedDiscountPrice,
+    finalPrice: plannedDiscountPrice,
+  };
+  const confirmedTotal = Math.max(0, sponsorSummary.approved_support_amount_total);
+  const sponsorSupportStatus =
+    sponsorSummary.status === "none" && totalPlannedSupport > 0
+      ? "preapproved"
+      : sponsorSummary.status;
+  const confirmedPayload =
+    confirmedTotal > 0
+      ? (() => {
+          const computed = computeConfirmedFromPlanned({
+            normalPrice: price,
+            settlementType: resolveSettlementType(supportSettlementType),
+            planned: plannedSnapshot,
+            confirmedTotal,
+          });
+          return "error" in computed ? null : buildConfirmedDbPayload(computed);
+        })()
+      : null;
+
+  const updatePayload = {
+    price,
+    vehicle_type: vehicleType,
+    available_time: availableTime,
+    message,
+    support_settlement_type: supportSettlementType,
+    sponsor_support_status: sponsorSupportStatus,
+    sponsor_approved_support_amount: sponsorSummary.approved_support_amount_total,
+    sponsor_quote_enabled: true,
+    ...buildPlannedDbPayload(plannedSnapshot),
+    ...(confirmedPayload ?? {}),
+  };
+
+  const { data: updated, error: updateError } = await admin
+    .from("driver_quotes")
+    .update(updatePayload)
+    .eq("id", quoteId)
+    .select("id, price")
+    .single();
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 502 });
+  }
+
+  await processApplicationQuoteLifecycle(admin, applicationId);
+  return NextResponse.json({ ok: true, quote: updated, updated: true });
+}

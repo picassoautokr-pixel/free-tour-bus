@@ -270,15 +270,46 @@ export async function GET() {
       rejectedCount: number;
     }
   >();
+  const sponsorsByApplication = new Map<
+    string,
+    Array<{
+      id: string;
+      company_name: string;
+      status: string;
+      estimated_support_amount: number | null;
+      approved_support_amount: number | null;
+    }>
+  >();
   if (ids.length > 0) {
     const [{ data: memberCountRows }, { data: guestCountRows }, { data: sponsorRows }] = await Promise.all([
       admin.from("driver_quotes").select("application_id").in("application_id", ids),
       admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
       admin
         .from("sponsor_preapprovals")
-        .select("application_id, status, approved_support_amount, estimated_support_amount")
+        .select(
+          "id, application_id, sponsor_company_id, status, approved_support_amount, estimated_support_amount",
+        )
         .in("application_id", ids),
     ]);
+    const sponsorCompanyIds = new Set<string>();
+    for (const raw of Array.isArray(sponsorRows) ? sponsorRows : []) {
+      const companyId = safeText((raw as { sponsor_company_id?: unknown }).sponsor_company_id, "");
+      if (companyId) sponsorCompanyIds.add(companyId);
+    }
+    const companyNameById = new Map<string, string>();
+    if (sponsorCompanyIds.size > 0) {
+      const { data: companies } = await admin
+        .from("sponsor_companies")
+        .select("id, company_name")
+        .in("id", [...sponsorCompanyIds]);
+      for (const raw of Array.isArray(companies) ? companies : []) {
+        const row = raw as Record<string, unknown>;
+        const id = safeText(row.id, "");
+        if (id) {
+          companyNameById.set(id, safeText(row.company_name, "후원업체"));
+        }
+      }
+    }
     for (const raw of Array.isArray(memberCountRows) ? memberCountRows : []) {
       const applicationId = safeText((raw as { application_id?: unknown }).application_id, "");
       quoteCountByApplication.set(
@@ -335,6 +366,18 @@ export async function GET() {
                 ? "rejected"
                 : "none";
       sponsorSupportByApplication.set(applicationId, current);
+
+      const companyId = safeText(row.sponsor_company_id, "");
+      const sponsorEntry = {
+        id: safeText(row.id, companyId || applicationId),
+        company_name: companyNameById.get(companyId) ?? "후원업체",
+        status,
+        estimated_support_amount: parseInteger(row.estimated_support_amount),
+        approved_support_amount: parseInteger(row.approved_support_amount),
+      };
+      const list = sponsorsByApplication.get(applicationId) ?? [];
+      list.push(sponsorEntry);
+      sponsorsByApplication.set(applicationId, list);
     }
 
     const orFilter = `partner_driver_id.eq.${driver.partnerDriverId},auth_user_id.eq.${driver.userId}`;
@@ -590,6 +633,7 @@ export async function GET() {
       sponsor_support_status: sponsorSupport?.status ?? "none",
       sponsor_approved_support_amount: sponsorSupport?.approvedAmount ?? null,
       sponsor_estimated_support_amount: sponsorSupport?.estimatedAmount ?? null,
+      sponsors: sponsorsByApplication.get(id) ?? [],
       my_quote: quote,
     };
   }));
