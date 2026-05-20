@@ -208,9 +208,14 @@ export function normalizeClientApplication(app: ClientApplication): ClientApplic
 
 export function normalizeClientQuote(
   quote: ClientQuote,
-  _application?: ClientApplication,
+  application?: ClientApplication,
 ): ClientQuote {
   const breakdown = quote.support_breakdown;
+  const sponsorStatus = pickText(
+    quote.sponsor_support_status,
+    quote.support_status,
+    application?.sponsor_support_status,
+  );
   return {
     ...quote,
     planned_total_support:
@@ -222,13 +227,17 @@ export function normalizeClientQuote(
     confirmed_total_support:
       quote.confirmed_total_support ??
       breakdown?.totalConfirmedSupport ??
-      quote.confirmed_total_support,
+      quote.confirmed_total_support ??
+      application?.sponsor_approved_support_amount ??
+      quote.sponsor_approved_support_amount,
     confirmed_customer_support:
       quote.confirmed_customer_support ??
       breakdown?.customerConfirmedSupport ??
       quote.confirmed_customer_support,
-    support_status: pickText(quote.support_status, quote.sponsor_support_status),
-    sponsor_support_status: pickText(quote.sponsor_support_status),
+    sponsor_approved_support_amount:
+      quote.sponsor_approved_support_amount ?? application?.sponsor_approved_support_amount,
+    support_status: pickText(quote.support_status, sponsorStatus),
+    sponsor_support_status: sponsorStatus,
   };
 }
 

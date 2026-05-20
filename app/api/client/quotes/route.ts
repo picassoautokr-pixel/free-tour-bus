@@ -274,9 +274,13 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         confirmed_discount_price: support.confirmed_discount_price,
         support_breakdown: breakdown,
         planned_total_support: support.planned_total_support,
-        planned_customer_support: support.planned_customer_support,
+        planned_customer_support:
+          support.planned_customer_support ?? parseInteger(row.planned_customer_support),
         planned_driver_support: support.planned_driver_support,
-        confirmed_total_support: support.confirmed_total_support,
+        customer_support_amount: parseInteger(row.customer_support_amount),
+        client_reward_amount: parseInteger(row.client_reward_amount),
+        confirmed_total_support:
+          support.confirmed_total_support ?? parseInteger(row.confirmed_total_support),
         confirmed_customer_support: support.confirmed_customer_support,
         confirmed_driver_support: support.confirmed_driver_support,
         support_settlement_type: safeText(row.support_settlement_type),

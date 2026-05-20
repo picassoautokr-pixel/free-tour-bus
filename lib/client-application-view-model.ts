@@ -27,6 +27,8 @@ export type ClientQuote = {
   planned_total_support?: number | null;
   planned_customer_support?: number | null;
   planned_driver_support?: number | null;
+  customer_support_amount?: number | null;
+  client_reward_amount?: number | null;
   confirmed_total_support?: number | null;
   confirmed_customer_support?: number | null;
   confirmed_driver_support?: number | null;
