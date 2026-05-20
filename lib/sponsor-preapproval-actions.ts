@@ -66,6 +66,9 @@ export async function approveSponsorPreapproval(
     approvedSupportAmount?: unknown;
     assignedStaffId?: unknown;
     decisionMemo?: unknown;
+    supportKind?: unknown;
+    supportFormKind?: unknown;
+    supportConditionLabel?: unknown;
     actor: Actor;
   },
 ) {
@@ -101,12 +104,33 @@ export async function approveSponsorPreapproval(
     decided_by: params.actor.userId,
     decision_memo: safeText(params.decisionMemo),
     staff_assigned_at: assignedStaffId ? now : null,
+    payout_status: "processing",
+    support_kind: safeText(params.supportKind) || null,
+    support_form_kind: safeText(params.supportFormKind) || null,
+    support_condition_label: safeText(params.supportConditionLabel) || null,
   };
 
-  const { error } = await admin
+  let { error } = await admin
     .from("sponsor_preapprovals")
     .update(patch)
     .eq("id", params.preapprovalId);
+  if (
+    error &&
+    /payout_status|support_kind|support_form_kind|support_condition_label|does not exist|42703/i.test(
+      error.message,
+    )
+  ) {
+    const legacyPatch = { ...patch };
+    delete legacyPatch.payout_status;
+    delete legacyPatch.support_kind;
+    delete legacyPatch.support_form_kind;
+    delete legacyPatch.support_condition_label;
+    const legacy = await admin
+      .from("sponsor_preapprovals")
+      .update(legacyPatch)
+      .eq("id", params.preapprovalId);
+    error = legacy.error;
+  }
   if (error) throw new Error(error.message);
   const applicationId = safeText(ctx.preapproval.application_id);
   await refreshApplicationSponsorSupportSummary(admin, applicationId);
@@ -172,6 +196,103 @@ ${siteBaseUrl()}/sponsor/dashboard`;
   return { ok: true };
 }
 
+export async function updateApprovedSponsorPreapproval(
+  admin: SupabaseClient,
+  params: {
+    preapprovalId: string;
+    approvedSupportAmount?: unknown;
+    assignedStaffId?: unknown;
+    decisionMemo?: unknown;
+    supportKind?: unknown;
+    supportFormKind?: unknown;
+    supportConditionLabel?: unknown;
+    payoutStatus?: unknown;
+    actor: Actor;
+  },
+) {
+  const ctx = await loadPreapprovalContext(admin, params.preapprovalId);
+  assertOwner(ctx, params.actor);
+  if (safeText(ctx.preapproval.status) !== "approved") {
+    throw new Error("지원확정된 건만 변경할 수 있습니다.");
+  }
+
+  const approvedAmount =
+    parseInteger(params.approvedSupportAmount) ??
+    parseInteger(ctx.preapproval.approved_support_amount) ??
+    parseInteger(ctx.preapproval.estimated_support_amount) ??
+    0;
+  const assignedStaffId = safeText(params.assignedStaffId);
+  const payoutStatus = safeText(params.payoutStatus);
+  const patch: Record<string, unknown> = {
+    approved_support_amount: approvedAmount,
+    assigned_staff_id: assignedStaffId || null,
+    decision_memo: safeText(params.decisionMemo),
+    support_kind: safeText(params.supportKind) || null,
+    support_form_kind: safeText(params.supportFormKind) || null,
+    support_condition_label: safeText(params.supportConditionLabel) || null,
+    decided_at: new Date().toISOString(),
+    decided_by: params.actor.userId,
+  };
+  if (payoutStatus === "processing" || payoutStatus === "completed" || payoutStatus === "pending") {
+    patch.payout_status = payoutStatus;
+  }
+
+  let { error } = await admin.from("sponsor_preapprovals").update(patch).eq("id", params.preapprovalId);
+  if (error && /payout_status|support_kind|does not exist|42703/i.test(error.message)) {
+    const legacy = { ...patch };
+    delete legacy.payout_status;
+    delete legacy.support_kind;
+    delete legacy.support_form_kind;
+    delete legacy.support_condition_label;
+    const res = await admin.from("sponsor_preapprovals").update(legacy).eq("id", params.preapprovalId);
+    error = res.error;
+  }
+  if (error) throw new Error(error.message);
+
+  const applicationId = safeText(ctx.preapproval.application_id);
+  await refreshApplicationSponsorSupportSummary(admin, applicationId);
+  await recalculateDriverQuoteSupport(admin, applicationId);
+  return { ok: true };
+}
+
+export async function revertSponsorPreapprovalToPlanned(
+  admin: SupabaseClient,
+  params: { preapprovalId: string; actor: Actor },
+) {
+  const ctx = await loadPreapprovalContext(admin, params.preapprovalId);
+  assertOwner(ctx, params.actor);
+  if (safeText(ctx.preapproval.status) !== "approved") {
+    throw new Error("지원확정 건만 지원예정으로 전환할 수 있습니다.");
+  }
+
+  const { data: application } = await admin
+    .from("applications")
+    .select("final_selected_quote_id")
+    .eq("id", safeText(ctx.preapproval.application_id))
+    .maybeSingle();
+  if (safeText((application as Record<string, unknown> | null)?.final_selected_quote_id)) {
+    throw new Error("매칭이 완료된 지원건은 지원예정 전환할 수 없습니다.");
+  }
+
+  const { error } = await admin
+    .from("sponsor_preapprovals")
+    .update({
+      status: "preapproved",
+      approved_support_amount: null,
+      approved_at: null,
+      payout_status: null,
+      decided_at: new Date().toISOString(),
+      decided_by: params.actor.userId,
+    })
+    .eq("id", params.preapprovalId);
+  if (error) throw new Error(error.message);
+
+  const applicationId = safeText(ctx.preapproval.application_id);
+  await refreshApplicationSponsorSupportSummary(admin, applicationId);
+  await recalculateDriverQuoteSupport(admin, applicationId);
+  return { ok: true };
+}
+
 export async function rejectSponsorPreapproval(
   admin: SupabaseClient,
   params: {
@@ -182,6 +303,16 @@ export async function rejectSponsorPreapproval(
 ) {
   const ctx = await loadPreapprovalContext(admin, params.preapprovalId);
   assertOwner(ctx, params.actor);
+  if (safeText(ctx.preapproval.status) === "approved") {
+    const { data: application } = await admin
+      .from("applications")
+      .select("final_selected_quote_id")
+      .eq("id", safeText(ctx.preapproval.application_id))
+      .maybeSingle();
+    if (safeText((application as Record<string, unknown> | null)?.final_selected_quote_id)) {
+      throw new Error("매칭이 완료된 지원건은 지원취소할 수 없습니다.");
+    }
+  }
   const now = new Date().toISOString();
   const { error } = await admin
     .from("sponsor_preapprovals")

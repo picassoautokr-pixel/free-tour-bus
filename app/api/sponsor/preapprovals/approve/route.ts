@@ -43,6 +43,9 @@ export async function POST(request: Request) {
       approvedSupportAmount: body?.approved_support_amount,
       assignedStaffId: body?.assigned_staff_id,
       decisionMemo: body?.decision_memo,
+      supportKind: body?.support_kind,
+      supportFormKind: body?.support_form_kind,
+      supportConditionLabel: body?.support_condition_label,
       actor: {
         userId: user.id,
         sponsorCompanyId: safeText((company as Record<string, unknown>).id),

@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 
 import {
+  buildSummary,
+  type SponsorCallRow,
+} from "@/lib/sponsor-call-view-model";
+import {
+  catalogFromSettings,
+  parseDashboardSettings,
+} from "@/lib/sponsor-catalog";
+import {
   normalizeStringArray,
   parseInteger,
   parseSponsorSupportType,
@@ -34,7 +42,9 @@ async function resolveSponsor() {
 
   const { data, error } = await admin
     .from("sponsor_companies")
-    .select("id, status, company_name, manager_name, phone, email, support_type")
+    .select(
+      "id, status, company_name, manager_name, phone, email, support_type, dashboard_settings",
+    )
     .eq("auth_user_id", user.id)
     .maybeSingle();
   if (error) return { error: error.message, status: 502 } as const;
@@ -51,8 +61,21 @@ export async function GET() {
 
   const { admin, company } = resolved;
   if (company.status !== "approved") {
-    return NextResponse.json({ ok: true, company, approved: false, rules: [], staff: [], calls: [] });
+    return NextResponse.json({
+      ok: true,
+      company,
+      approved: false,
+      rules: [],
+      staff: [],
+      calls: [],
+      summary: null,
+      catalog: null,
+    });
   }
+
+  const companyRecord = company as Record<string, unknown>;
+  const dashboardSettings = parseDashboardSettings(companyRecord.dashboard_settings);
+  const catalog = catalogFromSettings(dashboardSettings);
 
   const [{ data: ruleRows }, { data: staffRows }, { data: preapprovalRows }] = await Promise.all([
     admin
@@ -86,7 +109,7 @@ export async function GET() {
       ? admin
           .from("applications")
           .select(
-            "id, created_at, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at",
+            "id, created_at, application_type, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id",
           )
           .in("id", applicationIds)
       : Promise.resolve({ data: [] }),
@@ -149,7 +172,7 @@ export async function GET() {
     const quoteStats =
       quoteStatsByApplication.get(applicationId) ??
       { quote_count: 0, sponsor_quote_count: 0, matched_quote_count: 0, final_quote_count: 0 };
-    return {
+    const row: SponsorCallRow = {
       id: safeText(preapproval.id),
       application_id: applicationId,
       sponsor_rule_id: safeText(preapproval.sponsor_rule_id),
@@ -157,6 +180,10 @@ export async function GET() {
       support_type: safeText(rule.support_type, company.support_type),
       support_condition: safeText(rule.support_condition),
       status: safeText(preapproval.status, "preapproved"),
+      payout_status: safeText(preapproval.payout_status) || undefined,
+      support_kind: safeText(preapproval.support_kind) || undefined,
+      support_form_kind: safeText(preapproval.support_form_kind) || undefined,
+      support_condition_label: safeText(preapproval.support_condition_label) || undefined,
       departure_region: safeText(application.departure_region),
       departure: safeText(application.departure),
       destination: safeText(application.destination),
@@ -166,7 +193,11 @@ export async function GET() {
       passenger_count: parseInteger(preapproval.passenger_count) ?? parseInteger(application.passenger_count),
       trip_type: safeText(application.trip_type),
       bus_grade: safeText(application.bus_grade),
+      group_type: safeText(application.application_type) || safeText(rule.target_group),
       quote_status: safeText(application.quote_status, "collecting"),
+      quote_deadline_at: safeText(application.quote_deadline_at),
+      quote_limit_count: parseInteger(application.quote_limit_count),
+      final_selected_quote_id: safeText(application.final_selected_quote_id),
       quote_closed_at: safeText(application.quote_closed_at),
       estimated_support_amount: parseInteger(preapproval.estimated_support_amount) ?? 0,
       approved_support_amount: parseInteger(preapproval.approved_support_amount),
@@ -185,7 +216,13 @@ export async function GET() {
       matched_quote_count: quoteStats.matched_quote_count,
       final_quote_count: quoteStats.final_quote_count,
     };
+    return row;
   });
+
+  const summary = buildSummary(
+    calls as SponsorCallRow[],
+    dashboardSettings.total_budget ?? dashboardSettings.monthly_budget,
+  );
 
   return NextResponse.json({
     ok: true,
@@ -194,6 +231,9 @@ export async function GET() {
     rules,
     staff: Array.isArray(staffRows) ? staffRows : [],
     calls,
+    summary,
+    catalog,
+    dashboard_settings: dashboardSettings,
   });
 }
 
@@ -253,6 +293,30 @@ export async function POST(request: Request) {
       ? admin.from("sponsor_staff").update(patch).eq("id", id).eq("sponsor_company_id", company.id)
       : admin.from("sponsor_staff").insert(patch);
     const { error } = await query;
+    if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (type === "settings") {
+    const patch = {
+      dashboard_settings: {
+        support_kinds: normalizeStringArray(payload.support_kinds),
+        support_forms: normalizeStringArray(payload.support_forms),
+        support_conditions: normalizeStringArray(payload.support_conditions),
+        total_budget: parseInteger(payload.total_budget),
+        monthly_budget: parseInteger(payload.monthly_budget),
+      },
+    };
+    let { error } = await admin
+      .from("sponsor_companies")
+      .update(patch)
+      .eq("id", company.id);
+    if (error && /dashboard_settings|does not exist|42703/i.test(error.message)) {
+      return NextResponse.json(
+        { error: "dashboard_settings 컬럼이 없습니다. sql/sponsor_preapprovals_payout.sql 을 적용해 주세요." },
+        { status: 502 },
+      );
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 502 });
     return NextResponse.json({ ok: true });
   }
