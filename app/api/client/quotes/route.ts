@@ -63,7 +63,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -131,7 +131,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -344,13 +344,16 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       contract_pdf_generated_at: safeText(current.contract_pdf_generated_at),
       contract_pdf_url: safeText(current.contract_pdf_url),
       departure: safeText(current.departure),
+      departure_region: safeText(current.departure_region),
       destination: safeText(current.destination),
       stopovers: Array.isArray(current.stopovers)
         ? current.stopovers.map((item) => safeText(item)).filter(Boolean)
         : [],
       departure_date: safeText(current.departure_date),
       departure_time: safeText(current.departure_time),
+      return_date: safeText(current.return_date),
       trip_type: safeText(current.trip_type),
+      application_type: safeText(current.application_type),
       bus_grade: safeText(current.bus_grade),
       passenger_count: parseInteger(current.passenger_count),
       applicant_name: safeText(current.applicant_name),
@@ -369,6 +372,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       final_selected_quote_id: safeText(current.final_selected_quote_id),
       final_selected_quote_source: safeText(current.final_selected_quote_source),
       final_selected_at: safeText(current.final_selected_at),
+      client_price_selection_kind: safeText(current.client_price_selection_kind) || null,
       contact_revealed_at: safeText(current.contact_revealed_at),
       contract_status: safeText(current.contract_status),
       contract_started_at: safeText(current.contract_started_at),
@@ -431,6 +435,7 @@ export async function POST(request: Request) {
     action?: unknown;
     quote_id?: unknown;
     quote_source?: unknown;
+    price_selection_kind?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -520,19 +525,35 @@ export async function POST(request: Request) {
         final_selected_at: now,
         contract_started_at: contractStartedAt,
       }));
-    await admin
-      .from("applications")
-      .update({
-        final_selected_quote_id: selectedId,
-        final_selected_quote_source: selectedSource,
-        final_selected_at: now,
-        quote_status: "final_selected",
-        contact_revealed_at: now,
-        contract_status: contractStatus,
-        contract_started_at: contractStartedAt,
-        contract_number: contractNumber,
-      })
-      .eq("id", applicationId);
+    const priceSelection = safeText(body.price_selection_kind);
+    const finalPatch: Record<string, unknown> = {
+      final_selected_quote_id: selectedId,
+      final_selected_quote_source: selectedSource,
+      final_selected_at: now,
+      quote_status: "final_selected",
+      contact_revealed_at: now,
+      contract_status: contractStatus,
+      contract_started_at: contractStartedAt,
+      contract_number: contractNumber,
+    };
+    if (
+      priceSelection === "normal_price_selected" ||
+      priceSelection === "support_price_selected"
+    ) {
+      finalPatch.client_price_selection_kind = priceSelection;
+    }
+    let finalUpdate = await admin.from("applications").update(finalPatch).eq("id", applicationId);
+    if (
+      finalUpdate.error &&
+      /client_price_selection_kind|does not exist|42703/i.test(finalUpdate.error.message)
+    ) {
+      const legacy = { ...finalPatch };
+      delete legacy.client_price_selection_kind;
+      finalUpdate = await admin.from("applications").update(legacy).eq("id", applicationId);
+    }
+    if (finalUpdate.error) {
+      return NextResponse.json({ error: finalUpdate.error.message }, { status: 502 });
+    }
     await admin
       .from(selectedSource === "member" ? "driver_quotes" : "guest_driver_quotes")
       .update(
