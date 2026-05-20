@@ -251,7 +251,9 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       const appApproved = parseInteger(current.sponsor_approved_support_amount);
       const supportFields = mapQuoteWithSupport(row, {
         applicationApprovedSupportTotal: appApproved,
+        sponsorApprovedSupportAmount: appApproved,
       });
+      const breakdown = supportFields.support_breakdown;
       return {
         source: "member",
         id: safeText(row.id),
@@ -268,13 +270,27 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         support_discount_planned_price: supportFields.support_discount_planned_price,
         support_discount_applied_price: supportFields.support_discount_applied_price,
         final_discount_applied_price: supportFields.final_discount_applied_price,
-        support_breakdown: supportFields.support_breakdown,
+        support_breakdown: breakdown,
+        planned_total_support:
+          supportFields.total_planned_support ?? breakdown?.totalPlannedSupport ?? null,
+        planned_customer_support:
+          supportFields.customer_planned_support ?? breakdown?.customerPlannedSupport ?? null,
+        planned_driver_support:
+          supportFields.partner_planned_support ?? breakdown?.partnerPlannedSupport ?? null,
         confirmed_total_support:
-          supportFields.support_breakdown?.totalConfirmedSupport ??
-          parseInteger(row.confirmed_total_support),
+          breakdown?.totalConfirmedSupport ?? parseInteger(row.confirmed_total_support),
+        confirmed_customer_support:
+          breakdown?.customerConfirmedSupport ?? parseInteger(row.confirmed_customer_support),
+        confirmed_driver_support:
+          breakdown?.partnerConfirmedSupport ?? parseInteger(row.confirmed_driver_support),
         confirmed_discount_price:
-          supportFields.support_breakdown?.supportDiscountAppliedPrice ??
-          parseInteger(row.confirmed_discount_price),
+          breakdown?.supportDiscountAppliedPrice ?? parseInteger(row.confirmed_discount_price),
+        support_settlement_type: safeText(row.support_settlement_type),
+        extension_support_amount:
+          breakdown?.extensionSupport ?? parseInteger(row.extension_support_amount),
+        preapproved_support_amount: parseInteger(row.preapproved_support_amount),
+        approved_support_amount: parseInteger(row.approved_support_amount),
+        sponsor_approved_support_amount: appApproved,
         support_status: safeText(row.sponsor_support_status),
         sponsor_support_status: safeText(row.sponsor_support_status),
         sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
@@ -400,6 +416,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       sponsor_preapproved_count: parseInteger(current.sponsor_preapproved_count) ?? 0,
       sponsor_approved_count: parseInteger(current.sponsor_approved_count) ?? 0,
       sponsor_rejected_count: parseInteger(current.sponsor_rejected_count) ?? 0,
+      sponsor_approved_support_amount: parseInteger(current.sponsor_approved_support_amount),
     },
     quotes,
   };

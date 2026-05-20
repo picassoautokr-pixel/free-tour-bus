@@ -24,8 +24,18 @@ export type ClientQuote = {
   support_discount_applied_price?: number | null;
   final_discount_applied_price?: number | null;
   support_breakdown?: QuoteSupportBreakdown | null;
+  planned_total_support?: number | null;
+  planned_customer_support?: number | null;
+  planned_driver_support?: number | null;
   confirmed_total_support?: number | null;
+  confirmed_customer_support?: number | null;
+  confirmed_driver_support?: number | null;
   confirmed_discount_price?: number | null;
+  support_settlement_type?: string;
+  extension_support_amount?: number | null;
+  preapproved_support_amount?: number | null;
+  approved_support_amount?: number | null;
+  sponsor_approved_support_amount?: number | null;
   support_status?: string;
   sponsor_support_status?: string;
   sponsor_quote_enabled?: boolean;
@@ -70,6 +80,7 @@ export type ClientApplication = {
   final_price_selection_kind?: string | null;
   contact_revealed_at?: string;
   sponsor_support_status?: string;
+  sponsor_approved_support_amount?: number | null;
   quote_count?: number;
   quotes?: ClientQuote[];
 };
