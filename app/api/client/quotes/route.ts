@@ -241,6 +241,32 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       row as Record<string, unknown>,
     ]),
   );
+
+  const { data: sponsorPreapprovals } = await admin
+    .from("sponsor_preapprovals")
+    .select("status, approved_support_amount, estimated_support_amount")
+    .eq("application_id", applicationId);
+  const sponsorRows = Array.isArray(sponsorPreapprovals)
+    ? (sponsorPreapprovals as Array<Record<string, unknown>>)
+    : [];
+  const hasApprovedSponsor = sponsorRows.some((row) => safeText(row.status) === "approved");
+  const hasRejectedSponsor =
+    sponsorRows.length > 0 &&
+    sponsorRows.every((row) => ["rejected", "cancelled", "expired"].includes(safeText(row.status)));
+  const derivedSponsorSupportStatus = hasApprovedSponsor
+    ? "approved"
+    : hasRejectedSponsor
+      ? "rejected"
+      : sponsorRows.length > 0
+        ? "preapproved"
+        : "none";
+  const storedSponsorSupportStatus = safeText(current.sponsor_support_status);
+  const applicationSponsorStatus =
+    storedSponsorSupportStatus && storedSponsorSupportStatus !== "none"
+      ? storedSponsorSupportStatus
+      : derivedSponsorSupportStatus;
+  const appApproved = parseInteger(current.sponsor_approved_support_amount);
+
   const quotes = [
     ...(Array.isArray(memberRows) ? memberRows : []).map((raw) => {
       const row = raw as Record<string, unknown>;
@@ -248,13 +274,17 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         partnerById.get(safeText(row.partner_driver_id)) ??
         partnerByAuthUserId.get(safeText(row.auth_user_id)) ??
         {};
-      const appApproved = parseInteger(current.sponsor_approved_support_amount);
       const supportOptions = {
         applicationApprovedSupportTotal: appApproved,
         sponsorApprovedSupportAmount: appApproved,
+        applicationSponsorStatus,
       };
       const support = buildClientMemberQuoteSupport(row, supportOptions);
       const breakdown = support.support_breakdown;
+      const quoteSponsorStatus =
+        safeText(row.sponsor_support_status) === "approved" || applicationSponsorStatus === "approved"
+          ? "approved"
+          : safeText(row.sponsor_support_status);
       return {
         source: "member",
         id: safeText(row.id),
@@ -289,8 +319,8 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         approved_support_amount: parseInteger(row.approved_support_amount),
         sponsor_approved_support_amount: appApproved,
         final_customer_support_amount: parseInteger(row.final_customer_support_amount),
-        support_status: safeText(row.sponsor_support_status),
-        sponsor_support_status: safeText(row.sponsor_support_status),
+        support_status: quoteSponsorStatus,
+        sponsor_support_status: quoteSponsorStatus,
         sponsor_quote_enabled: support.sponsor_quote_enabled,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
@@ -338,25 +368,6 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     if (rawPriceDiff !== 0) return rawPriceDiff;
     return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
   });
-  const { data: sponsorPreapprovals } = await admin
-    .from("sponsor_preapprovals")
-    .select("status, approved_support_amount, estimated_support_amount")
-    .eq("application_id", applicationId);
-  const sponsorRows = Array.isArray(sponsorPreapprovals)
-    ? (sponsorPreapprovals as Array<Record<string, unknown>>)
-    : [];
-  const hasApprovedSponsor = sponsorRows.some((row) => safeText(row.status) === "approved");
-  const hasRejectedSponsor =
-    sponsorRows.length > 0 &&
-    sponsorRows.every((row) => ["rejected", "cancelled", "expired"].includes(safeText(row.status)));
-  const derivedSponsorSupportStatus = hasApprovedSponsor
-    ? "approved"
-    : hasRejectedSponsor
-      ? "rejected"
-      : sponsorRows.length > 0
-        ? "preapproved"
-        : "none";
-  const storedSponsorSupportStatus = safeText(current.sponsor_support_status);
   return {
     application: {
       id: applicationId,
@@ -409,10 +420,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       deposit_confirmed_at: safeText(current.deposit_confirmed_at),
       contract_memo: safeText(current.contract_memo),
       quote_count: quotes.length,
-      sponsor_support_status:
-        storedSponsorSupportStatus && storedSponsorSupportStatus !== "none"
-          ? storedSponsorSupportStatus
-          : derivedSponsorSupportStatus,
+      sponsor_support_status: applicationSponsorStatus,
       sponsor_preapproved_count: parseInteger(current.sponsor_preapproved_count) ?? 0,
       sponsor_approved_count: parseInteger(current.sponsor_approved_count) ?? 0,
       sponsor_rejected_count: parseInteger(current.sponsor_rejected_count) ?? 0,

@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicationListItem";
 import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
 import {
-  logClientQuoteSupportDebug,
   quoteSubmitPriceLines,
   quoteSupportConfirmedForScreen,
   quoteSupportDiscountAppliedPriceForScreen,
@@ -156,12 +155,6 @@ export default function ClientDashboardPage() {
   });
 
   const tabCounts = useMemo(() => clientTabCounts(applications), [applications]);
-
-  useEffect(() => {
-    if (applications.length > 0) {
-      logClientQuoteSupportDebug(applications);
-    }
-  }, [applications]);
 
   const filteredApplications = useMemo(() => {
     let list = applications.filter((app) => clientApplicationTab(app) === activeTab);
