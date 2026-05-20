@@ -8,7 +8,7 @@ import {
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { sendNotificationSms } from "@/lib/notification-service";
-import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
+import { buildClientMemberQuoteSupport } from "@/lib/client-member-quote-payload";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -249,11 +249,12 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         partnerByAuthUserId.get(safeText(row.auth_user_id)) ??
         {};
       const appApproved = parseInteger(current.sponsor_approved_support_amount);
-      const supportFields = mapQuoteWithSupport(row, {
+      const supportOptions = {
         applicationApprovedSupportTotal: appApproved,
         sponsorApprovedSupportAmount: appApproved,
-      });
-      const breakdown = supportFields.support_breakdown;
+      };
+      const support = buildClientMemberQuoteSupport(row, supportOptions);
+      const breakdown = support.support_breakdown;
       return {
         source: "member",
         id: safeText(row.id),
@@ -265,38 +266,28 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
           safeText(row.id) === finalSelectedQuoteId
             ? safeText(partner?.phone)
             : "",
-        price: supportFields.price,
-        member_price: supportFields.support_discount_planned_price,
-        support_discount_planned_price: supportFields.support_discount_planned_price,
-        support_discount_applied_price: supportFields.support_discount_applied_price,
-        final_discount_applied_price: supportFields.final_discount_applied_price,
+        price: support.price,
+        member_price: support.member_price,
+        support_discount_planned_price: support.support_discount_planned_price,
+        support_discount_applied_price: support.support_discount_applied_price,
+        final_discount_applied_price: support.final_discount_applied_price,
+        confirmed_discount_price: support.confirmed_discount_price,
         support_breakdown: breakdown,
-        planned_total_support:
-          supportFields.total_planned_support ?? breakdown?.totalPlannedSupport ?? null,
-        planned_customer_support:
-          supportFields.customer_planned_support ?? breakdown?.customerPlannedSupport ?? null,
-        planned_driver_support:
-          supportFields.partner_planned_support ?? breakdown?.partnerPlannedSupport ?? null,
-        confirmed_total_support:
-          breakdown?.totalConfirmedSupport ?? parseInteger(row.confirmed_total_support),
-        confirmed_customer_support:
-          parseInteger(row.confirmed_customer_support) ??
-          breakdown?.customerConfirmedSupport ??
-          parseInteger(row.final_customer_support_amount),
-        confirmed_driver_support:
-          breakdown?.partnerConfirmedSupport ?? parseInteger(row.confirmed_driver_support),
-        confirmed_discount_price:
-          breakdown?.supportDiscountAppliedPrice ?? parseInteger(row.confirmed_discount_price),
+        planned_total_support: support.planned_total_support,
+        planned_customer_support: support.planned_customer_support,
+        planned_driver_support: support.planned_driver_support,
+        confirmed_total_support: support.confirmed_total_support,
+        confirmed_customer_support: support.confirmed_customer_support,
+        confirmed_driver_support: support.confirmed_driver_support,
         support_settlement_type: safeText(row.support_settlement_type),
-        extension_support_amount:
-          breakdown?.extensionSupport ?? parseInteger(row.extension_support_amount),
+        extension_support_amount: support.extension_support_amount,
         preapproved_support_amount: parseInteger(row.preapproved_support_amount),
         approved_support_amount: parseInteger(row.approved_support_amount),
         sponsor_approved_support_amount: appApproved,
         final_customer_support_amount: parseInteger(row.final_customer_support_amount),
         support_status: safeText(row.sponsor_support_status),
         sponsor_support_status: safeText(row.sponsor_support_status),
-        sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
+        sponsor_quote_enabled: support.sponsor_quote_enabled,
         vehicle_type: safeText(row.vehicle_type, "—"),
         available_time: safeText(row.available_time, "—"),
         memo: safeText(row.message),

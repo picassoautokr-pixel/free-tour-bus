@@ -63,10 +63,7 @@ export function ClientApplicationListItem({
   ) => void;
   busy?: boolean;
   /** page.tsx — 견적서 제출현황 지원금 할인 적용가 */
-  quoteSupportDiscountAppliedPriceForScreen?: (
-    quote: ClientQuote,
-    application: ClientApplication,
-  ) => number | null;
+  quoteSupportDiscountAppliedPriceForScreen?: (quote: ClientQuote) => number | null;
   quoteSupportConfirmedForScreen?: (
     quote: ClientQuote,
     application: ClientApplication,
@@ -172,10 +169,7 @@ export function ClientApplicationListItem({
                     selectedQuote,
                     application,
                   );
-                  const supportDiscountAppliedPrice = resolveAppliedFromPage(
-                    selectedQuote,
-                    application,
-                  );
+                  const supportDiscountAppliedPrice = resolveAppliedFromPage(selectedQuote);
                   return (
                     <>
                       {row.showNormal ? (
@@ -189,7 +183,7 @@ export function ClientApplicationListItem({
                           {formatClientQuotePrice(row.plannedPrice)}
                         </span>
                       ) : null}
-                      {supportConfirmed ? (
+                      {supportConfirmed && supportDiscountAppliedPrice != null ? (
                         <span>
                           {QUOTE_SCREEN_LABEL.supportDiscountApplied}:{" "}
                           {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
@@ -262,12 +256,11 @@ export function ClientApplicationListItem({
                   const memoOpen = memoQuoteId === `${quote.source}-${quote.id}`;
                   const supportBadge = quoteSupportBadgeLabel(quote, application);
                   const supportConfirmed = resolveConfirmedFromPage(quote, application);
-                  const supportDiscountAppliedPrice = resolveAppliedFromPage(
-                    quote,
-                    application,
-                  );
+                  const supportDiscountAppliedPrice = resolveAppliedFromPage(quote);
                   const showSupportDiscountApplied =
-                    quote.source === "member" && supportConfirmed;
+                    quote.source === "member" &&
+                    supportConfirmed &&
+                    supportDiscountAppliedPrice != null;
                   const showSupportDiscountPlanned =
                     quote.source === "member" && !supportConfirmed;
                   return (

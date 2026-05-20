@@ -1,5 +1,5 @@
 /**
- * 견적서 제출현황 가격 표시 — page.tsx에서 import (화면 표시 전용, UTF-8)
+ * 견적서 제출현황 가격 표시 — API support_breakdown 우선 (page.tsx, UTF-8)
  */
 
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
@@ -29,26 +29,21 @@ function breakdownAmount(
   return parseAmount(row[camelKey]) ?? parseAmount(row[snakeKey]);
 }
 
-/** 지원금 관련 데이터 존재 여부 (일반견적가 fallback 금지 판단) */
-export function quoteHasSupportPricingData(
-  quote: ClientQuote,
-  application?: ClientApplication,
-): boolean {
-  const b = quote.support_breakdown;
+/** API support_breakdown·견적 필드에서 지원금 할인 적용가 (클라이언트 재계산 없음) */
+export function quoteSupportDiscountAppliedPriceForScreen(quote: ClientQuote): number | null {
+  if (quote.source === "guest") {
+    return parseAmount(quote.price);
+  }
+
+  const breakdown = quote.support_breakdown;
+
   return (
-    parseAmount(quote.confirmed_customer_support) != null ||
-    parseAmount(quote.planned_customer_support) != null ||
-    parseAmount(quote.confirmed_total_support) != null ||
-    parseAmount(quote.approved_support_amount) != null ||
-    parseAmount(quote.preapproved_support_amount) != null ||
-    parseAmount(quote.sponsor_approved_support_amount) != null ||
-    parseAmount(application?.sponsor_approved_support_amount) != null ||
-    breakdownAmount(b, "totalConfirmedSupport", "confirmed_total_support") != null ||
-    breakdownAmount(b, "customerConfirmedSupport", "confirmed_customer_support") != null ||
-    breakdownAmount(b, "customerPlannedSupport", "planned_customer_support") != null ||
-    quote.sponsor_support_status === "approved" ||
-    quote.support_status === "approved" ||
-    application?.sponsor_support_status === "approved"
+    breakdownAmount(breakdown, "finalDiscountAppliedPrice", "final_discount_applied_price") ??
+    breakdownAmount(breakdown, "supportDiscountAppliedPrice", "confirmed_discount_price") ??
+    parseAmount(quote.final_discount_applied_price) ??
+    parseAmount(quote.confirmed_discount_price) ??
+    parseAmount(quote.support_discount_applied_price) ??
+    null
   );
 }
 
@@ -57,66 +52,16 @@ export function quoteSupportConfirmedForScreen(
   application?: ClientApplication,
 ): boolean {
   if (quote.source === "guest") return false;
-  return quoteHasSupportPricingData(quote, application);
-}
-
-/**
- * 견적서 제출현황 카드 — 지원금 할인 적용가 표시값.
- * 일반견적가 fallback 금지 (제휴기사 + 지원 데이터 있을 때).
- */
-export function quoteSupportDiscountAppliedPriceForScreen(
-  quote: ClientQuote,
-  application?: ClientApplication,
-): number | null {
-  if (quote.source === "guest") {
-    return parseAmount(quote.price);
-  }
-
-  const normal = parseAmount(quote.price);
+  if (quoteSupportDiscountAppliedPriceForScreen(quote) != null) return true;
   const breakdown = quote.support_breakdown;
-  const extension =
-    parseAmount(quote.extension_support_amount) ??
-    breakdownAmount(breakdown, "extensionSupport", "extension_support_amount") ??
-    0;
-
-  const confirmedCustomer =
-    parseAmount(quote.confirmed_customer_support) ??
-    breakdownAmount(breakdown, "customerConfirmedSupport", "confirmed_customer_support") ??
-    parseAmount((quote as ClientQuote & { final_customer_support_amount?: unknown })
-      .final_customer_support_amount);
-
-  if (normal != null && confirmedCustomer != null) {
-    return Math.max(normal - confirmedCustomer - extension, 0);
-  }
-
-  const plannedCustomer =
-    parseAmount(quote.planned_customer_support) ??
-    breakdownAmount(breakdown, "customerPlannedSupport", "planned_customer_support");
-  const confirmedTotal =
-    parseAmount(quote.confirmed_total_support) ??
-    breakdownAmount(breakdown, "totalConfirmedSupport", "confirmed_total_support") ??
-    parseAmount(quote.approved_support_amount) ??
-    parseAmount(quote.sponsor_approved_support_amount) ??
-    parseAmount(application?.sponsor_approved_support_amount);
-
-  if (normal != null && plannedCustomer != null && confirmedTotal != null) {
-    const customerConfirmed = Math.min(plannedCustomer, confirmedTotal);
-    return Math.max(normal - customerConfirmed - extension, 0);
-  }
-
-  const stored = [
-    breakdownAmount(breakdown, "finalDiscountAppliedPrice", "final_discount_applied_price"),
-    breakdownAmount(breakdown, "supportDiscountAppliedPrice", "confirmed_discount_price"),
-    parseAmount(quote.final_discount_applied_price),
-    parseAmount(quote.confirmed_discount_price),
-    parseAmount(quote.support_discount_applied_price),
-  ].find((v) => v != null) ?? null;
-
-  if (stored != null && normal != null && stored < normal) return stored;
-  if (stored != null && !quoteHasSupportPricingData(quote, application)) return stored;
-
-  if (quoteHasSupportPricingData(quote, application)) return null;
-  return null;
+  if (breakdown?.isConfirmed === true) return true;
+  if (parseAmount(quote.confirmed_total_support) != null) return true;
+  if (parseAmount(quote.sponsor_approved_support_amount) != null) return true;
+  if (parseAmount(application?.sponsor_approved_support_amount) != null) return true;
+  if (quote.sponsor_support_status === "approved") return true;
+  if (quote.support_status === "approved") return true;
+  if (application?.sponsor_support_status === "approved") return true;
+  return false;
 }
 
 export function formatQuotePriceForScreen(value: number | null | undefined): string {
@@ -124,13 +69,11 @@ export function formatQuotePriceForScreen(value: number | null | undefined): str
   return `${value.toLocaleString("ko-KR")}${LABEL.wonSuffix}`;
 }
 
-/** API 지원금 필드 디버그 (개발 시 콘솔) */
 export function logClientQuoteSupportDebug(applications: ClientApplication[]): void {
   if (typeof window === "undefined") return;
   for (const app of applications) {
     for (const quote of app.quotes ?? []) {
       if (quote.source !== "member") continue;
-      const applied = quoteSupportDiscountAppliedPriceForScreen(quote, app);
       console.log("[client-dashboard quote debug]", {
         quoteId: quote.id,
         receipt: app.receipt_number,
@@ -142,7 +85,7 @@ export function logClientQuoteSupportDebug(applications: ClientApplication[]): v
         confirmed_discount_price: quote.confirmed_discount_price,
         support_discount_applied_price: quote.support_discount_applied_price,
         support_breakdown: quote.support_breakdown,
-        screenAppliedPrice: applied,
+        screenAppliedPrice: quoteSupportDiscountAppliedPriceForScreen(quote),
       });
     }
   }

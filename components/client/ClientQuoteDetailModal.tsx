@@ -35,10 +35,7 @@ export function ClientQuoteDetailModal({
   const memo = quote.memo ?? quote.message ?? "";
   const supportBadge = quoteSupportBadgeLabel(quote, application);
   const supportConfirmed = quoteSupportConfirmedForScreen(quote, application);
-  const supportDiscountAppliedPrice = quoteSupportDiscountAppliedPriceForScreen(
-    quote,
-    application,
-  );
+  const supportDiscountAppliedPrice = quoteSupportDiscountAppliedPriceForScreen(quote);
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-900/50 px-0 py-0 sm:items-center sm:px-4 sm:py-8">
@@ -66,7 +63,7 @@ export function ClientQuoteDetailModal({
               </dd>
             </div>
           ) : null}
-          {quote.source === "member" && supportConfirmed ? (
+          {quote.source === "member" && supportConfirmed && supportDiscountAppliedPrice != null ? (
             <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
               <dt className="text-xs font-bold text-emerald-700">
                 {QUOTE_SCREEN_LABEL.supportDiscountApplied}
