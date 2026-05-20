@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicationListItem";
 import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
+import { applyClientPartnerQuoteApiFields } from "@/lib/client-member-quote-payload";
 import {
   quoteSubmitPriceLines,
   quoteSupportConfirmedForScreen,
@@ -35,6 +36,17 @@ import {
 } from "@/hooks/useSupabaseRealtimeRefresh";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
+
+/** API 견적 응답 — 제휴기사 필수 지원금 숫자 필드 보강 후 normalize */
+function normalizeClientApplicationFromApi(app: ClientApplication): ClientApplication {
+  const withQuotes: ClientApplication = {
+    ...app,
+    quotes: (app.quotes ?? []).map((q) =>
+      q.source === "member" ? applyClientPartnerQuoteApiFields(q, app) : q,
+    ),
+  };
+  return normalizeClientApplication(withQuotes);
+}
 
 /** 견적서 제출현황 가격 표시 (page-quote-screen.ts) */
 export {
@@ -93,7 +105,7 @@ export default function ClientDashboardPage() {
       const app = json.application;
       const quotes = Array.isArray(json.quotes) ? json.quotes : [];
       mergeApplications(
-        app ? [normalizeClientApplication({ ...app, quotes })] : [],
+        app ? [normalizeClientApplicationFromApi({ ...app, quotes })] : [],
         !options?.silent,
       );
     } catch (e) {
@@ -125,7 +137,7 @@ export default function ClientDashboardPage() {
           return;
         }
         const next = (Array.isArray(json.applications) ? json.applications : []).map(
-          normalizeClientApplication,
+          normalizeClientApplicationFromApi,
         );
         mergeApplications(next, true);
         if (!options?.silent) {
@@ -201,7 +213,7 @@ export default function ClientDashboardPage() {
         setApplications((prev) =>
           prev.map((item) =>
             item.id === json.application?.id
-              ? normalizeClientApplication({ ...json.application!, quotes })
+              ? normalizeClientApplicationFromApi({ ...json.application!, quotes })
               : item,
           ),
         );

@@ -265,7 +265,14 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     storedSponsorSupportStatus && storedSponsorSupportStatus !== "none"
       ? storedSponsorSupportStatus
       : derivedSponsorSupportStatus;
-  const appApproved = parseInteger(current.sponsor_approved_support_amount);
+  const sponsorApprovedFromPreapprovals = sponsorRows
+    .filter((row) => safeText(row.status) === "approved")
+    .reduce((sum, row) => sum + (parseInteger(row.approved_support_amount) ?? 0), 0);
+  const appApproved =
+    parseInteger(current.sponsor_approved_support_amount) ??
+    (sponsorApprovedFromPreapprovals > 0 ? sponsorApprovedFromPreapprovals : null);
+  const appTargetNormal = parseInteger(current.target_normal_price);
+  const appTargetMember = parseInteger(current.target_member_price);
 
   const quotes = [
     ...(Array.isArray(memberRows) ? memberRows : []).map((raw) => {
@@ -278,6 +285,8 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         applicationApprovedSupportTotal: appApproved,
         sponsorApprovedSupportAmount: appApproved,
         applicationSponsorStatus,
+        applicationTargetNormalPrice: appTargetNormal,
+        applicationTargetMemberPrice: appTargetMember,
       };
       const support = buildClientMemberQuoteSupport(row, supportOptions);
       const breakdown = support.support_breakdown;
@@ -304,21 +313,21 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         confirmed_discount_price: support.confirmed_discount_price,
         support_breakdown: breakdown,
         planned_total_support: support.planned_total_support,
-        planned_customer_support:
-          support.planned_customer_support ?? parseInteger(row.planned_customer_support),
+        planned_customer_support: support.planned_customer_support,
         planned_driver_support: support.planned_driver_support,
-        customer_support_amount: parseInteger(row.customer_support_amount),
+        customer_support_amount:
+          support.planned_customer_support ?? parseInteger(row.customer_support_amount),
         client_reward_amount: parseInteger(row.client_reward_amount),
-        confirmed_total_support:
-          support.confirmed_total_support ?? parseInteger(row.confirmed_total_support),
+        confirmed_total_support: support.confirmed_total_support,
         confirmed_customer_support: support.confirmed_customer_support,
         confirmed_driver_support: support.confirmed_driver_support,
         support_settlement_type: safeText(row.support_settlement_type),
         extension_support_amount: support.extension_support_amount,
         preapproved_support_amount: parseInteger(row.preapproved_support_amount),
-        approved_support_amount: parseInteger(row.approved_support_amount),
-        sponsor_approved_support_amount: appApproved,
-        final_customer_support_amount: parseInteger(row.final_customer_support_amount),
+        approved_support_amount:
+          support.confirmed_total_support ?? parseInteger(row.approved_support_amount),
+        sponsor_approved_support_amount: support.confirmed_total_support ?? appApproved,
+        final_customer_support_amount: support.confirmed_customer_support,
         support_status: quoteSponsorStatus,
         sponsor_support_status: quoteSponsorStatus,
         sponsor_quote_enabled: support.sponsor_quote_enabled,

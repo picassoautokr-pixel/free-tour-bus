@@ -8,6 +8,7 @@ import {
   type QuoteSupportBreakdown,
   type QuoteSupportInput,
 } from "@/lib/support-calculation";
+import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 
 /** 클라이언트 JSON — camelCase + snake_case 병행 */
 export type ClientSerializedSupportBreakdown = QuoteSupportBreakdown & {
@@ -37,7 +38,14 @@ function safeStatus(value: unknown): string {
 
 type MemberQuoteRow = Record<string, unknown>;
 
+export type ClientMemberQuoteSupportOptions = BuildQuoteSupportBreakdownOptions & {
+  applicationSponsorStatus?: string;
+  applicationTargetNormalPrice?: number | null;
+  applicationTargetMemberPrice?: number | null;
+};
+
 export type ClientMemberQuoteSupportFields = {
+  /** 일반견적가 */
   price: number | null;
   member_price: number | null;
   support_discount_planned_price: number | null;
@@ -55,14 +63,66 @@ export type ClientMemberQuoteSupportFields = {
   sponsor_quote_enabled: boolean;
 };
 
+function resolveNormalPrice(
+  row: MemberQuoteRow,
+  options?: ClientMemberQuoteSupportOptions,
+): number {
+  const fromRow = parseIntField(row.price);
+  if (fromRow > 0) return fromRow;
+  const fromApp = parseIntField(options?.applicationTargetNormalPrice);
+  if (fromApp > 0) return fromApp;
+  return parseIntField(row.target_normal_price);
+}
+
+function resolveEffectivePlannedCustomer(
+  row: MemberQuoteRow,
+  normalPrice: number,
+  extensionSupport: number,
+  options?: ClientMemberQuoteSupportOptions,
+): number {
+  const explicit = parseIntField(
+    row.planned_customer_support ??
+      row.customer_support_amount ??
+      row.client_reward_amount ??
+      row.support_discount_amount,
+  );
+  if (explicit > 0) return explicit;
+
+  const targetNormal = parseIntField(options?.applicationTargetNormalPrice);
+  const targetMember = parseIntField(options?.applicationTargetMemberPrice);
+  if (targetNormal > 0 && targetMember > 0 && targetNormal > targetMember) {
+    return Math.max(targetNormal - targetMember - extensionSupport, 0);
+  }
+
+  if (normalPrice > 0) {
+    const memberOrDiscount = parseIntField(row.member_price ?? row.sponsor_discounted_price);
+    if (memberOrDiscount > 0 && memberOrDiscount < normalPrice) {
+      return Math.max(normalPrice - memberOrDiscount - extensionSupport, 0);
+    }
+  }
+  return 0;
+}
+
+function resolveConfirmedTotalSupport(
+  row: MemberQuoteRow,
+  options?: ClientMemberQuoteSupportOptions,
+): number {
+  return parseIntField(
+    row.confirmed_total_support ??
+      row.sponsor_approved_support_amount ??
+      row.approved_support_amount ??
+      options?.sponsorApprovedSupportAmount ??
+      options?.applicationApprovedSupportTotal,
+  );
+}
+
 /**
- * DB 컬럼명 혼용 → 고객 대시보드용 support_breakdown·할인가 계산
+ * 확정 시 고객 확정 지원금 = min(고객 예정, 총 확정)
+ * 지원금 할인 적용가 = 일반견적가 - 고객 확정 지원금 - 연장 지원금
  */
 function computeClientSupportFromRow(
   row: MemberQuoteRow,
-  options?: BuildQuoteSupportBreakdownOptions & {
-    applicationSponsorStatus?: string;
-  },
+  options?: ClientMemberQuoteSupportOptions,
 ): {
   normalPrice: number;
   plannedCustomerSupport: number;
@@ -74,21 +134,15 @@ function computeClientSupportFromRow(
   plannedDiscountPrice: number | null;
   driverConfirmedSupport: number | null;
 } {
-  const normalPrice = parseIntField(row.price ?? row.member_price);
-  const plannedCustomerSupport = parseIntField(
-    row.planned_customer_support ??
-      row.customer_support_amount ??
-      row.client_reward_amount ??
-      row.support_discount_amount,
-  );
-  const confirmedTotalSupport = parseIntField(
-    row.confirmed_total_support ??
-      row.sponsor_approved_support_amount ??
-      row.approved_support_amount ??
-      options?.sponsorApprovedSupportAmount ??
-      options?.applicationApprovedSupportTotal,
-  );
+  const normalPrice = resolveNormalPrice(row, options);
   const extensionSupport = parseIntField(row.extension_support_amount);
+  const plannedCustomerSupport = resolveEffectivePlannedCustomer(
+    row,
+    normalPrice,
+    extensionSupport,
+    options,
+  );
+  const confirmedTotalSupport = resolveConfirmedTotalSupport(row, options);
 
   const quoteSponsorStatus = safeStatus(row.sponsor_support_status);
   const appSponsorStatus = safeStatus(options?.applicationSponsorStatus);
@@ -97,38 +151,40 @@ function computeClientSupportFromRow(
     appSponsorStatus === "approved" ||
     confirmedTotalSupport > 0;
 
-  let plannedDiscountPrice: number | null = null;
-  if (normalPrice > 0 && plannedCustomerSupport > 0) {
-    plannedDiscountPrice = Math.max(normalPrice - plannedCustomerSupport - extensionSupport, 0);
-  }
+  const plannedDiscountPrice =
+    normalPrice > 0 && plannedCustomerSupport > 0
+      ? Math.max(normalPrice - plannedCustomerSupport - extensionSupport, 0)
+      : null;
 
   let confirmedCustomerSupport: number | null = null;
-  let discountAppliedPrice: number | null = null;
   let driverConfirmedSupport: number | null = null;
 
-  if (isConfirmed && normalPrice > 0) {
+  if (isConfirmed) {
     const storedCustomer = parseIntField(
       row.confirmed_customer_support ?? row.final_customer_support_amount,
     );
-    const storedDiscount = parseIntField(
-      row.confirmed_discount_price ?? row.confirmed_final_price ?? row.final_member_price,
-    );
-
-    if (storedCustomer > 0 && storedDiscount > 0 && storedDiscount < normalPrice) {
+    if (storedCustomer > 0) {
       confirmedCustomerSupport = storedCustomer;
-      discountAppliedPrice = storedDiscount;
-      driverConfirmedSupport = parseIntField(row.confirmed_driver_support);
     } else if (plannedCustomerSupport > 0 && confirmedTotalSupport > 0) {
       confirmedCustomerSupport = Math.min(plannedCustomerSupport, confirmedTotalSupport);
-      driverConfirmedSupport = Math.max(confirmedTotalSupport - confirmedCustomerSupport, 0);
-      discountAppliedPrice = Math.max(
-        normalPrice - confirmedCustomerSupport - extensionSupport,
-        0,
-      );
     } else if (confirmedTotalSupport > 0) {
       confirmedCustomerSupport = confirmedTotalSupport;
-      discountAppliedPrice = Math.max(normalPrice - confirmedTotalSupport - extensionSupport, 0);
     }
+
+    if (confirmedCustomerSupport != null) {
+      driverConfirmedSupport =
+        confirmedTotalSupport > 0
+          ? Math.max(confirmedTotalSupport - confirmedCustomerSupport, 0)
+          : parseIntField(row.confirmed_driver_support) || null;
+    }
+  }
+
+  let discountAppliedPrice: number | null = null;
+  if (isConfirmed && normalPrice > 0 && confirmedCustomerSupport != null) {
+    discountAppliedPrice = Math.max(
+      normalPrice - confirmedCustomerSupport - extensionSupport,
+      0,
+    );
   }
 
   return {
@@ -149,41 +205,39 @@ function mergeSerializedBreakdown(
   computed: ReturnType<typeof computeClientSupportFromRow>,
 ): ClientSerializedSupportBreakdown {
   const applied = computed.discountAppliedPrice;
-  const finalApplied = applied;
   const planned = computed.plannedDiscountPrice ?? base.supportDiscountPlannedPrice;
+  const plannedCustomer =
+    computed.plannedCustomerSupport > 0
+      ? computed.plannedCustomerSupport
+      : base.customerPlannedSupport;
+  const confirmedTotal =
+    computed.confirmedTotalSupport > 0
+      ? computed.confirmedTotalSupport
+      : base.totalConfirmedSupport;
+  const confirmedCustomer =
+    computed.confirmedCustomerSupport ?? base.customerConfirmedSupport;
+
   return {
     ...base,
     calculationStatus: "ok",
     isConfirmed: computed.isConfirmed,
-    normalPrice: computed.normalPrice || base.normalPrice,
-    totalPlannedSupport: computed.plannedCustomerSupport > 0 ? base.totalPlannedSupport : base.totalPlannedSupport,
-    customerPlannedSupport:
-      computed.plannedCustomerSupport > 0
-        ? computed.plannedCustomerSupport
-        : base.customerPlannedSupport,
+    normalPrice: computed.normalPrice > 0 ? computed.normalPrice : base.normalPrice,
+    customerPlannedSupport: plannedCustomer,
     supportDiscountPlannedPrice: planned,
-    totalConfirmedSupport:
-      computed.confirmedTotalSupport > 0
-        ? computed.confirmedTotalSupport
-        : base.totalConfirmedSupport,
-    customerConfirmedSupport: computed.confirmedCustomerSupport ?? base.customerConfirmedSupport,
+    totalConfirmedSupport: confirmedTotal,
+    customerConfirmedSupport: confirmedCustomer,
     partnerConfirmedSupport:
       computed.driverConfirmedSupport ?? base.partnerConfirmedSupport,
     supportDiscountAppliedPrice: applied ?? base.supportDiscountAppliedPrice,
-    finalDiscountAppliedPrice: finalApplied ?? base.finalDiscountAppliedPrice,
+    finalDiscountAppliedPrice: applied ?? base.finalDiscountAppliedPrice,
     extensionSupport: computed.extensionSupport,
     confirmed_discount_price: applied,
-    final_discount_applied_price: finalApplied,
-    confirmed_total_support:
-      computed.confirmedTotalSupport > 0
-        ? computed.confirmedTotalSupport
-        : base.totalConfirmedSupport,
-    confirmed_customer_support: computed.confirmedCustomerSupport,
-    confirmed_driver_support: computed.driverConfirmedSupport ?? base.partnerConfirmedSupport,
-    planned_customer_support:
-      computed.plannedCustomerSupport > 0
-        ? computed.plannedCustomerSupport
-        : base.customerPlannedSupport,
+    final_discount_applied_price: applied,
+    confirmed_total_support: confirmedTotal,
+    confirmed_customer_support: confirmedCustomer,
+    confirmed_driver_support:
+      computed.driverConfirmedSupport ?? base.partnerConfirmedSupport,
+    planned_customer_support: plannedCustomer,
     planned_total_support: base.totalPlannedSupport,
     is_confirmed: computed.isConfirmed,
   };
@@ -191,43 +245,147 @@ function mergeSerializedBreakdown(
 
 export function buildClientMemberQuoteSupport(
   row: QuoteSupportInput & MemberQuoteRow,
-  options?: BuildQuoteSupportBreakdownOptions & {
-    applicationSponsorStatus?: string;
-  },
+  options?: ClientMemberQuoteSupportOptions,
 ): ClientMemberQuoteSupportFields {
   const computed = computeClientSupportFromRow(row, options);
   const baseBreakdown = buildQuoteSupportBreakdown(row, options);
   const clientBreakdown = mergeSerializedBreakdown(baseBreakdown, computed);
 
-  const applied =
-    clientBreakdown.final_discount_applied_price ??
-    clientBreakdown.confirmed_discount_price ??
-    null;
+  const applied = computed.discountAppliedPrice;
   const planned =
-    clientBreakdown.supportDiscountPlannedPrice ??
     computed.plannedDiscountPrice ??
+    clientBreakdown.supportDiscountPlannedPrice ??
     (computed.normalPrice > 0 && computed.plannedCustomerSupport > 0
-      ? Math.max(computed.normalPrice - computed.plannedCustomerSupport - computed.extensionSupport, 0)
+      ? Math.max(
+          computed.normalPrice - computed.plannedCustomerSupport - computed.extensionSupport,
+          0,
+        )
       : null);
 
   return {
-    price: computed.normalPrice > 0 ? computed.normalPrice : baseBreakdown.normalPrice,
+    price: computed.normalPrice > 0 ? computed.normalPrice : null,
     member_price: planned,
     support_discount_planned_price: planned,
     support_discount_applied_price: applied,
-    final_discount_applied_price: clientBreakdown.final_discount_applied_price,
+    final_discount_applied_price: applied,
     confirmed_discount_price: applied,
     support_breakdown: clientBreakdown,
     planned_total_support: clientBreakdown.planned_total_support ?? clientBreakdown.totalPlannedSupport,
     planned_customer_support:
-      computed.plannedCustomerSupport > 0
-        ? computed.plannedCustomerSupport
-        : clientBreakdown.planned_customer_support,
+      computed.plannedCustomerSupport > 0 ? computed.plannedCustomerSupport : null,
     planned_driver_support: clientBreakdown.partnerPlannedSupport,
-    confirmed_total_support: clientBreakdown.confirmed_total_support,
-    confirmed_customer_support: clientBreakdown.confirmed_customer_support,
-    confirmed_driver_support: clientBreakdown.confirmed_driver_support,
+    confirmed_total_support:
+      computed.isConfirmed && computed.confirmedTotalSupport > 0
+        ? computed.confirmedTotalSupport
+        : null,
+    confirmed_customer_support: computed.confirmedCustomerSupport,
+    confirmed_driver_support: computed.driverConfirmedSupport,
     extension_support_amount: computed.extensionSupport,
     sponsor_quote_enabled: baseBreakdown.sponsorQuoteEnabled,
+  };
+}
+
+/** API 응답 후 클라이언트 상태 — support_breakdown·필수 숫자 필드 보강 */
+export function applyClientPartnerQuoteApiFields(
+  quote: ClientQuote,
+  application?: Pick<
+    ClientApplication,
+    | "sponsor_support_status"
+    | "sponsor_approved_support_amount"
+    | "target_normal_price"
+    | "target_member_price"
+  >,
+): ClientQuote {
+  if (quote.source !== "member") return quote;
+
+  const breakdown = quote.support_breakdown as ClientSerializedSupportBreakdown | null | undefined;
+  const normalPrice =
+    quote.price ??
+    breakdown?.normalPrice ??
+    application?.target_normal_price ??
+    null;
+  const plannedCustomer =
+    quote.planned_customer_support ??
+    breakdown?.planned_customer_support ??
+    breakdown?.customerPlannedSupport ??
+    quote.customer_support_amount ??
+    null;
+  const confirmedTotal =
+    quote.confirmed_total_support ??
+    breakdown?.confirmed_total_support ??
+    breakdown?.totalConfirmedSupport ??
+    quote.sponsor_approved_support_amount ??
+    application?.sponsor_approved_support_amount ??
+    null;
+  let confirmedCustomer =
+    quote.confirmed_customer_support ??
+    breakdown?.confirmed_customer_support ??
+    breakdown?.customerConfirmedSupport ??
+    null;
+  const extension = quote.extension_support_amount ?? breakdown?.extensionSupport ?? 0;
+
+  const sponsorStatus =
+    quote.sponsor_support_status ??
+    quote.support_status ??
+    application?.sponsor_support_status;
+  const isConfirmed =
+    sponsorStatus === "approved" ||
+    breakdown?.is_confirmed === true ||
+    breakdown?.isConfirmed === true ||
+    (confirmedTotal != null && confirmedTotal > 0);
+
+  if (
+    isConfirmed &&
+    confirmedCustomer == null &&
+    plannedCustomer != null &&
+    confirmedTotal != null
+  ) {
+    confirmedCustomer = Math.min(plannedCustomer, confirmedTotal);
+  }
+
+  let applied =
+    quote.final_discount_applied_price ??
+    quote.support_discount_applied_price ??
+    quote.confirmed_discount_price ??
+    breakdown?.final_discount_applied_price ??
+    breakdown?.finalDiscountAppliedPrice ??
+    breakdown?.supportDiscountAppliedPrice ??
+    null;
+
+  if (applied == null && isConfirmed && normalPrice != null && confirmedCustomer != null) {
+    applied = Math.max(normalPrice - confirmedCustomer - extension, 0);
+  }
+
+  const hydratedBreakdown: ClientSerializedSupportBreakdown | null | undefined = breakdown
+    ? ({
+        ...breakdown,
+        normalPrice: normalPrice ?? breakdown.normalPrice,
+        customerPlannedSupport: plannedCustomer ?? breakdown.customerPlannedSupport,
+        planned_customer_support: plannedCustomer ?? breakdown.planned_customer_support,
+        totalConfirmedSupport: confirmedTotal ?? breakdown.totalConfirmedSupport,
+        confirmed_total_support: confirmedTotal ?? breakdown.confirmed_total_support,
+        customerConfirmedSupport: confirmedCustomer ?? breakdown.customerConfirmedSupport,
+        confirmed_customer_support: confirmedCustomer ?? breakdown.confirmed_customer_support,
+        supportDiscountAppliedPrice: applied ?? breakdown.supportDiscountAppliedPrice,
+        finalDiscountAppliedPrice: applied ?? breakdown.finalDiscountAppliedPrice,
+        final_discount_applied_price: applied ?? breakdown.final_discount_applied_price,
+        confirmed_discount_price: applied ?? breakdown.confirmed_discount_price,
+        isConfirmed: isConfirmed || breakdown.isConfirmed,
+        is_confirmed: isConfirmed || breakdown.is_confirmed,
+      } as ClientSerializedSupportBreakdown)
+    : (quote.support_breakdown as ClientSerializedSupportBreakdown | null | undefined);
+
+  return {
+    ...quote,
+    price: normalPrice ?? quote.price,
+    planned_customer_support: plannedCustomer ?? quote.planned_customer_support,
+    confirmed_total_support: confirmedTotal ?? quote.confirmed_total_support,
+    confirmed_customer_support: confirmedCustomer ?? quote.confirmed_customer_support,
+    final_discount_applied_price: applied,
+    support_discount_applied_price: applied,
+    confirmed_discount_price: applied,
+    sponsor_approved_support_amount:
+      quote.sponsor_approved_support_amount ?? application?.sponsor_approved_support_amount,
+    support_breakdown: hydratedBreakdown ?? quote.support_breakdown,
   };
 }

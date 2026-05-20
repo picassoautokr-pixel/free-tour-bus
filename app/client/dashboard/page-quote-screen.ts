@@ -121,18 +121,23 @@ export function quoteSubmitPriceLines(
 
   if (supportPrice == null && normalPrice != null) {
     const breakdown = quote.support_breakdown as BreakdownRow | null | undefined;
-    const plannedCustomer =
-      parseAmount(quote.planned_customer_support) ??
-      breakdownAmount(breakdown, "customerPlannedSupport", "planned_customer_support") ??
-      parseAmount((quote as ClientQuote & BreakdownRow).customer_support_amount);
     const extension =
       parseAmount(quote.extension_support_amount) ??
       breakdownAmount(breakdown, "extensionSupport", "extension_support_amount") ??
       0;
+    let plannedCustomer =
+      parseAmount(quote.planned_customer_support) ??
+      breakdownAmount(breakdown, "customerPlannedSupport", "planned_customer_support") ??
+      parseAmount((quote as ClientQuote & BreakdownRow).customer_support_amount);
+    const memberHint = parseAmount(quote.member_price);
+    if (plannedCustomer == null && memberHint != null && memberHint < normalPrice) {
+      plannedCustomer = Math.max(normalPrice - memberHint - extension, 0);
+    }
     if (supportConfirmed) {
       const confirmedTotal =
         breakdownAmount(breakdown, "totalConfirmedSupport", "confirmed_total_support") ??
         parseAmount(quote.confirmed_total_support) ??
+        parseAmount(quote.sponsor_approved_support_amount) ??
         parseAmount(application?.sponsor_approved_support_amount);
       const confirmedCustomer =
         breakdownAmount(breakdown, "customerConfirmedSupport", "confirmed_customer_support") ??
@@ -144,6 +149,10 @@ export function quoteSubmitPriceLines(
           normalPrice - Math.min(plannedCustomer, confirmedTotal) - extension,
           0,
         );
+      } else if (confirmedTotal != null) {
+        supportPrice = Math.max(normalPrice - confirmedTotal - extension, 0);
+      } else if (plannedCustomer != null) {
+        supportPrice = Math.max(normalPrice - plannedCustomer - extension, 0);
       }
     } else if (plannedCustomer != null) {
       supportPrice = Math.max(normalPrice - plannedCustomer - extension, 0);
