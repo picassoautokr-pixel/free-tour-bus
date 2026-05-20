@@ -12,13 +12,12 @@ import {
   type PartnerDashboardTab,
 } from "@/lib/partner-dashboard-labels";
 import {
-  applicationSupportTotals,
   fmt,
+  partnerSupportSummaryForCard,
   formatQuoteDeadline,
   formatQuoteProgress,
   formatUntilDeparture,
   matchedRunStatus,
-  quoteBreakdownForCall,
   quoteFormPlannedAmounts,
   sponsorStageLabel,
   type PartnerCallLike,
@@ -133,10 +132,9 @@ export function PartnerCallCard({
   customerInfoVisible: boolean;
   isEditMode?: boolean;
 }) {
-  const appSupport = applicationSupportTotals(call);
-  const sponsorConfirmed =
-    call.sponsor_support_status === "approved" && (appSupport.totalConfirmed ?? 0) > 0;
-  const breakdown = quoteBreakdownForCall(call);
+  const supportSummary = partnerSupportSummaryForCard(call);
+  const breakdown = supportSummary.breakdown;
+  const sponsorConfirmed = supportSummary.showConfirmed;
   const memberQuoted = call.my_quote?.source === "member";
   const runStatus = matchedRunStatus(call);
   const runLabel =
@@ -145,7 +143,10 @@ export function PartnerCallCard({
 
   const quotePriceValue = parsePriceInput(quoteForm.price);
   const customerPlannedInput = parsePriceInput(quoteForm.supportDiscountAmount);
-  const totalPlannedForForm = appSupport.totalPlanned ?? customerPlannedInput ?? 0;
+  const totalPlannedForForm =
+    supportSummary.totalPlannedForForm > 0
+      ? supportSummary.totalPlannedForForm
+      : customerPlannedInput ?? 0;
   const formPlannedPreview = quoteFormPlannedAmounts({
     normalPrice: quotePriceValue,
     customerPlanned: customerPlannedInput,
@@ -333,11 +334,7 @@ export function PartnerCallCard({
               <p className="text-[11px] font-bold">
                 {sponsorConfirmed ? LABEL.totalConfirmedSupport : LABEL.totalPlannedSupport}
               </p>
-              <p className="mt-1 text-sm font-black">
-                {sponsorConfirmed
-                  ? fmt(appSupport.totalConfirmed, "confirmed")
-                  : fmt(appSupport.totalPlanned, "planned")}
-              </p>
+              <p className="mt-1 text-sm font-black">{supportSummary.summaryFormatted}</p>
             </div>
             <DetailRow label={LABEL.quoteDeadline}>
               {call.quote_deadline_at

@@ -61,6 +61,8 @@ export type QuoteSupportInput = {
   extension_support_amount?: unknown;
   extension_applied?: boolean;
   client_reward_amount?: unknown;
+  sponsor_approved_support_amount?: unknown;
+  support_breakdown?: Pick<QuoteSupportBreakdown, "totalConfirmedSupport" | "isConfirmed"> | null;
 };
 
 export type PlannedSupportResolveContext = {
@@ -214,6 +216,33 @@ export function resolvePlannedCustomerSupport(quote: QuoteSupportInput): number 
     parseSupportInteger(quote.client_reward_amount) ??
     0
   );
+}
+
+/** 총 확정 지원금 — 파트너 상단 카드·breakdown 공통 */
+export function resolveConfirmedTotalSupport(
+  quote: QuoteSupportInput,
+  options?: BuildQuoteSupportBreakdownOptions,
+): number | null {
+  const fromBreakdown = quote.support_breakdown?.totalConfirmedSupport;
+  if (fromBreakdown != null && Number.isFinite(fromBreakdown)) {
+    return Math.max(0, Math.trunc(fromBreakdown));
+  }
+
+  const direct =
+    parseSupportInteger(quote.confirmed_total_support) ??
+    parseSupportInteger(quote.approved_support_amount) ??
+    parseSupportInteger(quote.sponsor_approved_support_amount);
+
+  if (direct != null) return Math.max(0, direct);
+
+  if (options?.applicationApprovedSupportTotal != null) {
+    return Math.max(0, options.applicationApprovedSupportTotal);
+  }
+  if (options?.sponsorApprovedSupportAmount != null) {
+    return Math.max(0, options.sponsorApprovedSupportAmount);
+  }
+
+  return null;
 }
 
 export function resolveExtensionSupportAmount(
@@ -406,18 +435,14 @@ export function buildQuoteSupportBreakdown(
       };
     }
 
-    const confirmedTotal =
-      parseSupportInteger(quote.confirmed_total_support) ??
-      (parseSupportInteger(quote.approved_support_amount) != null &&
-      (parseSupportInteger(quote.approved_support_amount) ?? 0) > 0
-        ? parseSupportInteger(quote.approved_support_amount)
-        : null) ??
-      (options?.applicationApprovedSupportTotal != null &&
-      options.applicationApprovedSupportTotal > 0
-        ? options.applicationApprovedSupportTotal
-        : null);
+    const confirmedTotal = resolveConfirmedTotalSupport(row, options);
 
-    const isConfirmed = confirmedTotal != null && confirmedTotal > 0;
+    const isConfirmed =
+      confirmedTotal != null &&
+      (confirmedTotal > 0 ||
+        quote.support_breakdown?.isConfirmed === true ||
+        parseSupportInteger(quote.confirmed_total_support) != null ||
+        parseSupportInteger(quote.approved_support_amount) != null);
 
     let customerConfirmed: number | null = null;
     let partnerConfirmed: number | null = null;

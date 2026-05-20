@@ -8,6 +8,7 @@ import {
   calculateTotalPlannedSupport,
   formatSupportAmount,
   formatSupportAmountFromBreakdown,
+  resolveConfirmedTotalSupport,
   resolvePlannedSupportSnapshot,
 } from "./support-calculation";
 
@@ -202,6 +203,52 @@ describe("formatSupportAmount", () => {
         "final",
       ),
       "미확정",
+    );
+  });
+});
+
+describe("resolveConfirmedTotalSupport", () => {
+  it("breakdown.confirmed 우선, 0원도 유효", () => {
+    const total = resolveConfirmedTotalSupport({
+      support_breakdown: { totalConfirmedSupport: 250_000, isConfirmed: true },
+      confirmed_total_support: 400_000,
+    });
+    assert.equal(total, 250_000);
+    assert.equal(
+      resolveConfirmedTotalSupport({ approved_support_amount: 0 }),
+      0,
+    );
+  });
+});
+
+describe("partner summary matches breakdown", () => {
+  it("확정 25만 시 fmt with breakdown shows 250,000원 not 미확정", () => {
+    const breakdown = buildQuoteSupportBreakdown({
+      price: 500_000,
+      planned_total_support: 250_000,
+      planned_customer_support: 200_000,
+      planned_driver_support: 50_000,
+      planned_discount_price: 300_000,
+      confirmed_total_support: 250_000,
+      confirmed_customer_support: 200_000,
+      confirmed_driver_support: 50_000,
+      confirmed_discount_price: 300_000,
+      confirmed_final_price: 300_000,
+      sponsor_quote_enabled: true,
+    });
+    assert.equal(breakdown.isConfirmed, true);
+    assert.equal(breakdown.totalConfirmedSupport, 250_000);
+    assert.equal(
+      formatSupportAmountFromBreakdown(
+        breakdown,
+        breakdown.totalConfirmedSupport,
+        "confirmed",
+      ),
+      "250,000원",
+    );
+    assert.notEqual(
+      formatSupportAmount(breakdown.totalConfirmedSupport, { phase: "confirmed" }),
+      "250,000원",
     );
   });
 });

@@ -8,6 +8,7 @@ import {
   formatSupportAmountFromBreakdown,
   SETTLEMENT_TYPE_LABELS,
   type BuildQuoteSupportBreakdownOptions,
+  type QuoteSupportInput,
 } from "@/lib/support-calculation";
 
 export type PartnerSponsorOnCall = {
@@ -59,12 +60,40 @@ export type PartnerMyQuoteLike = {
   member_price?: number | null;
   client_reward_amount?: number | null;
   extension_support_amount?: number | null;
+  confirmed_total_support?: number | null;
+  approved_support_amount?: number | null;
+  sponsor_approved_support_amount?: number | null;
   vehicle_type?: string;
   available_time?: string;
   message?: string;
   created_at?: string;
   sponsor_quote_enabled?: boolean;
 };
+
+function quoteSupportInputFromCall(call: PartnerCallLike): QuoteSupportInput {
+  const q = call.my_quote;
+  if (!q) return { sponsor_quote_enabled: false };
+  return {
+    price: q.price,
+    support_settlement_type: q.support_settlement_type,
+    planned_total_support: q.planned_total_support,
+    planned_customer_support: q.planned_customer_support,
+    planned_driver_support: q.planned_driver_support,
+    planned_discount_price: q.planned_discount_price,
+    preapproved_support_amount: q.preapproved_support_amount,
+    confirmed_total_support: q.confirmed_total_support,
+    approved_support_amount: q.approved_support_amount,
+    customer_support_amount: q.customer_support_amount,
+    client_reward_amount: q.client_reward_amount,
+    support_discount_amount: q.support_discount_amount,
+    driver_support_amount: q.driver_support_amount,
+    extension_support_amount: q.extension_support_amount,
+    sponsor_approved_support_amount:
+      q.sponsor_approved_support_amount ?? call.sponsor_approved_support_amount,
+    sponsor_quote_enabled: q.sponsor_quote_enabled ?? true,
+    support_breakdown: q.support_breakdown ?? undefined,
+  };
+}
 
 function supportBreakdownOptions(call: PartnerCallLike): BuildQuoteSupportBreakdownOptions {
   const app = applicationSupportTotals(call);
@@ -80,51 +109,62 @@ function supportBreakdownOptions(call: PartnerCallLike): BuildQuoteSupportBreakd
 
 export function quoteBreakdownForCall(call: PartnerCallLike): QuoteSupportBreakdown | null {
   if (!call.my_quote || call.my_quote.source !== "member") return null;
+  const options = supportBreakdownOptions(call);
+  const input = quoteSupportInputFromCall(call);
+
   if (call.my_quote.support_breakdown) {
     const cached = call.my_quote.support_breakdown;
+    if (cached.calculationStatus === "ok") {
+      return cached;
+    }
     if (
       cached.calculationStatus === "failed" &&
       (applicationSupportTotals(call).totalPlanned ?? 0) > 0
     ) {
-      return buildQuoteSupportBreakdown(
-        {
-          price: call.my_quote.price,
-          support_settlement_type: call.my_quote.support_settlement_type,
-          planned_total_support: call.my_quote.planned_total_support,
-          planned_customer_support: call.my_quote.planned_customer_support,
-          planned_driver_support: call.my_quote.planned_driver_support,
-          planned_discount_price: call.my_quote.planned_discount_price,
-          preapproved_support_amount: call.my_quote.preapproved_support_amount,
-          customer_support_amount: call.my_quote.customer_support_amount,
-          client_reward_amount: call.my_quote.client_reward_amount,
-          support_discount_amount: call.my_quote.support_discount_amount,
-          driver_support_amount: call.my_quote.driver_support_amount,
-          extension_support_amount: call.my_quote.extension_support_amount,
-          sponsor_quote_enabled: call.my_quote.sponsor_quote_enabled ?? true,
-        },
-        supportBreakdownOptions(call),
-      );
+      return buildQuoteSupportBreakdown(input, options);
     }
     return cached;
   }
-  return buildQuoteSupportBreakdown(
-    {
-      price: call.my_quote.price,
-      support_settlement_type: call.my_quote.support_settlement_type,
-      planned_total_support: call.my_quote.planned_total_support,
-      planned_customer_support: call.my_quote.planned_customer_support,
-      planned_driver_support: call.my_quote.planned_driver_support,
-      planned_discount_price: call.my_quote.planned_discount_price,
-      preapproved_support_amount: call.my_quote.preapproved_support_amount,
-      customer_support_amount: call.my_quote.customer_support_amount,
-      client_reward_amount: call.my_quote.client_reward_amount,
-      support_discount_amount: call.my_quote.support_discount_amount,
-      driver_support_amount: call.my_quote.driver_support_amount,
-      extension_support_amount: call.my_quote.extension_support_amount,
-      sponsor_quote_enabled: call.my_quote.sponsor_quote_enabled ?? true,
-    },
-    supportBreakdownOptions(call),
-  );
+  return buildQuoteSupportBreakdown(input, options);
+}
+
+/** 상단 요약 카드·하단 breakdown 동일 소스 */
+export function partnerSupportSummaryForCard(call: PartnerCallLike): {
+  breakdown: QuoteSupportBreakdown | null;
+  showConfirmed: boolean;
+  totalPlannedForForm: number;
+  summaryFormatted: string;
+} {
+  const breakdown = quoteBreakdownForCall(call);
+  const sponsorApproved = sponsorStageConfirmed(call.sponsor_support_status);
+
+  if (breakdown && breakdown.calculationStatus === "ok") {
+    const showConfirmed =
+      breakdown.isConfirmed ||
+      (sponsorApproved && breakdown.totalConfirmedSupport != null);
+    return {
+      breakdown,
+      showConfirmed,
+      totalPlannedForForm: breakdown.totalPlannedSupport ?? 0,
+      summaryFormatted: showConfirmed
+        ? fmt(breakdown.totalConfirmedSupport, "confirmed", breakdown)
+        : fmt(breakdown.totalPlannedSupport, "planned", breakdown),
+    };
+  }
+
+  const app = applicationSupportTotals(call);
+  const showConfirmed = app.isConfirmed || sponsorApproved;
+  return {
+    breakdown,
+    showConfirmed,
+    totalPlannedForForm: app.totalPlanned ?? 0,
+    summaryFormatted: showConfirmed
+      ? formatSupportAmount(app.totalConfirmed, {
+          phase: "confirmed",
+          isConfirmed: app.totalConfirmed != null,
+        })
+      : formatSupportAmount(app.totalPlanned, { phase: "planned" }),
+  };
 }
 
 export function sponsorStageLabel(status?: string): string {
