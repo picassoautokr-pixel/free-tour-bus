@@ -9,17 +9,21 @@ import {
 } from "@/lib/client-dashboard-labels";
 import {
   applicationTypeLabel,
+  clientQuotePriceVisibility,
   clientQuotePrices,
   contactRevealedFor,
   fmtClientPrice,
+  formatAutoCloseRemaining,
+  formatAutoCloseRemainingCount,
   formatDepartureAt,
+  formatGroupType,
   formatQuoteCount,
-  formatQuoteDeadlineRemaining,
+  formatReturnDate,
   formatWon,
   priceSelectionLabel,
   quoteBreakdownForClient,
   routeLabel,
-  sponsorStatusLabel,
+  sponsorSupportBadge,
   type ClientApplication,
   type ClientQuote,
 } from "@/lib/client-application-view-model";
@@ -112,16 +116,12 @@ export function ClientApplicationCard({
             <DetailRow label={LABEL.quoteType}>{applicationTypeLabel(application.application_type)}</DetailRow>
             <DetailRow label={LABEL.tripType}>{application.trip_type || LABEL.dash}</DetailRow>
             <DetailRow label={LABEL.busGrade}>{application.bus_grade || LABEL.dash}</DetailRow>
-            <DetailRow label={LABEL.returnDate}>
-              {application.return_date?.trim() || LABEL.dash}
-            </DetailRow>
+            <DetailRow label={LABEL.returnDate}>{formatReturnDate(application)}</DetailRow>
             <DetailRow label={LABEL.remainingTime}>
-              {formatQuoteDeadlineRemaining(application.quote_deadline_at)}
+              {formatAutoCloseRemaining(application)}
             </DetailRow>
             <DetailRow label={LABEL.remainingCount}>
-              {application.quote_limit_count != null
-                ? `${Math.max((application.quote_limit_count ?? 0) - (application.quote_count ?? 0), 0)}${LABEL.countSuffix} 남음`
-                : LABEL.dash}
+              {formatAutoCloseRemainingCount(application)}
             </DetailRow>
             <DetailRow label={LABEL.targetNormalPrice}>
               {formatWon(application.target_normal_price)}
@@ -132,9 +132,7 @@ export function ClientApplicationCard({
             <DetailRow label={LABEL.groupName}>
               {application.applicant_name?.trim() || LABEL.dash}
             </DetailRow>
-            <DetailRow label={LABEL.groupType}>
-              {application.application_type?.trim() || LABEL.dash}
-            </DetailRow>
+            <DetailRow label={LABEL.groupType}>{formatGroupType(application)}</DetailRow>
           </dl>
           {application.request_message?.trim() ? (
             <p className="mt-2 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-700 ring-1 ring-slate-100">
@@ -151,18 +149,23 @@ export function ClientApplicationCard({
               </p>
               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 {(() => {
-                  const p = clientQuotePrices(selectedQuote);
+                  const p = clientQuotePrices(selectedQuote, application);
+                  const vis = clientQuotePriceVisibility(p);
                   const b = quoteBreakdownForClient(selectedQuote);
                   return (
                     <>
-                      <span>
-                        {LABEL.normalPrice}: {fmtClientPrice(p.normalPrice, "planned", b)}
-                      </span>
-                      <span>
-                        {LABEL.supportDiscountPlanned}:{" "}
-                        {fmtClientPrice(p.supportDiscountPlanned, "planned", b)}
-                      </span>
-                      {p.sponsorConfirmed ? (
+                      {vis.showNormal ? (
+                        <span>
+                          {LABEL.normalPrice}: {fmtClientPrice(p.normalPrice, "planned", b)}
+                        </span>
+                      ) : null}
+                      {vis.showPlanned ? (
+                        <span>
+                          {LABEL.supportDiscountPlanned}:{" "}
+                          {fmtClientPrice(p.supportDiscountPlanned, "planned", b)}
+                        </span>
+                      ) : null}
+                      {vis.showApplied ? (
                         <span>
                           {LABEL.supportDiscountApplied}:{" "}
                           {fmtClientPrice(p.supportDiscountApplied, "confirmed", b)}
@@ -230,15 +233,31 @@ export function ClientApplicationCard({
                   </li>
                 ) : null}
                 {quotes.map((quote) => {
-                  const prices = clientQuotePrices(quote);
+                  const prices = clientQuotePrices(quote, application);
+                  const vis = clientQuotePriceVisibility(prices);
                   const breakdown =
                     quote.source === "member" ? quoteBreakdownForClient(quote) : null;
                   const memo = quote.memo ?? quote.message ?? "";
                   const memoOpen = memoQuoteId === `${quote.source}-${quote.id}`;
+                  const supportBadge = sponsorSupportBadge(
+                    quote.sponsor_support_status ??
+                      (quote.sponsor_quote_enabled !== false
+                        ? application.sponsor_support_status
+                        : undefined),
+                  );
                   return (
                     <li
                       key={`${quote.source}-${quote.id}`}
-                      className="rounded-xl border border-slate-100 bg-slate-50/80 p-3"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setQuoteModal(quote)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setQuoteModal(quote);
+                        }
+                      }}
+                      className="cursor-pointer rounded-xl border border-slate-100 bg-slate-50/80 p-3"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <span
@@ -250,24 +269,24 @@ export function ClientApplicationCard({
                         >
                           {quote.source === "member" ? LABEL.memberQuote : LABEL.guestQuote}
                         </span>
-                        <span className="text-[10px] font-bold text-slate-500">
-                          {sponsorStatusLabel(
-                            quote.sponsor_support_status ??
-                              (quote.sponsor_quote_enabled
-                                ? application.sponsor_support_status
-                                : "none"),
-                          )}
-                        </span>
+                        {supportBadge ? (
+                          <span className="text-[10px] font-bold text-slate-500">{supportBadge}</span>
+                        ) : null}
                       </div>
                       <div className="mt-2 grid gap-1 text-xs font-bold text-slate-800 sm:grid-cols-2">
-                        <span>
-                          {LABEL.normalPrice}: {fmtClientPrice(prices.normalPrice, "planned", breakdown)}
-                        </span>
-                        <span>
-                          {LABEL.supportDiscountPlanned}:{" "}
-                          {fmtClientPrice(prices.supportDiscountPlanned, "planned", breakdown)}
-                        </span>
-                        {prices.sponsorConfirmed ? (
+                        {vis.showNormal ? (
+                          <span>
+                            {LABEL.normalPrice}:{" "}
+                            {fmtClientPrice(prices.normalPrice, "planned", breakdown)}
+                          </span>
+                        ) : null}
+                        {vis.showPlanned ? (
+                          <span>
+                            {LABEL.supportDiscountPlanned}:{" "}
+                            {fmtClientPrice(prices.supportDiscountPlanned, "planned", breakdown)}
+                          </span>
+                        ) : null}
+                        {vis.showApplied ? (
                           <span className="text-emerald-800">
                             {LABEL.supportDiscountApplied}:{" "}
                             {fmtClientPrice(prices.supportDiscountApplied, "confirmed", breakdown)}
@@ -277,7 +296,11 @@ export function ClientApplicationCard({
                           {LABEL.availableTime}: {quote.available_time || LABEL.dash}
                         </span>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div
+                        className="mt-2 flex flex-wrap gap-2"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
                         {memo ? (
                           <button
                             type="button"
@@ -290,14 +313,6 @@ export function ClientApplicationCard({
                             {LABEL.viewDriverMemo}
                           </button>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setQuoteModal(quote)}
-                          className="min-h-9 rounded-lg border border-blue-200 bg-blue-50 px-3 text-[11px] font-black text-blue-800"
-                          style={tapStyle}
-                        >
-                          {LABEL.viewQuoteDetail}
-                        </button>
                         {tab !== "matched" ? (
                           <button
                             type="button"
@@ -325,6 +340,7 @@ export function ClientApplicationCard({
       {quoteModal ? (
         <ClientQuoteDetailModal
           quote={quoteModal}
+          application={application}
           tab={tab}
           onClose={() => setQuoteModal(null)}
           busy={busy}

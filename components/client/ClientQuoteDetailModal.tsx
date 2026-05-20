@@ -5,9 +5,12 @@ import {
   type ClientMainTab,
 } from "@/lib/client-dashboard-labels";
 import {
+  clientQuotePriceVisibility,
   clientQuotePrices,
   fmtClientPrice,
   quoteBreakdownForClient,
+  sponsorSupportBadge,
+  type ClientApplication,
   type ClientQuote,
 } from "@/lib/client-application-view-model";
 
@@ -15,6 +18,7 @@ const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
 export function ClientQuoteDetailModal({
   quote,
+  application,
   tab,
   onClose,
   onMatchNormal,
@@ -23,6 +27,7 @@ export function ClientQuoteDetailModal({
   busy,
 }: {
   quote: ClientQuote;
+  application?: ClientApplication;
   tab: ClientMainTab;
   onClose: () => void;
   onMatchNormal?: () => void;
@@ -30,40 +35,51 @@ export function ClientQuoteDetailModal({
   onMatchSingle?: () => void;
   busy?: boolean;
 }) {
-  const prices = clientQuotePrices(quote);
+  const prices = clientQuotePrices(quote, application);
+  const vis = clientQuotePriceVisibility(prices);
   const breakdown = quote.source === "member" ? quoteBreakdownForClient(quote) : null;
   const memo = quote.memo ?? quote.message ?? "";
+  const supportBadge = sponsorSupportBadge(
+    quote.sponsor_support_status ??
+      (quote.sponsor_quote_enabled !== false
+        ? application?.sponsor_support_status
+        : undefined),
+  );
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-900/50 px-0 py-0 sm:items-center sm:px-4 sm:py-8">
       <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl">
-        <h2 className="text-lg font-black text-slate-950">{LABEL.viewQuoteDetail}</h2>
-        <p className="mt-1 text-xs font-semibold text-slate-500">
+        <h2 className="text-lg font-black text-slate-950">
           {quote.source === "member" ? LABEL.memberQuote : LABEL.guestQuote}
-        </p>
+        </h2>
+        {supportBadge ? (
+          <p className="mt-1 text-xs font-semibold text-slate-500">{supportBadge}</p>
+        ) : null}
         <dl className="mt-4 space-y-3 text-sm">
-          <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-            <dt className="text-xs font-bold text-slate-500">{LABEL.normalPrice}</dt>
-            <dd className="mt-1 font-black text-slate-900">
-              {fmtClientPrice(prices.normalPrice, "planned", breakdown)}
-            </dd>
-          </div>
-          <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-            <dt className="text-xs font-bold text-blue-700">{LABEL.supportDiscountPlanned}</dt>
-            <dd className="mt-1 font-black text-blue-950">
-              {fmtClientPrice(prices.supportDiscountPlanned, "planned", breakdown)}
-            </dd>
-          </div>
-          {prices.sponsorConfirmed ? (
+          {vis.showNormal ? (
+            <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+              <dt className="text-xs font-bold text-slate-500">{LABEL.normalPrice}</dt>
+              <dd className="mt-1 font-black text-slate-900">
+                {fmtClientPrice(prices.normalPrice, "planned", breakdown)}
+              </dd>
+            </div>
+          ) : null}
+          {vis.showPlanned ? (
+            <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+              <dt className="text-xs font-bold text-blue-700">{LABEL.supportDiscountPlanned}</dt>
+              <dd className="mt-1 font-black text-blue-950">
+                {fmtClientPrice(prices.supportDiscountPlanned, "planned", breakdown)}
+              </dd>
+            </div>
+          ) : null}
+          {vis.showApplied ? (
             <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
               <dt className="text-xs font-bold text-emerald-700">{LABEL.supportDiscountApplied}</dt>
               <dd className="mt-1 font-black text-emerald-950">
                 {fmtClientPrice(prices.supportDiscountApplied, "confirmed", breakdown)}
               </dd>
             </div>
-          ) : (
-            <p className="text-xs font-bold text-slate-500">{LABEL.supportReviewing}</p>
-          )}
+          ) : null}
           <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
             <dt className="text-xs font-bold text-slate-500">{LABEL.availableTime}</dt>
             <dd className="mt-1 font-black">{quote.available_time || LABEL.dash}</dd>

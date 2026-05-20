@@ -52,8 +52,10 @@ export type ClientApplication = {
   passenger_count: number | null;
   request_message?: string;
   application_type?: string;
+  organization_type?: string;
   quote_status: string;
   quote_deadline_at?: string;
+  auto_final_confirm_at?: string;
   quote_limit_count?: number | null;
   target_normal_price?: number | null;
   target_member_price?: number | null;
@@ -121,6 +123,56 @@ export function formatQuoteDeadlineRemaining(deadline?: string): string {
   if (!remaining) return LABEL.unconfirmed;
   if (remaining === "곧 진행") return "마감 임박";
   return remaining;
+}
+
+export function isOneWayTrip(tripType?: string): boolean {
+  const t = (tripType ?? "").trim();
+  return t === "편도" || t.includes("편도");
+}
+
+export function isRoundTrip(tripType?: string): boolean {
+  const t = (tripType ?? "").trim();
+  return t === "왕복" || t.includes("왕복");
+}
+
+export function formatReturnDate(app: ClientApplication): string {
+  if (isOneWayTrip(app.trip_type)) return LABEL.returnDateNotApplicable;
+  if (!isRoundTrip(app.trip_type) && !app.return_date?.trim()) {
+    return LABEL.returnDateNotApplicable;
+  }
+  const raw = app.return_date?.trim();
+  if (!raw) return LABEL.unconfirmed;
+  if (raw.includes("T")) {
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return raw;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const meridiem = d.getHours() < 12 ? "오전" : "오후";
+    return `${y}-${m}-${day} ${meridiem}`;
+  }
+  return raw;
+}
+
+export function formatGroupType(app: ClientApplication): string {
+  const org = app.organization_type?.trim();
+  if (org) return org;
+  return LABEL.dash;
+}
+
+export function formatAutoCloseRemaining(app: ClientApplication): string {
+  const deadline =
+    app.auto_final_confirm_at?.trim() || app.quote_deadline_at?.trim() || "";
+  return formatQuoteDeadlineRemaining(deadline);
+}
+
+export function formatAutoCloseRemainingCount(app: ClientApplication): string {
+  if (app.quote_limit_count == null) return LABEL.dash;
+  const remaining = Math.max(
+    (app.quote_limit_count ?? 0) - (app.quote_count ?? app.quotes?.length ?? 0),
+    0,
+  );
+  return `${remaining}${LABEL.countSuffix} 남음`;
 }
 
 export function formatQuoteCount(app: ClientApplication): string {
@@ -205,7 +257,10 @@ export type ClientQuotePrices = {
   sponsorConfirmed: boolean;
 };
 
-export function clientQuotePrices(quote: ClientQuote): ClientQuotePrices {
+export function clientQuotePrices(
+  quote: ClientQuote,
+  application?: Pick<ClientApplication, "sponsor_support_status">,
+): ClientQuotePrices {
   const isGuest = quote.source === "guest";
   const normalPrice = quote.price;
   if (isGuest) {
@@ -219,8 +274,11 @@ export function clientQuotePrices(quote: ClientQuote): ClientQuotePrices {
     };
   }
   const breakdown = quoteBreakdownForClient(quote);
+  const appSponsorApproved = application?.sponsor_support_status === "approved";
   const sponsorConfirmed =
-    quote.sponsor_support_status === "approved" || breakdown.isConfirmed;
+    quote.sponsor_support_status === "approved" ||
+    breakdown.isConfirmed ||
+    appSponsorApproved;
   return {
     normalPrice,
     supportDiscountPlanned:
@@ -233,6 +291,23 @@ export function clientQuotePrices(quote: ClientQuote): ClientQuotePrices {
       : breakdown.supportDiscountPlannedPrice ?? null,
     isGuest: false,
     sponsorConfirmed,
+  };
+}
+
+export type ClientQuotePriceVisibility = {
+  showNormal: boolean;
+  showPlanned: boolean;
+  showApplied: boolean;
+};
+
+export function clientQuotePriceVisibility(prices: ClientQuotePrices): ClientQuotePriceVisibility {
+  if (prices.isGuest) {
+    return { showNormal: true, showPlanned: false, showApplied: false };
+  }
+  return {
+    showNormal: true,
+    showPlanned: !prices.sponsorConfirmed,
+    showApplied: prices.sponsorConfirmed,
   };
 }
 
@@ -251,11 +326,13 @@ export function fmtClientPrice(
   return formatSupportAmount(value, { phase });
 }
 
-export function sponsorStatusLabel(status?: string): string {
+/** 지원금 상태 뱃지 — 확정·검토중만, '지원금 없음' 등은 표시하지 않음 */
+export function sponsorSupportBadge(status?: string): string | null {
   if (status === "approved") return LABEL.supportConfirmed;
-  if (status === "rejected") return LABEL.supportRejected;
-  if (status === "none" || !status) return LABEL.noSupport;
-  return LABEL.supportReviewing;
+  if (status === "preapproved" || status === "pending" || status === "mixed") {
+    return LABEL.supportReviewing;
+  }
+  return null;
 }
 
 export function contactRevealedFor(app: ClientApplication): boolean {
