@@ -8,6 +8,7 @@ import {
   calculateTotalPlannedSupport,
   formatSupportAmount,
   formatSupportAmountFromBreakdown,
+  resolvePlannedSupportSnapshot,
 } from "./support-calculation";
 
 describe("calculateTotalPlannedSupport", () => {
@@ -202,6 +203,53 @@ describe("formatSupportAmount", () => {
       ),
       "미확정",
     );
+  });
+});
+
+describe("resolvePlannedSupportSnapshot", () => {
+  it("총 예정은 앱·스폰서 합산, 기사 예정 = 총 − 고객 − 연장", () => {
+    const snapshot = resolvePlannedSupportSnapshot(
+      {
+        price: 500_000,
+        customer_support_amount: 200_000,
+        sponsor_quote_enabled: true,
+      },
+      500_000,
+      { applicationTotalPlannedSupport: 400_000 },
+    );
+    assert.ok(snapshot);
+    assert.equal(snapshot!.total, 400_000);
+    assert.equal(snapshot!.customer, 200_000);
+    assert.equal(snapshot!.driver, 200_000);
+    assert.equal(snapshot!.discountPrice, 300_000);
+  });
+
+  it("기사 예정 0원도 정상", () => {
+    const breakdown = buildQuoteSupportBreakdown(
+      {
+        price: 500_000,
+        planned_total_support: 400_000,
+        planned_customer_support: 400_000,
+        sponsor_quote_enabled: true,
+      },
+      {},
+    );
+    assert.equal(breakdown.calculationStatus, "ok");
+    assert.equal(breakdown.partnerPlannedSupport, 0);
+    assert.equal(formatSupportAmount(breakdown.partnerPlannedSupport, { phase: "planned" }), "0원");
+  });
+
+  it("총 예정이 진짜 없을 때만 failed", () => {
+    const breakdown = buildQuoteSupportBreakdown(
+      {
+        price: 500_000,
+        customer_support_amount: 200_000,
+        sponsor_quote_enabled: true,
+      },
+      {},
+    );
+    assert.equal(breakdown.calculationStatus, "failed");
+    assert.equal(breakdown.calculationError, "예정 지원금 데이터가 없습니다.");
   });
 });
 

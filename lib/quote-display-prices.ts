@@ -1,5 +1,6 @@
 import {
   buildQuoteSupportBreakdown,
+  type BuildQuoteSupportBreakdownOptions,
   type QuoteSupportBreakdown,
   type QuoteSupportInput,
 } from "@/lib/support-calculation";
@@ -31,7 +32,7 @@ export function parseDisplayInteger(value: unknown): number | null {
 
 export function getQuoteDisplayPrices(
   quote: QuoteDisplayPriceInput,
-  options?: { applicationApprovedSupportTotal?: number | null },
+  options?: BuildQuoteSupportBreakdownOptions,
 ): QuoteDisplayPrices {
   const breakdown = buildQuoteSupportBreakdown(quote, options);
   const customerAmount =
@@ -55,7 +56,7 @@ export function getQuoteDisplayPrices(
 /** API/대시보드 공통 응답 필드 */
 export function mapQuoteWithSupport(
   row: QuoteDisplayPriceInput,
-  options?: { applicationApprovedSupportTotal?: number | null },
+  options?: BuildQuoteSupportBreakdownOptions,
 ) {
   const display = getQuoteDisplayPrices(row, options);
   const b = display.breakdown;

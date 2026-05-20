@@ -3,7 +3,9 @@ import {
   calculateSupportDiscountPrice,
   calculateSupportDistribution,
   parseSupportInteger,
+  resolvePlannedSupportSnapshot,
   resolveSettlementType,
+  type PlannedSupportResolveContext,
   type SupportSettlementType,
 } from "@/lib/support-calculation";
 
@@ -52,55 +54,16 @@ export type QuoteSupportRow = {
   final_customer_support_amount?: unknown;
   final_driver_support_amount?: unknown;
   final_member_price?: unknown;
+  client_reward_amount?: unknown;
 };
 
-/** 예정값만 읽음 — 확정(approved) 금액을 예정으로 사용하지 않음 */
+/** 예정값만 읽음 — lib/support-calculation.resolvePlannedSupportSnapshot 위임 */
 export function readPlannedSupport(
   row: QuoteSupportRow,
   normalPrice: number | null,
+  ctx?: PlannedSupportResolveContext,
 ): PlannedSupportSnapshot | null {
-  const total =
-    parseSupportInteger(row.planned_total_support) ??
-    parseSupportInteger(row.preapproved_support_amount) ??
-    parseSupportInteger(row.estimated_support_amount) ??
-    parseSupportInteger(row.sponsor_support_amount);
-
-  if (total == null || total <= 0) return null;
-
-  const customerRaw =
-    parseSupportInteger(row.planned_customer_support) ??
-    parseSupportInteger(row.customer_support_amount) ??
-    parseSupportInteger(row.support_discount_amount);
-  if (customerRaw == null) return null;
-
-  const customer = Math.min(
-    customerRaw,
-    total,
-    normalPrice ?? Number.MAX_SAFE_INTEGER,
-  );
-  const driver =
-    parseSupportInteger(row.planned_driver_support) ??
-    parseSupportInteger(row.driver_support_amount) ??
-    Math.max(total - customer, 0);
-
-  const discountPrice =
-    parseSupportInteger(row.planned_discount_price) ??
-    parseSupportInteger(row.member_price) ??
-    parseSupportInteger(row.sponsor_discounted_price) ??
-    (normalPrice != null ? calculateSupportDiscountPrice(normalPrice, customer) : null);
-
-  if (discountPrice == null) return null;
-
-  const finalPrice =
-    parseSupportInteger(row.planned_final_price) ?? discountPrice;
-
-  return {
-    total,
-    customer,
-    driver,
-    discountPrice,
-    finalPrice,
-  };
+  return resolvePlannedSupportSnapshot(row, normalPrice, ctx);
 }
 
 export function readStoredConfirmedSupport(

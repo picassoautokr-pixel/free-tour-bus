@@ -438,8 +438,16 @@ export async function GET() {
       if (applicationId === "" || seenMemberApp.has(applicationId)) continue;
       seenMemberApp.add(applicationId);
       const sponsorForApp = sponsorSupportByApplication.get(applicationId);
+      const sponsorEstimated =
+        (sponsorForApp?.estimatedAmount ?? 0) > 0 ? sponsorForApp!.estimatedAmount : null;
+      const sponsorApproved =
+        (sponsorForApp?.approvedAmount ?? 0) > 0 ? sponsorForApp!.approvedAmount : null;
       const supportFields = mapQuoteWithSupport(row, {
-        applicationApprovedSupportTotal: sponsorForApp?.approvedAmount ?? null,
+        applicationApprovedSupportTotal: sponsorApproved,
+        applicationTotalPlannedSupport: sponsorEstimated ?? sponsorApproved,
+        sponsorEstimatedSupportAmount: sponsorEstimated,
+        sponsorApprovedSupportAmount: sponsorApproved,
+        applicationExtensionSupportAmount: parseInteger(row.extension_support_amount),
       });
       quotedByApplication.set(applicationId, {
         source: "member",

@@ -1,11 +1,14 @@
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
 import {
+  buildQuoteFormPlannedPreview,
   buildQuoteSupportBreakdown,
+  calculatePlannedDiscountPrice,
+  extensionPlannedFromPartnerSupport,
   formatSupportAmount,
   formatSupportAmountFromBreakdown,
   SETTLEMENT_TYPE_LABELS,
+  type BuildQuoteSupportBreakdownOptions,
 } from "@/lib/support-calculation";
-import { extensionPlannedFromPartnerSupport } from "@/lib/support-calculation";
 
 export type PartnerSponsorOnCall = {
   id: string;
@@ -54,6 +57,8 @@ export type PartnerMyQuoteLike = {
   planned_driver_support?: number | null;
   planned_discount_price?: number | null;
   member_price?: number | null;
+  client_reward_amount?: number | null;
+  extension_support_amount?: number | null;
   vehicle_type?: string;
   available_time?: string;
   message?: string;
@@ -61,27 +66,64 @@ export type PartnerMyQuoteLike = {
   sponsor_quote_enabled?: boolean;
 };
 
+function supportBreakdownOptions(call: PartnerCallLike): BuildQuoteSupportBreakdownOptions {
+  const app = applicationSupportTotals(call);
+  return {
+    applicationApprovedSupportTotal: call.sponsor_approved_support_amount,
+    applicationTotalPlannedSupport: app.totalPlanned,
+    sponsorEstimatedSupportAmount: call.sponsor_estimated_support_amount,
+    sponsorApprovedSupportAmount: call.sponsor_approved_support_amount,
+    applicationExtensionSupportAmount:
+      call.my_quote?.extension_support_amount ?? null,
+  };
+}
+
 export function quoteBreakdownForCall(call: PartnerCallLike): QuoteSupportBreakdown | null {
   if (!call.my_quote || call.my_quote.source !== "member") return null;
-  if (call.my_quote.support_breakdown) return call.my_quote.support_breakdown;
+  if (call.my_quote.support_breakdown) {
+    const cached = call.my_quote.support_breakdown;
+    if (
+      cached.calculationStatus === "failed" &&
+      (applicationSupportTotals(call).totalPlanned ?? 0) > 0
+    ) {
+      return buildQuoteSupportBreakdown(
+        {
+          price: call.my_quote.price,
+          support_settlement_type: call.my_quote.support_settlement_type,
+          planned_total_support: call.my_quote.planned_total_support,
+          planned_customer_support: call.my_quote.planned_customer_support,
+          planned_driver_support: call.my_quote.planned_driver_support,
+          planned_discount_price: call.my_quote.planned_discount_price,
+          preapproved_support_amount: call.my_quote.preapproved_support_amount,
+          customer_support_amount: call.my_quote.customer_support_amount,
+          client_reward_amount: call.my_quote.client_reward_amount,
+          support_discount_amount: call.my_quote.support_discount_amount,
+          driver_support_amount: call.my_quote.driver_support_amount,
+          extension_support_amount: call.my_quote.extension_support_amount,
+          sponsor_quote_enabled: call.my_quote.sponsor_quote_enabled ?? true,
+        },
+        supportBreakdownOptions(call),
+      );
+    }
+    return cached;
+  }
   return buildQuoteSupportBreakdown(
     {
       price: call.my_quote.price,
       support_settlement_type: call.my_quote.support_settlement_type,
-      planned_total_support:
-        call.my_quote.planned_total_support ?? call.my_quote.preapproved_support_amount,
-      planned_customer_support:
-        call.my_quote.planned_customer_support ?? call.my_quote.customer_support_amount,
-      planned_driver_support:
-        call.my_quote.planned_driver_support ?? call.my_quote.driver_support_amount,
-      planned_discount_price:
-        call.my_quote.planned_discount_price ?? call.my_quote.member_price,
+      planned_total_support: call.my_quote.planned_total_support,
+      planned_customer_support: call.my_quote.planned_customer_support,
+      planned_driver_support: call.my_quote.planned_driver_support,
+      planned_discount_price: call.my_quote.planned_discount_price,
+      preapproved_support_amount: call.my_quote.preapproved_support_amount,
       customer_support_amount: call.my_quote.customer_support_amount,
+      client_reward_amount: call.my_quote.client_reward_amount,
       support_discount_amount: call.my_quote.support_discount_amount,
       driver_support_amount: call.my_quote.driver_support_amount,
+      extension_support_amount: call.my_quote.extension_support_amount,
       sponsor_quote_enabled: call.my_quote.sponsor_quote_enabled ?? true,
     },
-    { applicationApprovedSupportTotal: call.sponsor_approved_support_amount },
+    supportBreakdownOptions(call),
   );
 }
 
@@ -218,8 +260,33 @@ export function quoteFormPlannedDiscountPrice(params: {
   customerPlanned: number;
   extensionPlanned: number;
 }): number {
-  return Math.max(
-    params.normalPrice - params.customerPlanned - params.extensionPlanned,
-    0,
+  return (
+    calculatePlannedDiscountPrice(
+      params.normalPrice,
+      params.customerPlanned,
+      params.extensionPlanned,
+    ) ?? 0
   );
+}
+
+/** 견적 폼 예정 지원금 미리보기 (공통 계산) */
+export function quoteFormPlannedAmounts(params: {
+  normalPrice: number | null;
+  customerPlanned: number | null;
+  totalPlanned: number | null;
+  extensionRound: number;
+}) {
+  const extensionFromRound =
+    params.totalPlanned != null && params.customerPlanned != null
+      ? extensionPlannedAmount(
+          Math.max(params.totalPlanned - params.customerPlanned, 0),
+          params.extensionRound,
+        )
+      : 0;
+  return buildQuoteFormPlannedPreview({
+    normalPrice: params.normalPrice,
+    totalPlanned: params.totalPlanned,
+    customerPlanned: params.customerPlanned,
+    extensionAmount: extensionFromRound,
+  });
 }

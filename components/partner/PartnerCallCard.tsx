@@ -19,8 +19,7 @@ import {
   formatUntilDeparture,
   matchedRunStatus,
   quoteBreakdownForCall,
-  quoteFormExtensionPreview,
-  quoteFormPlannedDiscountPrice,
+  quoteFormPlannedAmounts,
   sponsorStageLabel,
   type PartnerCallLike,
 } from "@/lib/partner-call-view-model";
@@ -147,19 +146,15 @@ export function PartnerCallCard({
   const quotePriceValue = parsePriceInput(quoteForm.price);
   const customerPlannedInput = parsePriceInput(quoteForm.supportDiscountAmount);
   const totalPlannedForForm = appSupport.totalPlanned ?? customerPlannedInput ?? 0;
-  const extensionPreview = quoteFormExtensionPreview({
-    customerPlanned: customerPlannedInput ?? 0,
-    totalPlanned: totalPlannedForForm,
+  const formPlannedPreview = quoteFormPlannedAmounts({
+    normalPrice: quotePriceValue,
+    customerPlanned: customerPlannedInput,
+    totalPlanned: totalPlannedForForm > 0 ? totalPlannedForForm : null,
     extensionRound: call.extension_round,
   });
-  const plannedDiscountPreview =
-    quotePriceValue == null
-      ? null
-      : quoteFormPlannedDiscountPrice({
-          normalPrice: quotePriceValue,
-          customerPlanned: customerPlannedInput ?? 0,
-          extensionPlanned: extensionPreview,
-        });
+  const extensionPreview = formPlannedPreview.extensionSupport;
+  const plannedDiscountPreview = formPlannedPreview.supportDiscountPlannedPrice;
+  const partnerPlannedPreview = formPlannedPreview.partnerPlannedSupport;
   const supportInputLimit =
     quotePriceValue == null
       ? totalPlannedForForm
@@ -427,6 +422,14 @@ export function PartnerCallCard({
                     {plannedDiscountPreview == null
                       ? LABEL.unconfirmed
                       : formatWon(plannedDiscountPreview)}
+                  </p>
+                </div>
+                <div className={`rounded-xl p-3 ring-1 sm:col-span-2 ${SUPPORT_UI.planned}`}>
+                  <p className="text-xs font-bold">{LABEL.partnerPlannedSupport}</p>
+                  <p className="mt-1 font-black">
+                    {formPlannedPreview.totalPlannedSupport == null
+                      ? LABEL.unconfirmed
+                      : formatWon(partnerPlannedPreview)}
                   </p>
                 </div>
                 <div className="sm:col-span-2">
