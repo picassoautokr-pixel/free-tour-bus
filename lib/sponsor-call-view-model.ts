@@ -3,6 +3,7 @@ import {
   type ConfirmedPayoutFilter,
 } from "@/lib/sponsor-dashboard-labels";
 import { sponsorSupportTypeLabel } from "@/lib/sponsor";
+import { isSponsorSupportUnusedByNormalMatch } from "@/lib/selected-price-display";
 
 export type SponsorCallRow = {
   id: string;
@@ -47,16 +48,27 @@ export type SponsorCallRow = {
   sponsor_quote_count?: number;
   matched_quote_count?: number;
   final_quote_count?: number;
+  selected_price_type?: string | null;
+  selected_price_label?: string | null;
+  selected_price?: number | null;
+  client_price_selection_kind?: string | null;
+  organization_name?: string;
 };
 
 const REVIEW_STATUSES = new Set(["pending", "preapproved", "reviewing"]);
 
+export function isSupportRejectedCall(call: SponsorCallRow): boolean {
+  return isSponsorSupportUnusedByNormalMatch(call);
+}
+
 export function isReviewCall(call: SponsorCallRow): boolean {
+  if (isSupportRejectedCall(call)) return false;
   const s = (call.status ?? "").trim().toLowerCase();
   return REVIEW_STATUSES.has(s);
 }
 
 export function isConfirmedCall(call: SponsorCallRow): boolean {
+  if (isSupportRejectedCall(call)) return false;
   return call.status === "approved";
 }
 
@@ -140,6 +152,7 @@ export function displaySupportCondition(call: SponsorCallRow): string {
 export type SponsorTabCounts = {
   review: number;
   confirmed: number;
+  rejected: number;
   payoutAll: number;
   payoutProcessing: number;
   payoutCompleted: number;
@@ -149,10 +162,15 @@ export type SponsorTabCounts = {
 export function sponsorTabCounts(calls: SponsorCallRow[]): SponsorTabCounts {
   let review = 0;
   let confirmed = 0;
+  let rejected = 0;
   let payoutProcessing = 0;
   let payoutCompleted = 0;
 
   for (const call of calls) {
+    if (isSupportRejectedCall(call)) {
+      rejected += 1;
+      continue;
+    }
     if (isReviewCall(call)) review += 1;
     if (!isConfirmedCall(call)) continue;
     confirmed += 1;
@@ -164,6 +182,7 @@ export function sponsorTabCounts(calls: SponsorCallRow[]): SponsorTabCounts {
   return {
     review,
     confirmed,
+    rejected,
     payoutAll: confirmed,
     payoutProcessing,
     payoutCompleted,
@@ -199,6 +218,7 @@ export function buildSummary(
   let payoutCompletedCount = 0;
 
   for (const call of calls) {
+    if (isSupportRejectedCall(call)) continue;
     if (isReviewCall(call)) reviewCount += 1;
     if (!isConfirmedCall(call)) continue;
     confirmedCount += 1;

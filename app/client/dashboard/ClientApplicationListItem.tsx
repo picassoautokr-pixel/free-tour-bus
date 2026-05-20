@@ -14,17 +14,15 @@ import {
   formatReturnDate,
   formatStopovers,
   formatWon,
-  priceSelectionLabel,
   quoteSupportBadgeLabel,
   resolveGroupTypeDisplay,
   routeLabel,
   LABEL,
 } from "@/app/client/dashboard/client-display";
+import { ClientMatchedPricePanel } from "@/app/client/dashboard/ClientMatchedPricePanel";
 import { QuoteMatchButtonGroup } from "@/app/client/dashboard/QuoteMatchButtonGroup";
-import {
-  formatQuotePriceForScreen,
-  quoteSubmitPriceLines,
-} from "@/app/client/dashboard/page-quote-screen";
+import { quoteSubmitPriceLines } from "@/app/client/dashboard/page-quote-screen";
+import { isNormalPriceSelection } from "@/lib/selected-price-display";
 import type { ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 import type { QuoteMatchPriceSelection } from "@/lib/client-quote-match-selection";
@@ -75,6 +73,7 @@ export function ClientApplicationListItem({
     application.sponsor_support_status === "approved"
       ? LABEL.targetSupportApplied
       : LABEL.targetSupportPlanned;
+  const hideMatchedSupportTargets = isNormalPriceSelection(application);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
@@ -121,18 +120,26 @@ export function ClientApplicationListItem({
             <DetailRow label={LABEL.tripType}>{application.trip_type || LABEL.dash}</DetailRow>
             <DetailRow label={LABEL.busGrade}>{application.bus_grade || LABEL.dash}</DetailRow>
             <DetailRow label={LABEL.returnDate}>{formatReturnDate(application)}</DetailRow>
-            <DetailRow label={CLIENT_UI.remainingTime}>
-              {formatAutoCloseRemaining(application)}
-            </DetailRow>
-            <DetailRow label={CLIENT_UI.remainingCount}>
-              {formatAutoCloseRemainingCount(application)}
-            </DetailRow>
-            <DetailRow label={LABEL.targetNormalPrice}>
-              {formatWon(application.target_normal_price)}
-            </DetailRow>
-            <DetailRow label={targetSupportLabel}>
-              {formatWon(application.target_member_price)}
-            </DetailRow>
+            {!(tab === "matched" && hideMatchedSupportTargets) ? (
+              <>
+                <DetailRow label={CLIENT_UI.remainingTime}>
+                  {formatAutoCloseRemaining(application)}
+                </DetailRow>
+                <DetailRow label={CLIENT_UI.remainingCount}>
+                  {formatAutoCloseRemainingCount(application)}
+                </DetailRow>
+              </>
+            ) : null}
+            {tab !== "matched" || !hideMatchedSupportTargets ? (
+              <>
+                <DetailRow label={LABEL.targetNormalPrice}>
+                  {formatWon(application.target_normal_price)}
+                </DetailRow>
+                <DetailRow label={targetSupportLabel}>
+                  {formatWon(application.target_member_price)}
+                </DetailRow>
+              </>
+            ) : null}
             <DetailRow label={LABEL.groupName}>
               {application.applicant_name?.trim() ||
                 application.organization_name?.trim() ||
@@ -150,37 +157,7 @@ export function ClientApplicationListItem({
           {tab === "matched" && selectedQuote ? (
             <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
               <p className="text-sm font-black text-emerald-950">{LABEL.matchedPrice}</p>
-              <div className="mt-2 space-y-1 text-xs font-bold text-emerald-900">
-                <p>
-                  {LABEL.selectedPriceKind}:{" "}
-                  {priceSelectionLabel(
-                    application.final_price_selection_kind,
-                    application.selected_price_label,
-                  )}
-                </p>
-                <p>
-                  {LABEL.matchedAmount}: {formatWon(application.selected_price)}
-                </p>
-              </div>
-              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-                {(() => {
-                  const lines = resolveSubmitPriceLines(selectedQuote, application);
-                  return (
-                    <>
-                      <span>
-                        {CLIENT_UI.normalPrice}: {formatQuotePriceForScreen(lines.normalPrice)}
-                      </span>
-                      <span
-                        className={
-                          !lines.isGuest && lines.supportConfirmed ? "text-emerald-800" : ""
-                        }
-                      >
-                        {lines.supportLabel}: {formatQuotePriceForScreen(lines.supportPrice)}
-                      </span>
-                    </>
-                  );
-                })()}
-              </div>
+              <ClientMatchedPricePanel application={application} selectedQuote={selectedQuote} />
               {revealed ? (
                 <div className="mt-4 space-y-2 rounded-xl bg-white p-3 ring-1 ring-emerald-100">
                   <p className="text-xs font-black text-emerald-700">

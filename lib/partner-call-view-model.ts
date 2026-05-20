@@ -41,6 +41,10 @@ export type PartnerCallLike = {
   sponsor_estimated_support_amount?: number | null;
   sponsors?: PartnerSponsorOnCall[];
   final_selected_quote_id?: string;
+  selected_price_type?: string | null;
+  selected_price_label?: string | null;
+  selected_price?: number | null;
+  client_price_selection_kind?: string | null;
   my_quote: PartnerMyQuoteLike | null;
 };
 

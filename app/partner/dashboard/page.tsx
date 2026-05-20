@@ -112,6 +112,10 @@ type PartnerCall = {
   auto_selected_quote_source: string;
   final_selected_quote_id: string;
   final_selected_quote_source: string;
+  client_price_selection_kind?: string | null;
+  selected_price_type?: string | null;
+  selected_price_label?: string | null;
+  selected_price?: number | null;
   auto_final_confirm_at: string;
   contact_revealed_at: string;
   contract_status: string;
@@ -443,6 +447,10 @@ function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
     auto_selected_quote_source: safeText(row.auto_selected_quote_source),
     final_selected_quote_id: safeText(row.final_selected_quote_id),
     final_selected_quote_source: safeText(row.final_selected_quote_source),
+    client_price_selection_kind: safeText(row.client_price_selection_kind) || null,
+    selected_price_type: safeText(row.selected_price_type) || null,
+    selected_price_label: safeText(row.selected_price_label) || null,
+    selected_price: parseInteger(row.selected_price),
     auto_final_confirm_at: safeText(row.auto_final_confirm_at),
     contact_revealed_at: safeText(row.contact_revealed_at),
     contract_status: safeText(row.contract_status),

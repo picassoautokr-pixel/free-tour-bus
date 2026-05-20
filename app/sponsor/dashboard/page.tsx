@@ -15,12 +15,14 @@ import {
   SponsorCallCard,
   type SponsorCardForm,
 } from "@/components/sponsor/SponsorCallCard";
+import { SponsorRejectedCallCard } from "@/components/sponsor/SponsorRejectedCallCard";
 import { SponsorReportCards } from "@/components/sponsor/SponsorReportCards";
 import { SERVICE_REGIONS } from "@/lib/regions";
 import { roleLoginPath } from "@/lib/role-hosts";
 import {
   isConfirmedCall,
   isReviewCall,
+  isSupportRejectedCall,
   matchesPayoutFilter,
   sponsorTabCounts,
   type SponsorCallRow,
@@ -283,6 +285,11 @@ export default function SponsorDashboardPage() {
     [calls, payoutFilter],
   );
 
+  const rejectedCalls = useMemo(
+    () => calls.filter((call) => isSupportRejectedCall(call)),
+    [calls],
+  );
+
   const mergedCatalog = useMemo(() => catalog, [catalog]);
 
   const getForm = (call: SponsorCallRow) =>
@@ -442,7 +449,12 @@ export default function SponsorDashboardPage() {
     { id: "catalog", label: LABEL.settingsSupportKind },
   ];
 
-  const listCalls = mainTab === "review" ? reviewCalls : confirmedCalls;
+  const listCalls =
+    mainTab === "review"
+      ? reviewCalls
+      : mainTab === "rejected"
+        ? rejectedCalls
+        : confirmedCalls;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-4 py-6 pb-16 sm:px-5">
@@ -535,7 +547,9 @@ export default function SponsorDashboardPage() {
                   ? labelWithCount(tab.label, tabCounts.review)
                   : tab.id === "confirmed"
                     ? labelWithCount(tab.label, tabCounts.confirmed)
-                    : tab.label;
+                    : tab.id === "rejected"
+                      ? labelWithCount(tab.label, tabCounts.rejected)
+                      : tab.label;
               return (
                 <button
                   key={tab.id}
@@ -602,7 +616,7 @@ export default function SponsorDashboardPage() {
           ) : null}
         </div>
 
-        {mainTab === "review" || mainTab === "confirmed" ? (
+        {mainTab === "review" || mainTab === "confirmed" || mainTab === "rejected" ? (
           <div className="mt-5 space-y-3">
             {loading ? (
               <p className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500">
@@ -610,8 +624,23 @@ export default function SponsorDashboardPage() {
               </p>
             ) : listCalls.length === 0 ? (
               <p className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500">
-                {mainTab === "review" ? LABEL.noReviewItems : LABEL.noConfirmedItems}
+                {mainTab === "review"
+                  ? LABEL.noReviewItems
+                  : mainTab === "rejected"
+                    ? LABEL.noRejectedItems
+                    : LABEL.noConfirmedItems}
               </p>
+            ) : mainTab === "rejected" ? (
+              listCalls.map((call) => (
+                <SponsorRejectedCallCard
+                  key={call.id}
+                  call={call}
+                  expanded={expandedDetailId === call.id}
+                  onToggleExpand={() =>
+                    setExpandedDetailId((prev) => (prev === call.id ? null : call.id))
+                  }
+                />
+              ))
             ) : (
               listCalls.map((call) => (
                 <SponsorCallCard

@@ -9,6 +9,7 @@ import {
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { sendNotificationSms } from "@/lib/notification-service";
 import { selectedPriceTypeToLegacyKind } from "@/lib/client-quote-match-selection";
+import { NORMAL_MATCH_SPONSOR_REASON } from "@/lib/selected-price-display";
 import { buildClientMemberQuoteSupport } from "@/lib/client-member-quote-payload";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -658,6 +659,12 @@ export async function POST(request: Request) {
     }
     if (finalUpdate.error) {
       return NextResponse.json({ error: finalUpdate.error.message }, { status: 502 });
+    }
+    if (selectedPriceType === "normal") {
+      await admin
+        .from("sponsor_preapprovals")
+        .update({ matched_reason: NORMAL_MATCH_SPONSOR_REASON })
+        .eq("application_id", applicationId);
     }
     await admin
       .from(selectedSource === "member" ? "driver_quotes" : "guest_driver_quotes")

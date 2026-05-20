@@ -3,6 +3,10 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
+import {
+  PartnerMatchedPricePanel,
+  partnerCallShowsSponsorBlocks,
+} from "@/components/partner/PartnerMatchedPricePanel";
 import { PartnerSupportSummary } from "@/components/partner/PartnerSupportSummary";
 import {
   LABEL,
@@ -162,6 +166,7 @@ export function PartnerCallCard({
       : Math.min(totalPlannedForForm, quotePriceValue);
   const supportDiscountInvalid =
     customerPlannedInput != null && customerPlannedInput > supportInputLimit;
+  const showSponsorBlocks = partnerCallShowsSponsorBlocks(call, stage);
 
   return (
     <article
@@ -301,58 +306,62 @@ export function PartnerCallCard({
             <DetailRow label={LABEL.destination}>{call.destination}</DetailRow>
           </dl>
 
-          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-            <p className="text-xs font-black text-slate-700">{LABEL.sponsor}</p>
-            {(call.sponsors ?? []).length > 0 ? (
-              <ul className="mt-2 space-y-1">
-                {call.sponsors!.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold"
-                  >
-                    <span>{s.company_name}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-black ${
-                        s.status === "approved" ? SUPPORT_UI.confirmed : SUPPORT_UI.planned
-                      }`}
-                    >
-                      {sponsorStageLabel(s.status)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1 text-sm text-slate-500">{LABEL.noSponsorInfo}</p>
-            )}
-            <p className="mt-2 text-xs font-bold text-slate-500">
-              {LABEL.sponsorStagePrefix}: {sponsorStageLabel(call.sponsor_support_status)}
-            </p>
-          </div>
+          {showSponsorBlocks ? (
+            <>
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                <p className="text-xs font-black text-slate-700">{LABEL.sponsor}</p>
+                {(call.sponsors ?? []).length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {call.sponsors!.map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold"
+                      >
+                        <span>{s.company_name}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-black ${
+                            s.status === "approved" ? SUPPORT_UI.confirmed : SUPPORT_UI.planned
+                          }`}
+                        >
+                          {sponsorStageLabel(s.status)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm text-slate-500">{LABEL.noSponsorInfo}</p>
+                )}
+                <p className="mt-2 text-xs font-bold text-slate-500">
+                  {LABEL.sponsorStagePrefix}: {sponsorStageLabel(call.sponsor_support_status)}
+                </p>
+              </div>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <div className={`rounded-xl p-3 ring-1 ${SUPPORT_UI.planned}`}>
-              <p className="text-[11px] font-bold">
-                {sponsorConfirmed ? LABEL.totalConfirmedSupport : LABEL.totalPlannedSupport}
-              </p>
-              <p className="mt-1 text-sm font-black">{supportSummary.summaryFormatted}</p>
-            </div>
-            <DetailRow label={LABEL.quoteDeadline}>
-              {call.quote_deadline_at
-                ? formatQuoteDeadline(call.quote_deadline_at)
-                : LABEL.unconfirmed}
-            </DetailRow>
-            <DetailRow label={LABEL.quoteProgress}>{formatQuoteProgress(call)}</DetailRow>
-            <DetailRow label={LABEL.priorityTarget}>
-              <span className="block text-xs font-semibold text-slate-600">
-                {LABEL.priorityNormal} {formatWon(call.target_normal_price)}
-              </span>
-              <span className="mt-1 block text-xs font-semibold text-blue-700">
-                {LABEL.priorityDiscount} {formatWon(call.target_member_price)}
-              </span>
-            </DetailRow>
-          </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className={`rounded-xl p-3 ring-1 ${SUPPORT_UI.planned}`}>
+                  <p className="text-[11px] font-bold">
+                    {sponsorConfirmed ? LABEL.totalConfirmedSupport : LABEL.totalPlannedSupport}
+                  </p>
+                  <p className="mt-1 text-sm font-black">{supportSummary.summaryFormatted}</p>
+                </div>
+                <DetailRow label={LABEL.quoteDeadline}>
+                  {call.quote_deadline_at
+                    ? formatQuoteDeadline(call.quote_deadline_at)
+                    : LABEL.unconfirmed}
+                </DetailRow>
+                <DetailRow label={LABEL.quoteProgress}>{formatQuoteProgress(call)}</DetailRow>
+                <DetailRow label={LABEL.priorityTarget}>
+                  <span className="block text-xs font-semibold text-slate-600">
+                    {LABEL.priorityNormal} {formatWon(call.target_normal_price)}
+                  </span>
+                  <span className="mt-1 block text-xs font-semibold text-blue-700">
+                    {LABEL.priorityDiscount} {formatWon(call.target_member_price)}
+                  </span>
+                </DetailRow>
+              </div>
+            </>
+          ) : null}
 
-          {(stage === "quoted" || stage === "matched") && breakdown ? (
+          {stage === "quoted" && breakdown ? (
             <div className="mt-4 space-y-3">
               <div className={`rounded-xl p-3 ring-1 ${SUPPORT_UI.planned}`}>
                 <p className="text-[11px] font-bold">{LABEL.partnerPlannedSupport}</p>
@@ -366,7 +375,14 @@ export function PartnerCallCard({
           ) : null}
 
           {stage === "matched" ? (
-            <DetailRow label={LABEL.untilDeparture}>{formatUntilDeparture(call)}</DetailRow>
+            <>
+              <PartnerMatchedPricePanel
+                call={call}
+                breakdown={breakdown}
+                sponsorConfirmed={sponsorConfirmed}
+              />
+              <DetailRow label={LABEL.untilDeparture}>{formatUntilDeparture(call)}</DetailRow>
+            </>
           ) : null}
 
           {formOpen ? (

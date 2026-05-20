@@ -66,6 +66,7 @@ export const LABEL = {
   matchWithSupportApplied: "지원금 할인 적용가로 매칭완료",
   selectedPriceKind: "선택 견적가",
   matchedAmount: "매칭금액",
+  finalPaymentPrice: "최종 결제가격",
   memberQuote: "제휴기사 견적",
   guestQuote: "일반기사 견적",
   supportReviewing: "지원금 검토중",

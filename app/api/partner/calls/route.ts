@@ -172,7 +172,7 @@ export async function GET() {
   } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_number, contract_pdf_generated_at, contract_pdf_url",
+      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_number, contract_pdf_generated_at, contract_pdf_url, client_price_selection_kind, selected_price_type, selected_price_label, selected_price",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -642,6 +642,10 @@ export async function GET() {
       sponsor_approved_support_amount: sponsorSupport?.approvedAmount ?? null,
       sponsor_estimated_support_amount: sponsorSupport?.estimatedAmount ?? null,
       sponsors: sponsorsByApplication.get(id) ?? [],
+      client_price_selection_kind: safeText(row.client_price_selection_kind) || null,
+      selected_price_type: safeText(row.selected_price_type) || null,
+      selected_price_label: safeText(row.selected_price_label) || null,
+      selected_price: parseInteger(row.selected_price),
       my_quote: quote,
     };
   }));

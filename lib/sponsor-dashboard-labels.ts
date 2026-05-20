@@ -2,13 +2,14 @@
 
 export const SPONSOR_DASHBOARD_TITLE = "후원업체 대시보드";
 
-export type SponsorMainTab = "review" | "confirmed" | "settings";
+export type SponsorMainTab = "review" | "confirmed" | "rejected" | "settings";
 export type ConfirmedPayoutFilter = "all" | "processing" | "completed";
 export type CardExpandMode = "approve" | "reject" | "change" | null;
 
 export const SPONSOR_MAIN_TABS: Array<{ id: SponsorMainTab; label: string }> = [
   { id: "review", label: "신규 지원검토" },
   { id: "confirmed", label: "지원확정 내역" },
+  { id: "rejected", label: "지원거절" },
   { id: "settings", label: "설정" },
 ];
 
@@ -78,6 +79,10 @@ export const LABEL = {
     "매칭이 완료된 지원건은 지원예정 전환 또는 지원취소가 제한됩니다.",
   noReviewItems: "표시할 신규 지원검토 요청이 없습니다.",
   noConfirmedItems: "표시할 지원확정 내역이 없습니다.",
+  noRejectedItems: "표시할 지원거절 내역이 없습니다.",
+  rejectReason: "사유",
+  groupName: "단체명",
+  supportReferenceOnly: "참고용",
   loading: "불러오는 중…",
   refresh: "새로고침",
   logout: "로그아웃",

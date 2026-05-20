@@ -83,6 +83,8 @@ export const LABEL = {
   expand: "펼치기",
   collapse: "접기",
   matchedAfterReveal: "매칭 후 공개",
+  selectedPriceKind: "선택 견적가",
+  finalPaymentPrice: "최종 결제가격",
   saving: "저장 중…",
   saveEdit: "수정 저장",
   cancel: "취소",

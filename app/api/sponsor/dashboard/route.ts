@@ -109,7 +109,7 @@ export async function GET() {
       ? admin
           .from("applications")
           .select(
-            "id, created_at, application_type, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id",
+            "id, created_at, application_type, organization_name, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, client_price_selection_kind, selected_price_type, selected_price_label, selected_price",
           )
           .in("id", applicationIds)
       : Promise.resolve({ data: [] }),
@@ -198,6 +198,11 @@ export async function GET() {
       quote_deadline_at: safeText(application.quote_deadline_at),
       quote_limit_count: parseInteger(application.quote_limit_count),
       final_selected_quote_id: safeText(application.final_selected_quote_id),
+      selected_price_type: safeText(application.selected_price_type) || undefined,
+      selected_price_label: safeText(application.selected_price_label) || undefined,
+      selected_price: parseInteger(application.selected_price),
+      client_price_selection_kind: safeText(application.client_price_selection_kind) || undefined,
+      organization_name: safeText(application.organization_name),
       quote_closed_at: safeText(application.quote_closed_at),
       estimated_support_amount: parseInteger(preapproval.estimated_support_amount) ?? 0,
       approved_support_amount: parseInteger(preapproval.approved_support_amount),
