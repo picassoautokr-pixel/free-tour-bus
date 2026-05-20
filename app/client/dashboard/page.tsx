@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicationListItem";
 import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
+import {
+  logClientQuoteSupportDebug,
+  quoteSupportConfirmedForScreen,
+  quoteSupportDiscountAppliedPriceForScreen,
+} from "@/app/client/dashboard/page-quote-screen";
 import {
   CLIENT_DASHBOARD_TITLE,
   CLIENT_LIST_SORTS,
@@ -30,6 +35,12 @@ import {
 } from "@/hooks/useSupabaseRealtimeRefresh";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
+
+/** 견적서 제출현황 — "지원금 할인 적용가" 표시값 (page-quote-screen.ts) */
+export {
+  quoteSupportDiscountAppliedPriceForScreen,
+  QUOTE_SCREEN_LABEL,
+} from "@/app/client/dashboard/page-quote-screen";
 
 export default function ClientDashboardPage() {
   const [lookupPhone, setLookupPhone] = useState("");
@@ -143,6 +154,12 @@ export default function ClientDashboardPage() {
   });
 
   const tabCounts = useMemo(() => clientTabCounts(applications), [applications]);
+
+  useEffect(() => {
+    if (applications.length > 0) {
+      logClientQuoteSupportDebug(applications);
+    }
+  }, [applications]);
 
   const filteredApplications = useMemo(() => {
     let list = applications.filter((app) => clientApplicationTab(app) === activeTab);
@@ -379,6 +396,10 @@ export default function ClientDashboardPage() {
                   }
                   onMatch={(quote, opts) => void runMatch(app, quote, opts)}
                   busy={loading}
+                  quoteSupportConfirmedForScreen={quoteSupportConfirmedForScreen}
+                  quoteSupportDiscountAppliedPriceForScreen={
+                    quoteSupportDiscountAppliedPriceForScreen
+                  }
                 />
               ))}
             </div>

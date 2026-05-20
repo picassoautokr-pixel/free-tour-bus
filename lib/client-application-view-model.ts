@@ -36,6 +36,7 @@ export type ClientQuote = {
   preapproved_support_amount?: number | null;
   approved_support_amount?: number | null;
   sponsor_approved_support_amount?: number | null;
+  final_customer_support_amount?: number | null;
   support_status?: string;
   sponsor_support_status?: string;
   sponsor_quote_enabled?: boolean;

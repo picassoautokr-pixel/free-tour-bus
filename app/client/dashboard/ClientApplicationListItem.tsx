@@ -22,6 +22,12 @@ import {
   routeLabel,
   LABEL,
 } from "@/app/client/dashboard/client-display";
+import {
+  formatQuotePriceForScreen,
+  QUOTE_SCREEN_LABEL,
+  quoteSupportConfirmedForScreen,
+  quoteSupportDiscountAppliedPriceForScreen,
+} from "@/app/client/dashboard/page-quote-screen";
 import type { ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 
@@ -43,6 +49,9 @@ export function ClientApplicationListItem({
   onToggleExpand,
   onMatch,
   busy,
+  quoteSupportDiscountAppliedPriceForScreen: resolveAppliedFromPage =
+    quoteSupportDiscountAppliedPriceForScreen,
+  quoteSupportConfirmedForScreen: resolveConfirmedFromPage = quoteSupportConfirmedForScreen,
 }: {
   application: ClientApplication;
   tab: ClientMainTab;
@@ -53,6 +62,15 @@ export function ClientApplicationListItem({
     options?: { priceSelection?: "normal_price_selected" | "support_price_selected" },
   ) => void;
   busy?: boolean;
+  /** page.tsx — 견적서 제출현황 지원금 할인 적용가 */
+  quoteSupportDiscountAppliedPriceForScreen?: (
+    quote: ClientQuote,
+    application: ClientApplication,
+  ) => number | null;
+  quoteSupportConfirmedForScreen?: (
+    quote: ClientQuote,
+    application: ClientApplication,
+  ) => boolean;
 }) {
   const [quoteModal, setQuoteModal] = useState<ClientQuote | null>(null);
   const [memoQuoteId, setMemoQuoteId] = useState<string | null>(null);
@@ -150,6 +168,14 @@ export function ClientApplicationListItem({
               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 {(() => {
                   const row = clientQuoteDisplayRow(selectedQuote, application);
+                  const supportConfirmed = resolveConfirmedFromPage(
+                    selectedQuote,
+                    application,
+                  );
+                  const supportDiscountAppliedPrice = resolveAppliedFromPage(
+                    selectedQuote,
+                    application,
+                  );
                   return (
                     <>
                       {row.showNormal ? (
@@ -157,16 +183,16 @@ export function ClientApplicationListItem({
                           {CLIENT_UI.normalPrice}: {formatClientQuotePrice(row.normalPrice)}
                         </span>
                       ) : null}
-                      {row.showPlanned ? (
+                      {!supportConfirmed ? (
                         <span>
                           {CLIENT_UI.supportDiscountPlanned}:{" "}
                           {formatClientQuotePrice(row.plannedPrice)}
                         </span>
                       ) : null}
-                      {row.showApplied ? (
+                      {supportConfirmed ? (
                         <span>
-                          {CLIENT_UI.supportDiscountApplied}:{" "}
-                          {formatClientQuotePrice(row.appliedPrice)}
+                          {QUOTE_SCREEN_LABEL.supportDiscountApplied}:{" "}
+                          {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
                         </span>
                       ) : null}
                     </>
@@ -235,6 +261,15 @@ export function ClientApplicationListItem({
                   const memo = quote.memo ?? quote.message ?? "";
                   const memoOpen = memoQuoteId === `${quote.source}-${quote.id}`;
                   const supportBadge = quoteSupportBadgeLabel(quote, application);
+                  const supportConfirmed = resolveConfirmedFromPage(quote, application);
+                  const supportDiscountAppliedPrice = resolveAppliedFromPage(
+                    quote,
+                    application,
+                  );
+                  const showSupportDiscountApplied =
+                    quote.source === "member" && supportConfirmed;
+                  const showSupportDiscountPlanned =
+                    quote.source === "member" && !supportConfirmed;
                   return (
                     <li
                       key={`${quote.source}-${quote.id}`}
@@ -269,16 +304,16 @@ export function ClientApplicationListItem({
                             {CLIENT_UI.normalPrice}: {formatClientQuotePrice(row.normalPrice)}
                           </span>
                         ) : null}
-                        {row.showPlanned ? (
+                        {showSupportDiscountPlanned ? (
                           <span>
                             {CLIENT_UI.supportDiscountPlanned}:{" "}
                             {formatClientQuotePrice(row.plannedPrice)}
                           </span>
                         ) : null}
-                        {row.showApplied ? (
+                        {showSupportDiscountApplied ? (
                           <span className="text-emerald-800">
-                            {CLIENT_UI.supportDiscountApplied}:{" "}
-                            {formatClientQuotePrice(row.appliedPrice)}
+                            {QUOTE_SCREEN_LABEL.supportDiscountApplied}:{" "}
+                            {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
                           </span>
                         ) : null}
                         <span>

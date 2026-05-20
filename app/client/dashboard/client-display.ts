@@ -213,29 +213,25 @@ export function normalizeClientApplication(app: ClientApplication): ClientApplic
 
 export function normalizeClientQuote(
   quote: ClientQuote,
-  application?: ClientApplication,
+  _application?: ClientApplication,
 ): ClientQuote {
-  const rebuilt = buildClientQuoteSupportBreakdown(quote, application);
+  const breakdown = quote.support_breakdown;
   return {
     ...quote,
-    support_breakdown: rebuilt,
-    planned_total_support: quote.planned_total_support ?? rebuilt.totalPlannedSupport,
+    planned_total_support:
+      quote.planned_total_support ?? breakdown?.totalPlannedSupport ?? quote.planned_total_support,
     planned_customer_support:
-      quote.planned_customer_support ?? rebuilt.customerPlannedSupport,
-    planned_driver_support: quote.planned_driver_support ?? rebuilt.partnerPlannedSupport,
-    confirmed_total_support: quote.confirmed_total_support ?? rebuilt.totalConfirmedSupport,
+      quote.planned_customer_support ??
+      breakdown?.customerPlannedSupport ??
+      quote.planned_customer_support,
+    confirmed_total_support:
+      quote.confirmed_total_support ??
+      breakdown?.totalConfirmedSupport ??
+      quote.confirmed_total_support,
     confirmed_customer_support:
-      quote.confirmed_customer_support ?? rebuilt.customerConfirmedSupport,
-    confirmed_driver_support:
-      quote.confirmed_driver_support ?? rebuilt.partnerConfirmedSupport,
-    confirmed_discount_price:
-      quote.confirmed_discount_price ?? rebuilt.supportDiscountAppliedPrice,
-    support_discount_applied_price:
-      quote.support_discount_applied_price ?? rebuilt.supportDiscountAppliedPrice,
-    final_discount_applied_price:
-      quote.final_discount_applied_price ?? rebuilt.finalDiscountAppliedPrice,
-    support_discount_planned_price:
-      quote.support_discount_planned_price ?? rebuilt.supportDiscountPlannedPrice,
+      quote.confirmed_customer_support ??
+      breakdown?.customerConfirmedSupport ??
+      quote.confirmed_customer_support,
     support_status: pickText(quote.support_status, quote.sponsor_support_status),
     sponsor_support_status: pickText(quote.sponsor_support_status),
   };

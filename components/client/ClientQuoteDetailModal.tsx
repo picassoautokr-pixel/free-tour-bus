@@ -1,11 +1,12 @@
 "use client";
 
+import { CLIENT_UI, clientQuoteDisplayRow, formatClientQuotePrice, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
 import {
-  CLIENT_UI,
-  clientQuoteDisplayRow,
-  formatClientQuotePrice,
-  quoteSupportBadgeLabel,
-} from "@/app/client/dashboard/client-display";
+  formatQuotePriceForScreen,
+  QUOTE_SCREEN_LABEL,
+  quoteSupportConfirmedForScreen,
+  quoteSupportDiscountAppliedPriceForScreen,
+} from "@/app/client/dashboard/page-quote-screen";
 import { LABEL, type ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 
@@ -33,6 +34,11 @@ export function ClientQuoteDetailModal({
   const row = clientQuoteDisplayRow(quote, application);
   const memo = quote.memo ?? quote.message ?? "";
   const supportBadge = quoteSupportBadgeLabel(quote, application);
+  const supportConfirmed = quoteSupportConfirmedForScreen(quote, application);
+  const supportDiscountAppliedPrice = quoteSupportDiscountAppliedPriceForScreen(
+    quote,
+    application,
+  );
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-900/50 px-0 py-0 sm:items-center sm:px-4 sm:py-8">
@@ -52,7 +58,7 @@ export function ClientQuoteDetailModal({
               </dd>
             </div>
           ) : null}
-          {row.showPlanned ? (
+          {quote.source === "member" && !supportConfirmed ? (
             <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
               <dt className="text-xs font-bold text-blue-700">{CLIENT_UI.supportDiscountPlanned}</dt>
               <dd className="mt-1 font-black text-blue-950">
@@ -60,11 +66,13 @@ export function ClientQuoteDetailModal({
               </dd>
             </div>
           ) : null}
-          {row.showApplied ? (
+          {quote.source === "member" && supportConfirmed ? (
             <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-              <dt className="text-xs font-bold text-emerald-700">{CLIENT_UI.supportDiscountApplied}</dt>
+              <dt className="text-xs font-bold text-emerald-700">
+                {QUOTE_SCREEN_LABEL.supportDiscountApplied}
+              </dt>
               <dd className="mt-1 font-black text-emerald-950">
-                {formatClientQuotePrice(row.appliedPrice)}
+                {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
               </dd>
             </div>
           ) : null}
