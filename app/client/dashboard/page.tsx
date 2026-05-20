@@ -6,11 +6,11 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicationListItem";
 import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
 import { applyClientPartnerQuoteApiFields } from "@/lib/client-member-quote-payload";
+import { quoteSubmitPriceLines } from "@/app/client/dashboard/page-quote-screen";
 import {
-  quoteSubmitPriceLines,
-  quoteSupportConfirmedForScreen,
-  quoteSupportDiscountAppliedPriceForScreen,
-} from "@/app/client/dashboard/page-quote-screen";
+  selectedPriceTypeToLegacyKind,
+  type QuoteMatchPriceSelection,
+} from "@/lib/client-quote-match-selection";
 import {
   CLIENT_DASHBOARD_TITLE,
   CLIENT_LIST_SORTS,
@@ -49,11 +49,8 @@ function normalizeClientApplicationFromApi(app: ClientApplication): ClientApplic
 }
 
 /** 견적서 제출현황 가격 표시 (page-quote-screen.ts) */
-export {
-  quoteSubmitPriceLines,
-  quoteSupportDiscountAppliedPriceForScreen,
-  QUOTE_SCREEN_LABEL,
-} from "@/app/client/dashboard/page-quote-screen";
+export { quoteSubmitPriceLines, QUOTE_SCREEN_LABEL } from "@/app/client/dashboard/page-quote-screen";
+export type { QuoteMatchPriceSelection } from "@/lib/client-quote-match-selection";
 
 export default function ClientDashboardPage() {
   const [lookupPhone, setLookupPhone] = useState("");
@@ -182,7 +179,7 @@ export default function ClientDashboardPage() {
   const runMatch = async (
     app: ClientApplication,
     quote: ClientQuote,
-    options?: { priceSelection?: "normal_price_selected" | "support_price_selected" },
+    selection: QuoteMatchPriceSelection,
   ) => {
     setLoading(true);
     setMessage(null);
@@ -191,12 +188,16 @@ export default function ClientDashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          application_id: app.id,
           receipt_number: app.receipt_number,
           phone: app.phone,
           action: "final_confirm",
           quote_id: quote.id,
           quote_source: quote.source,
-          price_selection_kind: options?.priceSelection,
+          selected_price_type: selection.selected_price_type,
+          selected_price_label: selection.selected_price_label,
+          selected_price: selection.selected_price,
+          price_selection_kind: selectedPriceTypeToLegacyKind(selection.selected_price_type),
         }),
       });
       const json = (await res.json()) as {
@@ -401,12 +402,8 @@ export default function ClientDashboardPage() {
                   onToggleExpand={() =>
                     setExpandedId((prev) => (prev === app.id ? null : app.id))
                   }
-                  onMatch={(quote, opts) => void runMatch(app, quote, opts)}
+                  onMatch={(quote, selection) => void runMatch(app, quote, selection)}
                   busy={loading}
-                  quoteSupportConfirmedForScreen={quoteSupportConfirmedForScreen}
-                  quoteSupportDiscountAppliedPriceForScreen={
-                    quoteSupportDiscountAppliedPriceForScreen
-                  }
                   quoteSubmitPriceLines={quoteSubmitPriceLines}
                 />
               ))}

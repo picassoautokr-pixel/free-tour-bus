@@ -20,14 +20,14 @@ import {
   routeLabel,
   LABEL,
 } from "@/app/client/dashboard/client-display";
+import { QuoteMatchButtonGroup } from "@/app/client/dashboard/QuoteMatchButtonGroup";
 import {
   formatQuotePriceForScreen,
   quoteSubmitPriceLines,
-  quoteSupportConfirmedForScreen,
-  quoteSupportDiscountAppliedPriceForScreen,
 } from "@/app/client/dashboard/page-quote-screen";
 import type { ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
+import type { QuoteMatchPriceSelection } from "@/lib/client-quote-match-selection";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -47,26 +47,14 @@ export function ClientApplicationListItem({
   onToggleExpand,
   onMatch,
   busy,
-  quoteSupportDiscountAppliedPriceForScreen: resolveAppliedFromPage =
-    quoteSupportDiscountAppliedPriceForScreen,
-  quoteSupportConfirmedForScreen: resolveConfirmedFromPage = quoteSupportConfirmedForScreen,
   quoteSubmitPriceLines: resolveSubmitPriceLines = quoteSubmitPriceLines,
 }: {
   application: ClientApplication;
   tab: ClientMainTab;
   expanded: boolean;
   onToggleExpand: () => void;
-  onMatch: (
-    quote: ClientQuote,
-    options?: { priceSelection?: "normal_price_selected" | "support_price_selected" },
-  ) => void;
+  onMatch: (quote: ClientQuote, selection: QuoteMatchPriceSelection) => void;
   busy?: boolean;
-  /** page.tsx — 견적서 제출현황 지원금 할인 적용가 */
-  quoteSupportDiscountAppliedPriceForScreen?: (quote: ClientQuote) => number | null;
-  quoteSupportConfirmedForScreen?: (
-    quote: ClientQuote,
-    application: ClientApplication,
-  ) => boolean;
   quoteSubmitPriceLines?: (
     quote: ClientQuote,
     application: ClientApplication,
@@ -162,9 +150,18 @@ export function ClientApplicationListItem({
           {tab === "matched" && selectedQuote ? (
             <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
               <p className="text-sm font-black text-emerald-950">{LABEL.matchedPrice}</p>
-              <p className="mt-1 text-xs font-bold text-emerald-800">
-                {priceSelectionLabel(application.final_price_selection_kind)}
-              </p>
+              <div className="mt-2 space-y-1 text-xs font-bold text-emerald-900">
+                <p>
+                  {LABEL.selectedPriceKind}:{" "}
+                  {priceSelectionLabel(
+                    application.final_price_selection_kind,
+                    application.selected_price_label,
+                  )}
+                </p>
+                <p>
+                  {LABEL.matchedAmount}: {formatWon(application.selected_price)}
+                </p>
+              </div>
               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 {(() => {
                   const lines = resolveSubmitPriceLines(selectedQuote, application);
@@ -245,7 +242,6 @@ export function ClientApplicationListItem({
                   const memo = quote.memo ?? quote.message ?? "";
                   const memoOpen = memoQuoteId === `${quote.source}-${quote.id}`;
                   const supportBadge = quoteSupportBadgeLabel(quote, application);
-                  const lines = resolveSubmitPriceLines(quote, application);
                   return (
                     <li
                       key={`${quote.source}-${quote.id}`}
@@ -274,21 +270,22 @@ export function ClientApplicationListItem({
                           <span className="text-[10px] font-bold text-slate-500">{supportBadge}</span>
                         ) : null}
                       </div>
-                      <div className="mt-2 grid gap-1 text-xs font-bold text-slate-800 sm:grid-cols-2">
-                        <span>
-                          {CLIENT_UI.normalPrice}: {formatQuotePriceForScreen(lines.normalPrice)}
-                        </span>
-                        <span
-                          className={
-                            !lines.isGuest && lines.supportConfirmed ? "text-emerald-800" : ""
-                          }
+                      <span className="mt-2 block text-xs font-bold text-slate-700">
+                        {LABEL.availableTime}: {quote.available_time || LABEL.dash}
+                      </span>
+                      {tab !== "matched" ? (
+                        <div
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
                         >
-                          {lines.supportLabel}: {formatQuotePriceForScreen(lines.supportPrice)}
-                        </span>
-                        <span>
-                          {LABEL.availableTime}: {quote.available_time || LABEL.dash}
-                        </span>
-                      </div>
+                          <QuoteMatchButtonGroup
+                            quote={quote}
+                            application={application}
+                            busy={busy}
+                            onMatch={onMatch}
+                          />
+                        </div>
+                      ) : null}
                       <div
                         className="mt-2 flex flex-wrap gap-2"
                         onClick={(event) => event.stopPropagation()}
@@ -304,17 +301,6 @@ export function ClientApplicationListItem({
                             style={tapStyle}
                           >
                             {LABEL.viewDriverMemo}
-                          </button>
-                        ) : null}
-                        {tab !== "matched" ? (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setQuoteModal(quote)}
-                            className="min-h-9 rounded-lg bg-emerald-600 px-3 text-[11px] font-black text-white disabled:opacity-50"
-                            style={tapStyle}
-                          >
-                            {CLIENT_UI.matchComplete}
                           </button>
                         ) : null}
                       </div>
@@ -337,20 +323,10 @@ export function ClientApplicationListItem({
           tab={tab}
           onClose={() => setQuoteModal(null)}
           busy={busy}
-          onMatchSingle={() => {
+          onMatch={(selection) => {
             const q = quoteModal;
             setQuoteModal(null);
-            onMatch(q);
-          }}
-          onMatchNormal={() => {
-            const q = quoteModal;
-            setQuoteModal(null);
-            onMatch(q, { priceSelection: "normal_price_selected" });
-          }}
-          onMatchSupport={() => {
-            const q = quoteModal;
-            setQuoteModal(null);
-            onMatch(q, { priceSelection: "support_price_selected" });
+            onMatch(q, selection);
           }}
         />
       ) : null}

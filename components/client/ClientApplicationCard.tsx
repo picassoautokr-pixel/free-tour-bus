@@ -7,6 +7,7 @@ import {
   LABEL,
   type ClientMainTab,
 } from "@/lib/client-dashboard-labels";
+import type { QuoteMatchPriceSelection } from "@/lib/client-quote-match-selection";
 import {
   applicationTypeLabel,
   clientQuotePriceVisibility,
@@ -52,10 +53,7 @@ export function ClientApplicationCard({
   tab: ClientMainTab;
   expanded: boolean;
   onToggleExpand: () => void;
-  onMatch: (
-    quote: ClientQuote,
-    options?: { priceSelection?: "normal_price_selected" | "support_price_selected" },
-  ) => void;
+  onMatch: (quote: ClientQuote, selection: QuoteMatchPriceSelection) => void;
   busy?: boolean;
 }) {
   const [quoteModal, setQuoteModal] = useState<ClientQuote | null>(null);
@@ -344,20 +342,10 @@ export function ClientApplicationCard({
           tab={tab}
           onClose={() => setQuoteModal(null)}
           busy={busy}
-          onMatchSingle={() => {
+          onMatch={(selection) => {
             const q = quoteModal;
             setQuoteModal(null);
-            onMatch(q);
-          }}
-          onMatchNormal={() => {
-            const q = quoteModal;
-            setQuoteModal(null);
-            onMatch(q, { priceSelection: "normal_price_selected" });
-          }}
-          onMatchSupport={() => {
-            const q = quoteModal;
-            setQuoteModal(null);
-            onMatch(q, { priceSelection: "support_price_selected" });
+            onMatch(q, selection);
           }}
         />
       ) : null}

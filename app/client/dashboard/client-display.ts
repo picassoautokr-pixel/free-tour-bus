@@ -202,6 +202,12 @@ export function normalizeClientApplication(app: ClientApplication): ClientApplic
       (typeof raw.client_price_selection_kind === "string"
         ? raw.client_price_selection_kind
         : null),
+    selected_price_type:
+      pickText(app.selected_price_type, raw.selected_price_type) || app.selected_price_type,
+    selected_price_label:
+      pickText(app.selected_price_label, raw.selected_price_label) || app.selected_price_label,
+    selected_price:
+      parseNum(app.selected_price) ?? parseNum(raw.selected_price) ?? app.selected_price,
     quotes: (app.quotes ?? []).map((q) => normalizeClientQuote(q, app)),
   };
 }

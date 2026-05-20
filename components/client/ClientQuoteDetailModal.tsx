@@ -1,13 +1,10 @@
 "use client";
 
-import { CLIENT_UI, clientQuoteDisplayRow, formatClientQuotePrice, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
-import {
-  formatQuotePriceForScreen,
-  quoteSubmitPriceLines,
-  quoteSupportConfirmedForScreen,
-} from "@/app/client/dashboard/page-quote-screen";
+import { QuoteMatchButtonGroup } from "@/app/client/dashboard/QuoteMatchButtonGroup";
+import { CLIENT_UI, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
 import { LABEL, type ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
+import type { QuoteMatchPriceSelection } from "@/lib/client-quote-match-selection";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -16,25 +13,19 @@ export function ClientQuoteDetailModal({
   application,
   tab,
   onClose,
-  onMatchNormal,
-  onMatchSupport,
-  onMatchSingle,
+  onMatch,
   busy,
 }: {
   quote: ClientQuote;
-  application?: ClientApplication;
+  application: ClientApplication;
   tab: ClientMainTab;
   onClose: () => void;
-  onMatchNormal?: () => void;
-  onMatchSupport?: () => void;
-  onMatchSingle?: () => void;
+  onMatch?: (selection: QuoteMatchPriceSelection) => void;
   busy?: boolean;
 }) {
-  const row = clientQuoteDisplayRow(quote, application);
-  const lines = quoteSubmitPriceLines(quote, application);
   const memo = quote.memo ?? quote.message ?? "";
   const supportBadge = quoteSupportBadgeLabel(quote, application);
-  const supportConfirmed = quoteSupportConfirmedForScreen(quote, application);
+  const canMatch = tab !== "matched" && onMatch != null;
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-900/50 px-0 py-0 sm:items-center sm:px-4 sm:py-8">
@@ -45,91 +36,37 @@ export function ClientQuoteDetailModal({
         {supportBadge ? (
           <p className="mt-1 text-xs font-semibold text-slate-500">{supportBadge}</p>
         ) : null}
-        <dl className="mt-4 space-y-3 text-sm">
-          <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-            <dt className="text-xs font-bold text-slate-500">{CLIENT_UI.normalPrice}</dt>
-            <dd className="mt-1 font-black text-slate-900">
-              {formatQuotePriceForScreen(lines.normalPrice)}
-            </dd>
-          </div>
-          <div
-            className={`rounded-xl p-3 ring-1 ${
-              lines.supportConfirmed
-                ? "bg-emerald-50 ring-emerald-100"
-                : "bg-blue-50 ring-blue-100"
-            }`}
-          >
-            <dt
-              className={`text-xs font-bold ${
-                lines.supportConfirmed ? "text-emerald-700" : "text-blue-700"
-              }`}
-            >
-              {lines.supportLabel}
-            </dt>
-            <dd
-              className={`mt-1 font-black ${
-                lines.supportConfirmed ? "text-emerald-950" : "text-blue-950"
-              }`}
-            >
-              {formatQuotePriceForScreen(lines.supportPrice)}
-            </dd>
-          </div>
-          <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-            <dt className="text-xs font-bold text-slate-500">{LABEL.availableTime}</dt>
-            <dd className="mt-1 font-black">{quote.available_time || LABEL.dash}</dd>
-          </div>
-          {memo ? (
-            <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-              <dt className="text-xs font-bold text-slate-500">{LABEL.driverMemo}</dt>
-              <dd className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">{memo}</dd>
-            </div>
-          ) : null}
-        </dl>
-        <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-          {LABEL.confirmMatchHint}
-        </p>
-        <div className="mt-4 grid gap-2">
-          {tab === "auto_closed" ? (
-            <>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onMatchNormal?.()}
-                className="min-h-11 rounded-xl bg-slate-950 text-sm font-black text-white disabled:opacity-50"
-                style={tapStyle}
-              >
-                {LABEL.matchWithNormal}
-              </button>
-              <button
-                type="button"
-                disabled={busy || row.plannedPrice == null}
-                onClick={() => onMatchSupport?.()}
-                className="min-h-11 rounded-xl bg-blue-600 text-sm font-black text-white disabled:opacity-50"
-                style={tapStyle}
-              >
-                {LABEL.matchWithSupport}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onMatchSingle?.()}
-              className="min-h-11 rounded-xl bg-emerald-600 text-sm font-black text-white disabled:opacity-50"
-              style={tapStyle}
-            >
-              {CLIENT_UI.matchComplete}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-10 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700"
-            style={tapStyle}
-          >
-            {LABEL.close}
-          </button>
+        <div className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100 text-sm">
+          <p className="text-xs font-bold text-slate-500">{LABEL.availableTime}</p>
+          <p className="mt-1 font-black text-slate-900">{quote.available_time || LABEL.dash}</p>
         </div>
+        {memo ? (
+          <div className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100 text-sm">
+            <p className="text-xs font-bold text-slate-500">{LABEL.driverMemo}</p>
+            <p className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">{memo}</p>
+          </div>
+        ) : null}
+        {canMatch ? (
+          <>
+            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+              {LABEL.confirmMatchHint}
+            </p>
+            <QuoteMatchButtonGroup
+              quote={quote}
+              application={application}
+              busy={busy}
+              onMatch={(_quote, selection) => onMatch(selection)}
+            />
+          </>
+        ) : null}
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-4 min-h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700"
+          style={tapStyle}
+        >
+          {LABEL.close}
+        </button>
       </div>
     </div>
   );

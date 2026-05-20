@@ -82,6 +82,9 @@ export type ClientApplication = {
   final_selected_quote_id?: string;
   final_selected_quote_source?: string;
   final_price_selection_kind?: string | null;
+  selected_price_type?: string | null;
+  selected_price_label?: string | null;
+  selected_price?: number | null;
   contact_revealed_at?: string;
   sponsor_support_status?: string;
   sponsor_approved_support_amount?: number | null;
@@ -378,10 +381,17 @@ export function contactRevealedFor(app: ClientApplication): boolean {
   );
 }
 
-export function priceSelectionLabel(kind?: string | null): string {
-  if (kind === "normal_price_selected") return LABEL.selectedNormal;
-  if (kind === "support_price_selected") return LABEL.selectedSupportApplied;
-  if (kind === "support_planned_selected") return LABEL.selectedSupportPlanned;
+export function priceSelectionLabel(
+  kind?: string | null,
+  selectedLabel?: string | null,
+): string {
+  if (selectedLabel?.trim()) return selectedLabel.trim();
+  if (kind === "normal_price_selected") return LABEL.normalPrice;
+  if (kind === "support_price_selected") return LABEL.supportDiscountApplied;
+  if (kind === "support_planned_selected") return LABEL.supportDiscountPlanned;
+  if (kind === "normal") return LABEL.normalPrice;
+  if (kind === "support_confirmed") return LABEL.supportDiscountApplied;
+  if (kind === "support_planned") return LABEL.supportDiscountPlanned;
   return LABEL.unconfirmed;
 }
 

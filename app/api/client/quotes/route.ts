@@ -8,10 +8,14 @@ import {
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { sendNotificationSms } from "@/lib/notification-service";
+import { selectedPriceTypeToLegacyKind } from "@/lib/client-quote-match-selection";
 import { buildClientMemberQuoteSupport } from "@/lib/client-member-quote-payload";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
+
+const APPLICATION_SPONSOR_AND_SELECTED_PRICE_COLUMNS =
+  "sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
 
 function safeText(value: unknown, emptyLabel = ""): string {
   if (value == null) return emptyLabel;
@@ -63,7 +67,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, organization_name, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, organization_name, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, ${APPLICATION_SPONSOR_AND_SELECTED_PRICE_COLUMNS}`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -131,7 +135,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, organization_name, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, organization_name, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, ${APPLICATION_SPONSOR_AND_SELECTED_PRICE_COLUMNS}`,
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -418,7 +422,16 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       final_selected_quote_source: safeText(current.final_selected_quote_source),
       final_selected_at: safeText(current.final_selected_at),
       client_price_selection_kind: safeText(current.client_price_selection_kind) || null,
-      final_price_selection_kind: safeText(current.client_price_selection_kind) || null,
+      selected_price_type: safeText(current.selected_price_type) || null,
+      selected_price_label: safeText(current.selected_price_label) || null,
+      selected_price: parseInteger(current.selected_price),
+      final_price_selection_kind:
+        safeText(current.client_price_selection_kind) ||
+        (safeText(current.selected_price_type)
+          ? selectedPriceTypeToLegacyKind(
+              safeText(current.selected_price_type) as "normal" | "support_planned" | "support_confirmed",
+            )
+          : null),
       contact_revealed_at: safeText(current.contact_revealed_at),
       contract_status: safeText(current.contract_status),
       contract_started_at: safeText(current.contract_started_at),
@@ -476,10 +489,14 @@ export async function POST(request: Request) {
   let body: {
     receipt_number?: unknown;
     phone?: unknown;
+    application_id?: unknown;
     action?: unknown;
     quote_id?: unknown;
     quote_source?: unknown;
     price_selection_kind?: unknown;
+    selected_price_type?: unknown;
+    selected_price_label?: unknown;
+    selected_price?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -532,6 +549,10 @@ export async function POST(request: Request) {
         contract_number: null,
         contract_pdf_generated_at: null,
         contract_pdf_url: null,
+        client_price_selection_kind: null,
+        selected_price_type: null,
+        selected_price_label: null,
+        selected_price: null,
       })
       .eq("id", applicationId);
     return NextResponse.json({ ok: true, ...(await loadPayload(admin, app)) });
@@ -554,11 +575,36 @@ export async function POST(request: Request) {
   }
 
   if (action === "final_confirm") {
+    const bodyApplicationId = safeText(body.application_id);
+    if (bodyApplicationId !== "" && bodyApplicationId !== applicationId) {
+      return NextResponse.json({ error: "견적요청 정보가 일치하지 않습니다." }, { status: 400 });
+    }
     const selectedId = quoteId || safeText(app.auto_selected_quote_id);
     const selectedSource = quoteId ? quoteSource : safeText(app.auto_selected_quote_source) === "guest" ? "guest" : "member";
     if (selectedId === "") {
       return NextResponse.json({ error: "확정할 견적이 없습니다." }, { status: 400 });
     }
+
+    const selectedPriceType = safeText(body.selected_price_type);
+    const selectedPriceLabel = safeText(body.selected_price_label);
+    const selectedPrice = parseInteger(body.selected_price);
+    if (
+      selectedPriceType !== "normal" &&
+      selectedPriceType !== "support_planned" &&
+      selectedPriceType !== "support_confirmed"
+    ) {
+      return NextResponse.json(
+        { error: "선택한 견적가 종류(selected_price_type)가 필요합니다." },
+        { status: 400 },
+      );
+    }
+    if (selectedPrice == null || selectedPrice < 0) {
+      return NextResponse.json(
+        { error: "선택한 견적가 금액(selected_price)이 필요합니다." },
+        { status: 400 },
+      );
+    }
+
     const now = new Date().toISOString();
     const contractStatus = safeText(app.contract_status) || "pending";
     const contractStartedAt = safeText(app.contract_started_at) || now;
@@ -569,7 +615,10 @@ export async function POST(request: Request) {
         final_selected_at: now,
         contract_started_at: contractStartedAt,
       }));
-    const priceSelection = safeText(body.price_selection_kind);
+    const legacyKind = selectedPriceTypeToLegacyKind(
+      selectedPriceType as "normal" | "support_planned" | "support_confirmed",
+    );
+    const priceSelection = safeText(body.price_selection_kind) || legacyKind;
     const finalPatch: Record<string, unknown> = {
       final_selected_quote_id: selectedId,
       final_selected_quote_source: selectedSource,
@@ -579,21 +628,33 @@ export async function POST(request: Request) {
       contract_status: contractStatus,
       contract_started_at: contractStartedAt,
       contract_number: contractNumber,
+      selected_price_type: selectedPriceType,
+      selected_price_label: selectedPriceLabel,
+      selected_price: selectedPrice,
+      client_price_selection_kind: priceSelection,
     };
-    if (
-      priceSelection === "normal_price_selected" ||
-      priceSelection === "support_price_selected"
-    ) {
-      finalPatch.client_price_selection_kind = priceSelection;
-    }
     let finalUpdate = await admin.from("applications").update(finalPatch).eq("id", applicationId);
-    if (
+    if (finalUpdate.error && isMissingColumnError(finalUpdate.error)) {
+      const legacy = { ...finalPatch };
+      delete legacy.selected_price_type;
+      delete legacy.selected_price_label;
+      delete legacy.selected_price;
+      delete legacy.client_price_selection_kind;
+      finalUpdate = await admin.from("applications").update(legacy).eq("id", applicationId);
+    } else if (
       finalUpdate.error &&
-      /client_price_selection_kind|does not exist|42703/i.test(finalUpdate.error.message)
+      /client_price_selection_kind|selected_price/i.test(finalUpdate.error.message)
     ) {
       const legacy = { ...finalPatch };
       delete legacy.client_price_selection_kind;
       finalUpdate = await admin.from("applications").update(legacy).eq("id", applicationId);
+      if (finalUpdate.error && isMissingColumnError(finalUpdate.error)) {
+        const minimal = { ...legacy };
+        delete minimal.selected_price_type;
+        delete minimal.selected_price_label;
+        delete minimal.selected_price;
+        finalUpdate = await admin.from("applications").update(minimal).eq("id", applicationId);
+      }
     }
     if (finalUpdate.error) {
       return NextResponse.json({ error: finalUpdate.error.message }, { status: 502 });
