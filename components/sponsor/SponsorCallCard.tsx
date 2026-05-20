@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 
-import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import { SponsorCatalogSelect } from "@/components/sponsor/SponsorCatalogSelect";
 import {
   CANCEL_REASONS,
@@ -174,21 +173,20 @@ export function SponsorCallCard({
       </button>
 
       {detailExpanded ? (
-        <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+        <div className="border-t border-slate-100 px-3 pb-2 pt-2">
           {listMode === "confirmed" ? (
-            <div className="mb-2 flex flex-wrap gap-1 text-[10px] font-bold text-slate-500">
+            <div className="flex flex-wrap gap-1 text-[10px] font-bold text-slate-500">
               <span>{LABEL.supportForm}: {displaySupportForm(call)}</span>
               <span>·</span>
               <span>{LABEL.supportCondition}: {displaySupportCondition(call)}</span>
             </div>
           ) : (
             <p
-              className={`mb-2 inline-flex rounded-xl px-2 py-1 text-xs font-black ring-1 ${SUPPORT_UI.planned}`}
+              className={`inline-flex rounded-xl px-2 py-1 text-xs font-black ring-1 ${SUPPORT_UI.planned}`}
             >
               {LABEL.estimatedSupport}: {formatWon(call.estimated_support_amount)}
             </p>
           )}
-          <QuoteStatusSummary quoteStatus={call.quote_status} compact />
         </div>
       ) : null}
 
