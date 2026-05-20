@@ -3,9 +3,8 @@
 import { CLIENT_UI, clientQuoteDisplayRow, formatClientQuotePrice, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
 import {
   formatQuotePriceForScreen,
-  QUOTE_SCREEN_LABEL,
+  quoteSubmitPriceLines,
   quoteSupportConfirmedForScreen,
-  quoteSupportDiscountAppliedPriceForScreen,
 } from "@/app/client/dashboard/page-quote-screen";
 import { LABEL, type ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
@@ -32,10 +31,10 @@ export function ClientQuoteDetailModal({
   busy?: boolean;
 }) {
   const row = clientQuoteDisplayRow(quote, application);
+  const lines = quoteSubmitPriceLines(quote, application);
   const memo = quote.memo ?? quote.message ?? "";
   const supportBadge = quoteSupportBadgeLabel(quote, application);
   const supportConfirmed = quoteSupportConfirmedForScreen(quote, application);
-  const supportDiscountAppliedPrice = quoteSupportDiscountAppliedPriceForScreen(quote);
 
   return (
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-900/50 px-0 py-0 sm:items-center sm:px-4 sm:py-8">
@@ -47,32 +46,34 @@ export function ClientQuoteDetailModal({
           <p className="mt-1 text-xs font-semibold text-slate-500">{supportBadge}</p>
         ) : null}
         <dl className="mt-4 space-y-3 text-sm">
-          {row.showNormal ? (
-            <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-              <dt className="text-xs font-bold text-slate-500">{CLIENT_UI.normalPrice}</dt>
-              <dd className="mt-1 font-black text-slate-900">
-                {formatClientQuotePrice(row.normalPrice)}
-              </dd>
-            </div>
-          ) : null}
-          {quote.source === "member" && !supportConfirmed ? (
-            <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-              <dt className="text-xs font-bold text-blue-700">{CLIENT_UI.supportDiscountPlanned}</dt>
-              <dd className="mt-1 font-black text-blue-950">
-                {formatClientQuotePrice(row.plannedPrice)}
-              </dd>
-            </div>
-          ) : null}
-          {quote.source === "member" && supportConfirmed && supportDiscountAppliedPrice != null ? (
-            <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-              <dt className="text-xs font-bold text-emerald-700">
-                {QUOTE_SCREEN_LABEL.supportDiscountApplied}
-              </dt>
-              <dd className="mt-1 font-black text-emerald-950">
-                {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
-              </dd>
-            </div>
-          ) : null}
+          <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+            <dt className="text-xs font-bold text-slate-500">{CLIENT_UI.normalPrice}</dt>
+            <dd className="mt-1 font-black text-slate-900">
+              {formatQuotePriceForScreen(lines.normalPrice)}
+            </dd>
+          </div>
+          <div
+            className={`rounded-xl p-3 ring-1 ${
+              lines.supportConfirmed
+                ? "bg-emerald-50 ring-emerald-100"
+                : "bg-blue-50 ring-blue-100"
+            }`}
+          >
+            <dt
+              className={`text-xs font-bold ${
+                lines.supportConfirmed ? "text-emerald-700" : "text-blue-700"
+              }`}
+            >
+              {lines.supportLabel}
+            </dt>
+            <dd
+              className={`mt-1 font-black ${
+                lines.supportConfirmed ? "text-emerald-950" : "text-blue-950"
+              }`}
+            >
+              {formatQuotePriceForScreen(lines.supportPrice)}
+            </dd>
+          </div>
           <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
             <dt className="text-xs font-bold text-slate-500">{LABEL.availableTime}</dt>
             <dd className="mt-1 font-black">{quote.available_time || LABEL.dash}</dd>

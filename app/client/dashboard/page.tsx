@@ -7,6 +7,7 @@ import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicat
 import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
 import {
   logClientQuoteSupportDebug,
+  quoteSubmitPriceLines,
   quoteSupportConfirmedForScreen,
   quoteSupportDiscountAppliedPriceForScreen,
 } from "@/app/client/dashboard/page-quote-screen";
@@ -36,8 +37,9 @@ import {
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
-/** 견적서 제출현황 — "지원금 할인 적용가" 표시값 (page-quote-screen.ts) */
+/** 견적서 제출현황 가격 표시 (page-quote-screen.ts) */
 export {
+  quoteSubmitPriceLines,
   quoteSupportDiscountAppliedPriceForScreen,
   QUOTE_SCREEN_LABEL,
 } from "@/app/client/dashboard/page-quote-screen";
@@ -400,6 +402,7 @@ export default function ClientDashboardPage() {
                   quoteSupportDiscountAppliedPriceForScreen={
                     quoteSupportDiscountAppliedPriceForScreen
                   }
+                  quoteSubmitPriceLines={quoteSubmitPriceLines}
                 />
               ))}
             </div>

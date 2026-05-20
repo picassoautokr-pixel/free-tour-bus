@@ -190,15 +190,10 @@ export function normalizeClientApplication(app: ClientApplication): ClientApplic
   const raw = app as ClientApplication & LooseRecord;
   return {
     ...app,
-    organization_type:
-      pickText(
-        app.organization_type,
-        raw.organizationType,
-        raw.group_type,
-        raw.groupType,
-        raw.customer_group_type,
-        raw.customerGroupType,
-      ) || app.organization_type,
+    organization_type: pickText(app.organization_type, raw.organizationType) || app.organization_type,
+    group_type:
+      pickText(app.group_type, raw.group_type, raw.groupType, app.organization_type) ||
+      app.group_type,
     applicant_name: pickText(app.applicant_name, raw.group_name, raw.groupName) || app.applicant_name,
     auto_final_confirm_at:
       pickText(app.auto_final_confirm_at, raw.autoFinalConfirmAt) || app.auto_final_confirm_at,
@@ -240,14 +235,13 @@ export function normalizeClientQuote(
 export function resolveGroupTypeDisplay(app: ClientApplication): string {
   const raw = app as ClientApplication & LooseRecord;
   const value = pickText(
+    app.group_type,
     raw.group_type,
     raw.groupType,
     app.organization_type,
     raw.organizationType,
     raw.customer_group_type,
     raw.customerGroupType,
-    raw.group_name,
-    raw.groupName,
   );
   return value || CLIENT_UI.dash;
 }
@@ -374,12 +368,17 @@ export function quoteSupportBadgeLabel(
   application?: ClientApplication,
 ): string | null {
   if (quote.source === "guest") return CLIENT_UI.generalQuote;
-  if (isQuoteSupportConfirmed(quote, application)) return CLIENT_UI.supportConfirmed;
   const status =
     quote.sponsor_support_status ??
     quote.support_status ??
-    (quote.sponsor_quote_enabled !== false ? application?.sponsor_support_status : undefined);
-  if (status === "approved") return CLIENT_UI.supportConfirmed;
+    application?.sponsor_support_status;
+  if (
+    isQuoteSupportConfirmed(quote, application) ||
+    status === "approved" ||
+    status === "confirmed"
+  ) {
+    return CLIENT_UI.supportConfirmed;
+  }
   if (status === "preapproved" || status === "pending" || status === "mixed") {
     return CLIENT_UI.supportReviewing;
   }

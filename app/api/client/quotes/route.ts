@@ -372,6 +372,8 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       trip_type: safeText(current.trip_type),
       application_type: safeText(current.application_type),
       organization_type: safeText(current.organization_type),
+      group_type:
+        safeText(current.organization_type) || safeText(current.application_type),
       organization_name: safeText(current.organization_name),
       bus_grade: safeText(current.bus_grade),
       passenger_count: parseInteger(current.passenger_count),

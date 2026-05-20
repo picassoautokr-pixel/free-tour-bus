@@ -67,6 +67,7 @@ export type ClientApplication = {
   request_message?: string;
   application_type?: string;
   organization_type?: string;
+  group_type?: string;
   organization_name?: string;
   quote_status: string;
   quote_deadline_at?: string;

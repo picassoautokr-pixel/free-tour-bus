@@ -6,11 +6,9 @@ import { ClientQuoteDetailModal } from "@/components/client/ClientQuoteDetailMod
 import {
   CLIENT_UI,
   applicationTypeLabel,
-  clientQuoteDisplayRow,
   contactRevealedFor,
   formatAutoCloseRemaining,
   formatAutoCloseRemainingCount,
-  formatClientQuotePrice,
   formatDepartureAt,
   formatQuoteCount,
   formatReturnDate,
@@ -24,7 +22,7 @@ import {
 } from "@/app/client/dashboard/client-display";
 import {
   formatQuotePriceForScreen,
-  QUOTE_SCREEN_LABEL,
+  quoteSubmitPriceLines,
   quoteSupportConfirmedForScreen,
   quoteSupportDiscountAppliedPriceForScreen,
 } from "@/app/client/dashboard/page-quote-screen";
@@ -52,6 +50,7 @@ export function ClientApplicationListItem({
   quoteSupportDiscountAppliedPriceForScreen: resolveAppliedFromPage =
     quoteSupportDiscountAppliedPriceForScreen,
   quoteSupportConfirmedForScreen: resolveConfirmedFromPage = quoteSupportConfirmedForScreen,
+  quoteSubmitPriceLines: resolveSubmitPriceLines = quoteSubmitPriceLines,
 }: {
   application: ClientApplication;
   tab: ClientMainTab;
@@ -68,6 +67,10 @@ export function ClientApplicationListItem({
     quote: ClientQuote,
     application: ClientApplication,
   ) => boolean;
+  quoteSubmitPriceLines?: (
+    quote: ClientQuote,
+    application: ClientApplication,
+  ) => ReturnType<typeof quoteSubmitPriceLines>;
 }) {
   const [quoteModal, setQuoteModal] = useState<ClientQuote | null>(null);
   const [memoQuoteId, setMemoQuoteId] = useState<string | null>(null);
@@ -164,31 +167,19 @@ export function ClientApplicationListItem({
               </p>
               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 {(() => {
-                  const row = clientQuoteDisplayRow(selectedQuote, application);
-                  const supportConfirmed = resolveConfirmedFromPage(
-                    selectedQuote,
-                    application,
-                  );
-                  const supportDiscountAppliedPrice = resolveAppliedFromPage(selectedQuote);
+                  const lines = resolveSubmitPriceLines(selectedQuote, application);
                   return (
                     <>
-                      {row.showNormal ? (
-                        <span>
-                          {CLIENT_UI.normalPrice}: {formatClientQuotePrice(row.normalPrice)}
-                        </span>
-                      ) : null}
-                      {!supportConfirmed ? (
-                        <span>
-                          {CLIENT_UI.supportDiscountPlanned}:{" "}
-                          {formatClientQuotePrice(row.plannedPrice)}
-                        </span>
-                      ) : null}
-                      {supportConfirmed && supportDiscountAppliedPrice != null ? (
-                        <span>
-                          {QUOTE_SCREEN_LABEL.supportDiscountApplied}:{" "}
-                          {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
-                        </span>
-                      ) : null}
+                      <span>
+                        {CLIENT_UI.normalPrice}: {formatQuotePriceForScreen(lines.normalPrice)}
+                      </span>
+                      <span
+                        className={
+                          !lines.isGuest && lines.supportConfirmed ? "text-emerald-800" : ""
+                        }
+                      >
+                        {lines.supportLabel}: {formatQuotePriceForScreen(lines.supportPrice)}
+                      </span>
                     </>
                   );
                 })()}
@@ -251,18 +242,10 @@ export function ClientApplicationListItem({
                   </li>
                 ) : null}
                 {quotes.map((quote) => {
-                  const row = clientQuoteDisplayRow(quote, application);
                   const memo = quote.memo ?? quote.message ?? "";
                   const memoOpen = memoQuoteId === `${quote.source}-${quote.id}`;
                   const supportBadge = quoteSupportBadgeLabel(quote, application);
-                  const supportConfirmed = resolveConfirmedFromPage(quote, application);
-                  const supportDiscountAppliedPrice = resolveAppliedFromPage(quote);
-                  const showSupportDiscountApplied =
-                    quote.source === "member" &&
-                    supportConfirmed &&
-                    supportDiscountAppliedPrice != null;
-                  const showSupportDiscountPlanned =
-                    quote.source === "member" && !supportConfirmed;
+                  const lines = resolveSubmitPriceLines(quote, application);
                   return (
                     <li
                       key={`${quote.source}-${quote.id}`}
@@ -292,23 +275,16 @@ export function ClientApplicationListItem({
                         ) : null}
                       </div>
                       <div className="mt-2 grid gap-1 text-xs font-bold text-slate-800 sm:grid-cols-2">
-                        {row.showNormal ? (
-                          <span>
-                            {CLIENT_UI.normalPrice}: {formatClientQuotePrice(row.normalPrice)}
-                          </span>
-                        ) : null}
-                        {showSupportDiscountPlanned ? (
-                          <span>
-                            {CLIENT_UI.supportDiscountPlanned}:{" "}
-                            {formatClientQuotePrice(row.plannedPrice)}
-                          </span>
-                        ) : null}
-                        {showSupportDiscountApplied ? (
-                          <span className="text-emerald-800">
-                            {QUOTE_SCREEN_LABEL.supportDiscountApplied}:{" "}
-                            {formatQuotePriceForScreen(supportDiscountAppliedPrice)}
-                          </span>
-                        ) : null}
+                        <span>
+                          {CLIENT_UI.normalPrice}: {formatQuotePriceForScreen(lines.normalPrice)}
+                        </span>
+                        <span
+                          className={
+                            !lines.isGuest && lines.supportConfirmed ? "text-emerald-800" : ""
+                          }
+                        >
+                          {lines.supportLabel}: {formatQuotePriceForScreen(lines.supportPrice)}
+                        </span>
                         <span>
                           {LABEL.availableTime}: {quote.available_time || LABEL.dash}
                         </span>
