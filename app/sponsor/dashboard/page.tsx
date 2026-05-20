@@ -22,11 +22,13 @@ import {
   isConfirmedCall,
   isReviewCall,
   matchesPayoutFilter,
+  sponsorTabCounts,
   type SponsorCallRow,
   type SponsorSummary,
 } from "@/lib/sponsor-call-view-model";
 import {
   LABEL,
+  labelWithCount,
   PAYOUT_FILTERS,
   SPONSOR_DASHBOARD_TITLE,
   SPONSOR_MAIN_TABS,
@@ -266,6 +268,8 @@ export default function SponsorDashboardPage() {
     return () => window.clearTimeout(id);
   }, [toast]);
 
+  const tabCounts = useMemo(() => sponsorTabCounts(calls), [calls]);
+
   const reviewCalls = useMemo(
     () => calls.filter((call) => isReviewCall(call)),
     [calls],
@@ -273,9 +277,9 @@ export default function SponsorDashboardPage() {
 
   const confirmedCalls = useMemo(
     () =>
-      calls.filter(
-        (call) => isConfirmedCall(call) && matchesPayoutFilter(call, payoutFilter),
-      ),
+      calls
+        .filter((call) => isConfirmedCall(call))
+        .filter((call) => matchesPayoutFilter(call, payoutFilter)),
     [calls, payoutFilter],
   );
 
@@ -525,19 +529,27 @@ export default function SponsorDashboardPage() {
           ) : null}
 
           <div className="mt-5 flex flex-wrap gap-2">
-            {SPONSOR_MAIN_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setMainTab(tab.id)}
-                className={`min-h-10 rounded-xl px-4 text-sm font-black ${
-                  mainTab === tab.id ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
-                }`}
-                style={tapStyle}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {SPONSOR_MAIN_TABS.map((tab) => {
+              const tabLabel =
+                tab.id === "review"
+                  ? labelWithCount(tab.label, tabCounts.review)
+                  : tab.id === "confirmed"
+                    ? labelWithCount(tab.label, tabCounts.confirmed)
+                    : tab.label;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setMainTab(tab.id)}
+                  className={`min-h-10 shrink-0 whitespace-nowrap rounded-xl px-3 text-xs font-black sm:px-4 sm:text-sm ${
+                    mainTab === tab.id ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
+                  }`}
+                  style={tapStyle}
+                >
+                  {tabLabel}
+                </button>
+              );
+            })}
           </div>
 
           {mainTab === "settings" ? (
@@ -563,20 +575,29 @@ export default function SponsorDashboardPage() {
 
           {mainTab === "confirmed" ? (
             <div className="mt-4 flex flex-wrap gap-2">
-              {PAYOUT_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setPayoutFilter(f.id)}
-                  className={`min-h-9 rounded-full px-3 text-xs font-black ${
-                    payoutFilter === f.id
-                      ? "bg-violet-600 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
+              {PAYOUT_FILTERS.map((f) => {
+                const count =
+                  f.id === "all"
+                    ? tabCounts.payoutAll
+                    : f.id === "processing"
+                      ? tabCounts.payoutProcessing
+                      : tabCounts.payoutCompleted;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setPayoutFilter(f.id)}
+                    className={`min-h-9 shrink-0 whitespace-nowrap rounded-full px-3 text-xs font-black ${
+                      payoutFilter === f.id
+                        ? "bg-violet-600 text-white"
+                        : "bg-slate-100 text-slate-700"
+                    }`}
+                    style={tapStyle}
+                  >
+                    {labelWithCount(f.label, count)}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
         </div>

@@ -12,6 +12,11 @@ export const SPONSOR_MAIN_TABS: Array<{ id: SponsorMainTab; label: string }> = [
   { id: "settings", label: "설정" },
 ];
 
+/** 탭·필터 라벨 + 건수 (0이어도 표시) */
+export function labelWithCount(label: string, count: number): string {
+  return `${label} (${count})`;
+}
+
 export const PAYOUT_FILTERS: Array<{ id: ConfirmedPayoutFilter; label: string }> = [
   { id: "all", label: "전체" },
   { id: "processing", label: "지급중" },

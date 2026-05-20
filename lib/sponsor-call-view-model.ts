@@ -49,9 +49,11 @@ export type SponsorCallRow = {
   final_quote_count?: number;
 };
 
+const REVIEW_STATUSES = new Set(["pending", "preapproved", "reviewing"]);
+
 export function isReviewCall(call: SponsorCallRow): boolean {
-  const s = call.status;
-  return s === "preapproved" || s === "pending";
+  const s = (call.status ?? "").trim().toLowerCase();
+  return REVIEW_STATUSES.has(s);
 }
 
 export function isConfirmedCall(call: SponsorCallRow): boolean {
@@ -133,6 +135,39 @@ export function displaySupportCondition(call: SponsorCallRow): string {
     call.support_condition?.trim() ||
     LABEL.dash
   );
+}
+
+export type SponsorTabCounts = {
+  review: number;
+  confirmed: number;
+  payoutAll: number;
+  payoutProcessing: number;
+  payoutCompleted: number;
+};
+
+/** 진행 탭·리포트 카드 공통 건수 (목록 필터와 무관) */
+export function sponsorTabCounts(calls: SponsorCallRow[]): SponsorTabCounts {
+  let review = 0;
+  let confirmed = 0;
+  let payoutProcessing = 0;
+  let payoutCompleted = 0;
+
+  for (const call of calls) {
+    if (isReviewCall(call)) review += 1;
+    if (!isConfirmedCall(call)) continue;
+    confirmed += 1;
+    const ps = (call.payout_status ?? "processing").toLowerCase();
+    if (ps === "completed") payoutCompleted += 1;
+    else payoutProcessing += 1;
+  }
+
+  return {
+    review,
+    confirmed,
+    payoutAll: confirmed,
+    payoutProcessing,
+    payoutCompleted,
+  };
 }
 
 export type SponsorSummary = {
