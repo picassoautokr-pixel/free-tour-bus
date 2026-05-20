@@ -63,7 +63,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, organization_name, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
     )
     .eq("receipt_number", receiptNumber)
     .maybeSingle();
@@ -131,7 +131,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   } = await admin
     .from("applications")
     .select(
-      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
+      `id, created_at, receipt_number, applicant_name, phone, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, application_type, organization_type, organization_name, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, client_price_selection_kind`,
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -269,6 +269,13 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
         support_discount_applied_price: supportFields.support_discount_applied_price,
         final_discount_applied_price: supportFields.final_discount_applied_price,
         support_breakdown: supportFields.support_breakdown,
+        confirmed_total_support:
+          supportFields.support_breakdown?.totalConfirmedSupport ??
+          parseInteger(row.confirmed_total_support),
+        confirmed_discount_price:
+          supportFields.support_breakdown?.supportDiscountAppliedPrice ??
+          parseInteger(row.confirmed_discount_price),
+        support_status: safeText(row.sponsor_support_status),
         sponsor_support_status: safeText(row.sponsor_support_status),
         sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
         vehicle_type: safeText(row.vehicle_type, "—"),
@@ -355,6 +362,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       trip_type: safeText(current.trip_type),
       application_type: safeText(current.application_type),
       organization_type: safeText(current.organization_type),
+      organization_name: safeText(current.organization_name),
       bus_grade: safeText(current.bus_grade),
       passenger_count: parseInteger(current.passenger_count),
       applicant_name: safeText(current.applicant_name),

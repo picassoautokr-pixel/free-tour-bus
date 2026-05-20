@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { ClientApplicationCard } from "@/components/client/ClientApplicationCard";
+import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicationListItem";
+import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
 import {
   CLIENT_DASHBOARD_TITLE,
   CLIENT_LIST_SORTS,
@@ -79,7 +80,10 @@ export default function ClientDashboardPage() {
       }
       const app = json.application;
       const quotes = Array.isArray(json.quotes) ? json.quotes : [];
-      mergeApplications(app ? [{ ...app, quotes }] : [], !options?.silent);
+      mergeApplications(
+        app ? [normalizeClientApplication({ ...app, quotes })] : [],
+        !options?.silent,
+      );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -108,7 +112,9 @@ export default function ClientDashboardPage() {
           setApplications([]);
           return;
         }
-        const next = Array.isArray(json.applications) ? json.applications : [];
+        const next = (Array.isArray(json.applications) ? json.applications : []).map(
+          normalizeClientApplication,
+        );
         mergeApplications(next, true);
         if (!options?.silent) {
           setMessage(`견적요청 ${next.length}${LABEL.countSuffix}을 불러왔습니다.`);
@@ -182,7 +188,9 @@ export default function ClientDashboardPage() {
         const quotes = Array.isArray(json.quotes) ? json.quotes : [];
         setApplications((prev) =>
           prev.map((item) =>
-            item.id === json.application?.id ? { ...json.application!, quotes } : item,
+            item.id === json.application?.id
+              ? normalizeClientApplication({ ...json.application!, quotes })
+              : item,
           ),
         );
         setActiveTab("matched");
@@ -361,7 +369,7 @@ export default function ClientDashboardPage() {
                 </p>
               ) : null}
               {filteredApplications.map((app) => (
-                <ClientApplicationCard
+                <ClientApplicationListItem
                   key={app.id}
                   application={app}
                   tab={activeTab}

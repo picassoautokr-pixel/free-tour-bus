@@ -68,7 +68,7 @@ export const LABEL = {
   supportReviewing: "지원금 검토중",
   supportConfirmed: "지원금 확정",
   supportRejected: "지원금 미승인",
-  noSupport: "지원금 없음",
+  generalQuote: "일반견적",
   matchedPrice: "매칭견적가",
   selectedNormal: "일반견적가 선택",
   selectedSupportPlanned: "지원금 할인 예정가 선택",

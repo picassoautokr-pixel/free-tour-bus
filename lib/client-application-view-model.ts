@@ -24,6 +24,9 @@ export type ClientQuote = {
   support_discount_applied_price?: number | null;
   final_discount_applied_price?: number | null;
   support_breakdown?: QuoteSupportBreakdown | null;
+  confirmed_total_support?: number | null;
+  confirmed_discount_price?: number | null;
+  support_status?: string;
   sponsor_support_status?: string;
   sponsor_quote_enabled?: boolean;
   vehicle_type?: string;
@@ -53,6 +56,7 @@ export type ClientApplication = {
   request_message?: string;
   application_type?: string;
   organization_type?: string;
+  organization_name?: string;
   quote_status: string;
   quote_deadline_at?: string;
   auto_final_confirm_at?: string;
@@ -155,9 +159,20 @@ export function formatReturnDate(app: ClientApplication): string {
 }
 
 export function formatGroupType(app: ClientApplication): string {
-  const org = app.organization_type?.trim();
-  if (org) return org;
-  return LABEL.dash;
+  const raw = app as ClientApplication & Record<string, unknown>;
+  const value = [
+    raw.group_type,
+    raw.groupType,
+    app.organization_type,
+    raw.organizationType,
+    raw.customer_group_type,
+    raw.customerGroupType,
+    raw.group_name,
+    raw.groupName,
+  ]
+    .map((v) => (v == null ? "" : String(v).trim()))
+    .find((t) => t !== "" && t !== "—");
+  return value || LABEL.dash;
 }
 
 export function formatAutoCloseRemaining(app: ClientApplication): string {
@@ -315,15 +330,20 @@ export function fmtClientPrice(
   value: number | null | undefined,
   phase: "planned" | "confirmed" | "final" = "planned",
   breakdown?: QuoteSupportBreakdown | null,
+  options?: { treatAsConfirmed?: boolean },
 ): string {
+  const forceConfirmed = options?.treatAsConfirmed === true;
   if (breakdown) {
     return formatSupportAmount(value ?? null, {
       phase,
       calculationStatus: breakdown.calculationStatus,
-      isConfirmed: breakdown.isConfirmed,
+      isConfirmed: forceConfirmed || breakdown.isConfirmed || phase === "planned",
     });
   }
-  return formatSupportAmount(value, { phase });
+  return formatSupportAmount(value, {
+    phase,
+    isConfirmed: forceConfirmed || phase === "planned",
+  });
 }
 
 /** 지원금 상태 뱃지 — 확정·검토중만, '지원금 없음' 등은 표시하지 않음 */
