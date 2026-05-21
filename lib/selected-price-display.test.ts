@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   inferSelectedPriceTypeFromAmounts,
+  resolveApplicationMatchedPriceDisplay,
   resolveClientMatchedQuoteLine,
   resolveEffectiveSelectedPriceType,
 } from "./selected-price-display";
@@ -33,6 +34,34 @@ describe("resolveEffectiveSelectedPriceType", () => {
       { normalPrice: 500_000, supportPlannedPrice: 200_000 },
     );
     assert.equal(type, "normal");
+  });
+});
+
+describe("resolveApplicationMatchedPriceDisplay", () => {
+  it("uses application selected_price only for amount", () => {
+    const line = resolveApplicationMatchedPriceDisplay(
+      {
+        selected_price_type: "support_planned",
+        selected_price_label: "지원금 할인 예정가",
+        selected_price: 200_000,
+      },
+      { quoteNormalPrice: 500_000, quoteSupportPlannedPrice: 200_000 },
+    );
+    assert.equal(line.label, "지원금 할인 예정가");
+    assert.equal(line.amount, 200_000);
+  });
+
+  it("corrects normal label when amount matches planned discount not normal", () => {
+    const line = resolveApplicationMatchedPriceDisplay(
+      {
+        selected_price_type: "normal",
+        selected_price_label: "일반견적가",
+        selected_price: 200_000,
+      },
+      { quoteNormalPrice: 500_000, quoteSupportPlannedPrice: 200_000 },
+    );
+    assert.equal(line.label, "지원금 할인 예정가");
+    assert.equal(line.amount, 200_000);
   });
 });
 

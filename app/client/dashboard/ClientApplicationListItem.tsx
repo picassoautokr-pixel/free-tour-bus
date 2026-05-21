@@ -21,7 +21,12 @@ import {
 } from "@/app/client/dashboard/client-display";
 import { ClientMatchedPricePanel } from "@/app/client/dashboard/ClientMatchedPricePanel";
 import { QuoteMatchButtonGroup } from "@/app/client/dashboard/QuoteMatchButtonGroup";
-import { quoteSubmitPriceLines } from "@/app/client/dashboard/page-quote-screen";
+import {
+  quoteSubmitPriceLines,
+  resolveQuoteNormalPrice,
+  resolveQuoteSupportAppliedPrice,
+  resolveQuoteSupportPlannedPrice,
+} from "@/app/client/dashboard/page-quote-screen";
 import { isNormalPriceSelection } from "@/lib/selected-price-display";
 import type { ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
@@ -74,15 +79,11 @@ export function ClientApplicationListItem({
       ? LABEL.targetSupportApplied
       : LABEL.targetSupportPlanned;
   const matchedPriceOptions = selectedQuote
-    ? (() => {
-        const lines = quoteSubmitPriceLines(selectedQuote, application);
-        return {
-          normalPrice: lines.normalPrice,
-          supportPlannedPrice: lines.supportConfirmed ? null : lines.supportPrice,
-          supportAppliedPrice: lines.supportConfirmed ? lines.supportPrice : null,
-          supportConfirmed: lines.supportConfirmed,
-        };
-      })()
+    ? {
+        normalPrice: resolveQuoteNormalPrice(selectedQuote),
+        supportPlannedPrice: resolveQuoteSupportPlannedPrice(selectedQuote),
+        supportAppliedPrice: resolveQuoteSupportAppliedPrice(selectedQuote),
+      }
     : undefined;
   const hideMatchedSupportTargets = isNormalPriceSelection(application, matchedPriceOptions);
 

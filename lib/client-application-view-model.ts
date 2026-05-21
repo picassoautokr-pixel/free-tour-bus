@@ -19,6 +19,7 @@ export type ClientQuote = {
   driver_name?: string;
   phone?: string;
   price: number | null;
+  normal_price?: number | null;
   member_price?: number | null;
   support_discount_planned_price?: number | null;
   support_discount_applied_price?: number | null;

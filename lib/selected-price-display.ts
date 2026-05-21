@@ -261,41 +261,69 @@ export function isApplicationMatched(source: {
   return ["final_selected", "contract_pending", "completed"].includes(status);
 }
 
+export type MatchedPriceCompare = {
+  quoteNormalPrice: number | null;
+  quoteSupportPlannedPrice?: number | null;
+  quoteSupportAppliedPrice?: number | null;
+};
+
+/**
+ * 매칭견적가 표시 — application.selected_* 만 사용 (견적 일반가와 분리)
+ */
+export function resolveApplicationMatchedPriceDisplay(
+  application: SelectedPriceSource | null | undefined,
+  compare?: MatchedPriceCompare,
+): { label: string; amount: number | null } {
+  const amount =
+    application?.selected_price != null && Number.isFinite(application.selected_price)
+      ? Math.trunc(application.selected_price)
+      : null;
+
+  let label = (application?.selected_price_label ?? "").trim();
+  const storedType = resolveSelectedPriceType(application);
+  const normal = compare?.quoteNormalPrice ?? null;
+  const planned = compare?.quoteSupportPlannedPrice ?? null;
+  const applied = compare?.quoteSupportAppliedPrice ?? null;
+
+  if (
+    amount != null &&
+    normal != null &&
+    amount !== normal &&
+    (storedType === "normal" || label === LABEL_BY_TYPE.normal)
+  ) {
+    if (planned != null && amount === planned) {
+      label = LABEL_BY_TYPE.support_planned;
+    } else if (applied != null && amount === applied) {
+      label = LABEL_BY_TYPE.support_confirmed;
+    } else if (amount < normal) {
+      label = LABEL_BY_TYPE.support_planned;
+    }
+  }
+
+  if (!label) {
+    const effective = resolveEffectiveSelectedPriceType(application, {
+      normalPrice: normal,
+      supportPlannedPrice: planned ?? null,
+      supportAppliedPrice: applied ?? null,
+    });
+    if (effective) label = labelForSelectedPriceType(effective);
+  }
+
+  return { label, amount };
+}
+
 /** 매칭 완료 후 일반견적가 선택 → 후원/지원 UI 숨김 */
 /** 클라이언트·파트너 매칭완료 — 매칭견적가 한 줄 (종류 + 금액) */
 export function resolveClientMatchedQuoteLine(
   source: SelectedPriceSource | null | undefined,
   options?: SelectedPriceDisplayOptions,
 ): { kindLabel: string; amount: number | null } {
-  const normal = options?.normalPrice ?? null;
-  const supportPlanned = options?.supportPlannedPrice ?? null;
-  const supportApplied = options?.supportAppliedPrice ?? null;
-  const supportConfirmed = options?.supportConfirmed === true;
-
-  const type = resolveEffectiveSelectedPriceType(source, options);
-  const kindLabel = resolveSelectedPriceLabel(source, options);
-
-  let amount =
-    source?.selected_price != null && Number.isFinite(source.selected_price)
-      ? Math.trunc(source.selected_price)
-      : null;
-
-  if (amount == null) {
-    amount = resolveFinalPaymentPrice(source, {
-      normalPrice: normal,
-      supportPlannedPrice: supportPlanned,
-      supportAppliedPrice: supportApplied,
-    });
-  }
-  if (amount == null && type === "normal") amount = normal;
-  if (amount == null && type === "support_planned") amount = supportPlanned ?? supportApplied;
-  if (amount == null && type === "support_confirmed") amount = supportApplied ?? supportPlanned;
-  if (amount == null) amount = supportApplied ?? supportPlanned ?? normal;
-
-  return {
-    kindLabel: kindLabel || (type ? labelForSelectedPriceType(type) : LABEL_BY_TYPE.normal),
-    amount,
-  };
+  const line = resolveApplicationMatchedPriceDisplay(source, {
+    quoteNormalPrice: options?.normalPrice ?? null,
+    quoteSupportPlannedPrice: options?.supportPlannedPrice,
+    quoteSupportAppliedPrice: options?.supportAppliedPrice,
+  });
+  return { kindLabel: line.label, amount: line.amount };
 }
 
 export function shouldHideSponsorSupportUiForMatch(

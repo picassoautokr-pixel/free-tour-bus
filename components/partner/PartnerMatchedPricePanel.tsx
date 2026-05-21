@@ -8,11 +8,11 @@ import { LABEL, SUPPORT_UI } from "@/lib/partner-dashboard-labels";
 import type { PartnerCallLike } from "@/lib/partner-call-view-model";
 import { fmt } from "@/lib/partner-call-view-model";
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
-import type { SelectedPriceDisplayOptions } from "@/lib/selected-price-display";
 import {
   isNormalPriceSelection,
   isSupportPriceSelection,
-  resolveClientMatchedQuoteLine,
+  resolveApplicationMatchedPriceDisplay,
+  type MatchedPriceCompare,
 } from "@/lib/selected-price-display";
 
 function formatWon(value: number | null | undefined): string {
@@ -39,18 +39,21 @@ export function PartnerMatchedPricePanel({
   sponsorConfirmed: boolean;
 }) {
   const normalPrice = call.my_quote?.price ?? breakdown?.normalPrice ?? null;
-  const plannedPrice = breakdown?.supportDiscountPlannedPrice ?? null;
-  const appliedPrice =
-    breakdown?.finalDiscountAppliedPrice ?? breakdown?.supportDiscountAppliedPrice ?? null;
-
-  const priceOptions: SelectedPriceDisplayOptions = {
-    normalPrice,
-    supportPlannedPrice: plannedPrice,
-    supportAppliedPrice: appliedPrice,
-    supportConfirmed: sponsorConfirmed,
+  const priceCompare: MatchedPriceCompare = {
+    quoteNormalPrice: normalPrice,
+    quoteSupportPlannedPrice: breakdown?.supportDiscountPlannedPrice ?? null,
+    quoteSupportAppliedPrice:
+      breakdown?.finalDiscountAppliedPrice ?? breakdown?.supportDiscountAppliedPrice ?? null,
   };
-  const { kindLabel, amount: matchedAmount } = resolveClientMatchedQuoteLine(call, priceOptions);
-  const hideSupport = isNormalPriceSelection(call, priceOptions);
+  const { label: kindLabel, amount: matchedAmount } = resolveApplicationMatchedPriceDisplay(
+    call,
+    priceCompare,
+  );
+  const hideSupport = isNormalPriceSelection(call, {
+    normalPrice,
+    supportPlannedPrice: priceCompare.quoteSupportPlannedPrice ?? null,
+    supportAppliedPrice: priceCompare.quoteSupportAppliedPrice ?? null,
+  });
 
   return (
     <div className="mt-3 space-y-2">

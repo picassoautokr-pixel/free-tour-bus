@@ -311,6 +311,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
             ? safeText(partner?.phone)
             : "",
         price: support.price,
+        normal_price: support.price,
         member_price: support.member_price,
         support_discount_planned_price: support.support_discount_planned_price,
         support_discount_applied_price: support.support_discount_applied_price,
@@ -620,6 +621,13 @@ export async function POST(request: Request) {
     };
     if (selectedPriceLabel === "") {
       selectedPriceLabel = defaultLabelByType[selectedPriceType];
+    } else if (selectedPriceLabel !== defaultLabelByType[selectedPriceType]) {
+      return NextResponse.json(
+        {
+          error: `선택 라벨이 종류와 일치하지 않습니다. (${selectedPriceType} → ${defaultLabelByType[selectedPriceType]})`,
+        },
+        { status: 400 },
+      );
     }
 
     const now = new Date().toISOString();

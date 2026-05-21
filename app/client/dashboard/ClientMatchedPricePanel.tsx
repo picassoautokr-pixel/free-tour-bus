@@ -2,19 +2,19 @@
 
 import { CLIENT_UI, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
 import {
-  quoteSubmitPriceLines,
-  resolveDriverNormalQuotePrice,
+  resolveQuoteNormalPrice,
+  resolveQuoteSupportAppliedPrice,
+  resolveQuoteSupportPlannedPrice,
 } from "@/app/client/dashboard/page-quote-screen";
 import { LABEL } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
-import type { SelectedPriceDisplayOptions } from "@/lib/selected-price-display";
 import {
   isNormalPriceSelection,
-  isSupportPriceSelection,
-  resolveClientMatchedQuoteLine,
+  resolveApplicationMatchedPriceDisplay,
+  type MatchedPriceCompare,
 } from "@/lib/selected-price-display";
 
-function formatMatchedAmount(value: number | null | undefined): string {
+function formatWon(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
   return `${value.toLocaleString("ko-KR")}${LABEL.wonSuffix}`;
 }
@@ -27,19 +27,28 @@ export function ClientMatchedPricePanel({
   application: ClientApplication;
   selectedQuote: ClientQuote;
 }) {
-  const lines = quoteSubmitPriceLines(selectedQuote, application);
-  const driverNormalPrice = resolveDriverNormalQuotePrice(selectedQuote);
-  const priceOptions: SelectedPriceDisplayOptions = {
-    normalPrice: driverNormalPrice ?? lines.normalPrice,
-    supportPlannedPrice: lines.supportConfirmed ? null : lines.supportPrice,
-    supportAppliedPrice: lines.supportConfirmed ? lines.supportPrice : null,
-    supportConfirmed: lines.supportConfirmed,
+  const quoteNormalPrice = resolveQuoteNormalPrice(selectedQuote);
+  const priceCompare: MatchedPriceCompare = {
+    quoteNormalPrice,
+    quoteSupportPlannedPrice: resolveQuoteSupportPlannedPrice(selectedQuote),
+    quoteSupportAppliedPrice: resolveQuoteSupportAppliedPrice(selectedQuote),
   };
-  const hideSupport = isNormalPriceSelection(application, priceOptions);
 
-  const { kindLabel, amount } = resolveClientMatchedQuoteLine(application, priceOptions);
+  const { label: matchedLabel, amount: matchedAmount } =
+    resolveApplicationMatchedPriceDisplay(application, priceCompare);
 
-  const matchedQuoteText = [kindLabel, formatMatchedAmount(amount)].filter(Boolean).join(" ");
+  const hideSupport = isNormalPriceSelection(application, {
+    normalPrice: quoteNormalPrice,
+    supportPlannedPrice: priceCompare.quoteSupportPlannedPrice ?? null,
+    supportAppliedPrice: priceCompare.quoteSupportAppliedPrice ?? null,
+  });
+
+  const normalLineAmount =
+    selectedQuote.price != null && Number.isFinite(selectedQuote.price)
+      ? Math.trunc(selectedQuote.price)
+      : quoteNormalPrice;
+
+  const matchedQuoteText = [matchedLabel, formatWon(matchedAmount)].filter(Boolean).join(" ");
   const supportBadge = !hideSupport ? quoteSupportBadgeLabel(selectedQuote, application) : null;
 
   return (
@@ -47,11 +56,11 @@ export function ClientMatchedPricePanel({
       <p className="text-sm font-black text-emerald-950">
         {LABEL.matchedPriceKind}: {matchedQuoteText || LABEL.unconfirmed}
       </p>
-      {!hideSupport && isSupportPriceSelection(application, priceOptions) ? (
+      {!hideSupport ? (
         <div className="space-y-1.5">
-          {priceOptions.normalPrice != null ? (
+          {normalLineAmount != null ? (
             <p>
-              {CLIENT_UI.normalPrice}: {priceOptions.normalPrice.toLocaleString("ko-KR")}
+              {CLIENT_UI.normalPrice}: {normalLineAmount.toLocaleString("ko-KR")}
               {LABEL.wonSuffix}
             </p>
           ) : null}
