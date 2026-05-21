@@ -33,15 +33,44 @@ function breakdownAmount(
   return parseAmount(row[camelKey]) ?? parseAmount(row[snakeKey]);
 }
 
+/**
+ * 매칭완료 탭 일반견적가 — 제휴기사 원가.
+ * quote.price가 할인가(member_price·예정가)와 같으면 breakdown.normalPrice 우선.
+ */
+export function resolveDriverNormalQuotePrice(quote: ClientQuote): number | null {
+  const breakdownNormal = breakdownAmount(quote.support_breakdown, "normalPrice", "normal_price");
+  const price = parseAmount(quote.price);
+  const planned =
+    parseAmount(quote.support_discount_planned_price) ??
+    breakdownAmount(
+      quote.support_breakdown,
+      "supportDiscountPlannedPrice",
+      "planned_discount_price",
+    );
+  const member = parseAmount(quote.member_price);
+  const discountHint = planned ?? member;
+
+  if (breakdownNormal != null && breakdownNormal > 0) {
+    if (price == null) return breakdownNormal;
+    if (discountHint != null && price <= discountHint && breakdownNormal > price) {
+      return breakdownNormal;
+    }
+  }
+  if (
+    price != null &&
+    discountHint != null &&
+    price === discountHint &&
+    breakdownNormal != null &&
+    breakdownNormal > price
+  ) {
+    return breakdownNormal;
+  }
+  return price ?? breakdownNormal ?? null;
+}
+
 /** 일반견적가 — 제휴기사 원가(quote.price). member_price(할인가)는 사용하지 않음 */
 function resolveNormalPrice(quote: ClientQuote): number | null {
-  const raw = quote as ClientQuote & BreakdownRow;
-  return (
-    parseAmount(quote.price) ??
-    parseAmount(raw.normal_price) ??
-    breakdownAmount(quote.support_breakdown, "normalPrice", "normal_price") ??
-    null
-  );
+  return resolveDriverNormalQuotePrice(quote);
 }
 
 /** API support_breakdown·견적 필드 기준 확정 여부 */

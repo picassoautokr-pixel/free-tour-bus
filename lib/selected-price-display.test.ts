@@ -75,4 +75,26 @@ describe("inferSelectedPriceTypeFromAmounts", () => {
       "support_planned",
     );
   });
+
+  it("prefers support_planned when normal equals selected but planned also matches", () => {
+    assert.equal(
+      inferSelectedPriceTypeFromAmounts(200_000, 200_000, 200_000, null, false),
+      "support_planned",
+    );
+  });
+});
+
+describe("resolveEffectiveSelectedPriceType legacy kind", () => {
+  it("uses support_planned_selected when DB type is normal", () => {
+    const type = resolveEffectiveSelectedPriceType(
+      {
+        selected_price_type: "normal",
+        selected_price_label: "일반견적가",
+        selected_price: 200_000,
+        client_price_selection_kind: "support_planned_selected",
+      },
+      { normalPrice: 200_000, supportPlannedPrice: 200_000 },
+    );
+    assert.equal(type, "support_planned");
+  });
 });

@@ -1,7 +1,10 @@
 "use client";
 
 import { CLIENT_UI, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
-import { quoteSubmitPriceLines } from "@/app/client/dashboard/page-quote-screen";
+import {
+  quoteSubmitPriceLines,
+  resolveDriverNormalQuotePrice,
+} from "@/app/client/dashboard/page-quote-screen";
 import { LABEL } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 import type { SelectedPriceDisplayOptions } from "@/lib/selected-price-display";
@@ -25,8 +28,9 @@ export function ClientMatchedPricePanel({
   selectedQuote: ClientQuote;
 }) {
   const lines = quoteSubmitPriceLines(selectedQuote, application);
+  const driverNormalPrice = resolveDriverNormalQuotePrice(selectedQuote);
   const priceOptions: SelectedPriceDisplayOptions = {
-    normalPrice: lines.normalPrice,
+    normalPrice: driverNormalPrice ?? lines.normalPrice,
     supportPlannedPrice: lines.supportConfirmed ? null : lines.supportPrice,
     supportAppliedPrice: lines.supportConfirmed ? lines.supportPrice : null,
     supportConfirmed: lines.supportConfirmed,
@@ -45,9 +49,9 @@ export function ClientMatchedPricePanel({
       </p>
       {!hideSupport && isSupportPriceSelection(application, priceOptions) ? (
         <div className="space-y-1.5">
-          {lines.normalPrice != null ? (
+          {priceOptions.normalPrice != null ? (
             <p>
-              {CLIENT_UI.normalPrice}: {lines.normalPrice.toLocaleString("ko-KR")}
+              {CLIENT_UI.normalPrice}: {priceOptions.normalPrice.toLocaleString("ko-KR")}
               {LABEL.wonSuffix}
             </p>
           ) : null}

@@ -32,16 +32,31 @@ function labelToSelectedPriceType(label: string): SelectedPriceType | null {
   return null;
 }
 
+function resolveLegacySelectedPriceType(
+  source?: SelectedPriceSource | null,
+): SelectedPriceType | null {
+  const legacy = source?.client_price_selection_kind ?? source?.final_price_selection_kind;
+  if (legacy === "support_planned_selected") return "support_planned";
+  if (legacy === "support_price_selected") return "support_confirmed";
+  if (legacy === "normal_price_selected") return "normal";
+  return null;
+}
+
 function isStoredNormalLabelInconsistent(
   label: string,
   selected: number | null,
   normal: number | null,
+  supportPlanned?: number | null,
+  supportApplied?: number | null,
 ): boolean {
-  if (label !== LABEL_BY_TYPE.normal || selected == null || normal == null) return false;
-  return selected < normal;
+  if (label !== LABEL_BY_TYPE.normal || selected == null) return false;
+  if (normal != null && selected < normal) return true;
+  if (supportPlanned != null && selected === supportPlanned) return true;
+  if (supportApplied != null && selected === supportApplied) return true;
+  return false;
 }
 
-/** 금액 조합으로 저장 오류(일반 타입 + 할인가) 보정 */
+/** 금액 조합으로 저장 오류(일반 타입 + 할인가) 보정 — 할인가·지원가를 일반가보다 먼저 비교 */
 export function inferSelectedPriceTypeFromAmounts(
   selected: number | null,
   normal: number | null,
@@ -50,9 +65,9 @@ export function inferSelectedPriceTypeFromAmounts(
   supportConfirmed = false,
 ): SelectedPriceType | null {
   if (selected == null) return null;
-  if (normal != null && selected === normal) return "normal";
   if (supportPlanned != null && selected === supportPlanned) return "support_planned";
   if (supportApplied != null && selected === supportApplied) return "support_confirmed";
+  if (normal != null && selected === normal) return "normal";
   if (normal != null && selected < normal) {
     return supportConfirmed ? "support_confirmed" : "support_planned";
   }
@@ -82,11 +97,18 @@ export function resolveEffectiveSelectedPriceType(
   const supportApplied = options?.supportAppliedPrice ?? null;
   const supportConfirmed = options?.supportConfirmed === true;
 
+  const legacyType = resolveLegacySelectedPriceType(source);
   const fromLabel = storedLabel ? labelToSelectedPriceType(storedLabel) : null;
   if (
     fromLabel &&
     fromLabel !== "normal" &&
-    !isStoredNormalLabelInconsistent(storedLabel, selected, normal)
+    !isStoredNormalLabelInconsistent(
+      storedLabel,
+      selected,
+      normal,
+      supportPlanned,
+      supportApplied,
+    )
   ) {
     return fromLabel;
   }
@@ -99,12 +121,42 @@ export function resolveEffectiveSelectedPriceType(
     supportConfirmed,
   );
 
-  if (storedType === "normal" || isStoredNormalLabelInconsistent(storedLabel, selected, normal)) {
+  if (
+    legacyType === "support_planned" ||
+    legacyType === "support_confirmed"
+  ) {
+    if (storedType === "normal" || storedLabel === LABEL_BY_TYPE.normal) {
+      return legacyType;
+    }
+  }
+
+  if (
+    storedType === "normal" ||
+    isStoredNormalLabelInconsistent(
+      storedLabel,
+      selected,
+      normal,
+      supportPlanned,
+      supportApplied,
+    )
+  ) {
     if (inferred && inferred !== "normal") return inferred;
   }
 
   if (storedType) return storedType;
-  if (fromLabel && !isStoredNormalLabelInconsistent(storedLabel, selected, normal)) return fromLabel;
+  if (legacyType) return legacyType;
+  if (
+    fromLabel &&
+    !isStoredNormalLabelInconsistent(
+      storedLabel,
+      selected,
+      normal,
+      supportPlanned,
+      supportApplied,
+    )
+  ) {
+    return fromLabel;
+  }
   return inferred;
 }
 
@@ -151,7 +203,13 @@ export function resolveSelectedPriceLabel(
 
   if (
     storedLabel &&
-    !isStoredNormalLabelInconsistent(storedLabel, selected, normal)
+    !isStoredNormalLabelInconsistent(
+      storedLabel,
+      selected,
+      normal,
+      options?.supportPlannedPrice,
+      options?.supportAppliedPrice,
+    )
   ) {
     return storedLabel;
   }
