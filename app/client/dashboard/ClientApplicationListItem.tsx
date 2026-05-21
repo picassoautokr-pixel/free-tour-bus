@@ -73,7 +73,18 @@ export function ClientApplicationListItem({
     application.sponsor_support_status === "approved"
       ? LABEL.targetSupportApplied
       : LABEL.targetSupportPlanned;
-  const hideMatchedSupportTargets = isNormalPriceSelection(application);
+  const matchedPriceOptions = selectedQuote
+    ? (() => {
+        const lines = quoteSubmitPriceLines(selectedQuote, application);
+        return {
+          normalPrice: lines.normalPrice,
+          supportPlannedPrice: lines.supportConfirmed ? null : lines.supportPrice,
+          supportAppliedPrice: lines.supportConfirmed ? lines.supportPrice : null,
+          supportConfirmed: lines.supportConfirmed,
+        };
+      })()
+    : undefined;
+  const hideMatchedSupportTargets = isNormalPriceSelection(application, matchedPriceOptions);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">

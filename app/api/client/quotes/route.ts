@@ -586,8 +586,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "확정할 견적이 없습니다." }, { status: 400 });
     }
 
-    const selectedPriceType = safeText(body.selected_price_type);
-    const selectedPriceLabel = safeText(body.selected_price_label);
+    const selectedPriceType = safeText(body.selected_price_type) as
+      | "normal"
+      | "support_planned"
+      | "support_confirmed"
+      | "";
+    let selectedPriceLabel = safeText(body.selected_price_label);
     const selectedPrice = parseInteger(body.selected_price);
     if (
       selectedPriceType !== "normal" &&
@@ -604,6 +608,18 @@ export async function POST(request: Request) {
         { error: "선택한 견적가 금액(selected_price)이 필요합니다." },
         { status: 400 },
       );
+    }
+
+    const defaultLabelByType: Record<
+      "normal" | "support_planned" | "support_confirmed",
+      string
+    > = {
+      normal: "일반견적가",
+      support_planned: "지원금 할인 예정가",
+      support_confirmed: "지원금 할인 적용가",
+    };
+    if (selectedPriceLabel === "") {
+      selectedPriceLabel = defaultLabelByType[selectedPriceType];
     }
 
     const now = new Date().toISOString();

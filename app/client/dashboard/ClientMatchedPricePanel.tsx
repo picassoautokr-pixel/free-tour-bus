@@ -4,6 +4,7 @@ import { CLIENT_UI, quoteSupportBadgeLabel } from "@/app/client/dashboard/client
 import { quoteSubmitPriceLines } from "@/app/client/dashboard/page-quote-screen";
 import { LABEL } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
+import type { SelectedPriceDisplayOptions } from "@/lib/selected-price-display";
 import {
   isNormalPriceSelection,
   isSupportPriceSelection,
@@ -24,14 +25,15 @@ export function ClientMatchedPricePanel({
   selectedQuote: ClientQuote;
 }) {
   const lines = quoteSubmitPriceLines(selectedQuote, application);
-  const hideSupport = isNormalPriceSelection(application);
-
-  const { kindLabel, amount } = resolveClientMatchedQuoteLine(application, {
+  const priceOptions: SelectedPriceDisplayOptions = {
     normalPrice: lines.normalPrice,
     supportPlannedPrice: lines.supportConfirmed ? null : lines.supportPrice,
     supportAppliedPrice: lines.supportConfirmed ? lines.supportPrice : null,
     supportConfirmed: lines.supportConfirmed,
-  });
+  };
+  const hideSupport = isNormalPriceSelection(application, priceOptions);
+
+  const { kindLabel, amount } = resolveClientMatchedQuoteLine(application, priceOptions);
 
   const matchedQuoteText = [kindLabel, formatMatchedAmount(amount)].filter(Boolean).join(" ");
   const supportBadge = !hideSupport ? quoteSupportBadgeLabel(selectedQuote, application) : null;
@@ -41,7 +43,7 @@ export function ClientMatchedPricePanel({
       <p className="text-sm font-black text-emerald-950">
         {LABEL.matchedPriceKind}: {matchedQuoteText || LABEL.unconfirmed}
       </p>
-      {!hideSupport && isSupportPriceSelection(application) ? (
+      {!hideSupport && isSupportPriceSelection(application, priceOptions) ? (
         <div className="space-y-1.5">
           {lines.normalPrice != null ? (
             <p>

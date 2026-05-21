@@ -33,12 +33,13 @@ function breakdownAmount(
   return parseAmount(row[camelKey]) ?? parseAmount(row[snakeKey]);
 }
 
+/** 일반견적가 — 제휴기사 원가(quote.price). member_price(할인가)는 사용하지 않음 */
 function resolveNormalPrice(quote: ClientQuote): number | null {
   const raw = quote as ClientQuote & BreakdownRow;
   return (
     parseAmount(quote.price) ??
     parseAmount(raw.normal_price) ??
-    parseAmount(quote.member_price) ??
+    breakdownAmount(quote.support_breakdown, "normalPrice", "normal_price") ??
     null
   );
 }

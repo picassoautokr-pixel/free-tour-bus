@@ -14,6 +14,100 @@ export type SelectedPriceSource = {
 
 export const NORMAL_MATCH_SPONSOR_REASON = "고객이 일반견적가로 매칭완료";
 
+const LABEL_BY_TYPE: Record<SelectedPriceType, string> = {
+  normal: "일반견적가",
+  support_planned: "지원금 할인 예정가",
+  support_confirmed: "지원금 할인 적용가",
+};
+
+function labelForSelectedPriceType(type: SelectedPriceType): string {
+  return LABEL_BY_TYPE[type];
+}
+
+function labelToSelectedPriceType(label: string): SelectedPriceType | null {
+  const trimmed = label.trim();
+  if (trimmed === LABEL_BY_TYPE.normal) return "normal";
+  if (trimmed === LABEL_BY_TYPE.support_planned) return "support_planned";
+  if (trimmed === LABEL_BY_TYPE.support_confirmed) return "support_confirmed";
+  return null;
+}
+
+function isStoredNormalLabelInconsistent(
+  label: string,
+  selected: number | null,
+  normal: number | null,
+): boolean {
+  if (label !== LABEL_BY_TYPE.normal || selected == null || normal == null) return false;
+  return selected < normal;
+}
+
+/** 금액 조합으로 저장 오류(일반 타입 + 할인가) 보정 */
+export function inferSelectedPriceTypeFromAmounts(
+  selected: number | null,
+  normal: number | null,
+  supportPlanned: number | null,
+  supportApplied: number | null,
+  supportConfirmed = false,
+): SelectedPriceType | null {
+  if (selected == null) return null;
+  if (normal != null && selected === normal) return "normal";
+  if (supportPlanned != null && selected === supportPlanned) return "support_planned";
+  if (supportApplied != null && selected === supportApplied) return "support_confirmed";
+  if (normal != null && selected < normal) {
+    return supportConfirmed ? "support_confirmed" : "support_planned";
+  }
+  return null;
+}
+
+export type SelectedPriceDisplayOptions = {
+  normalPrice?: number | null;
+  supportPlannedPrice?: number | null;
+  supportAppliedPrice?: number | null;
+  supportConfirmed?: boolean;
+};
+
+/** 화면·분기용 — DB 타입이 잘못되어도 금액·라벨로 보정 */
+export function resolveEffectiveSelectedPriceType(
+  source?: SelectedPriceSource | null,
+  options?: SelectedPriceDisplayOptions,
+): SelectedPriceType | null {
+  const storedLabel = source?.selected_price_label?.trim() ?? "";
+  const storedType = resolveSelectedPriceType(source);
+  const selected =
+    source?.selected_price != null && Number.isFinite(source.selected_price)
+      ? Math.trunc(source.selected_price)
+      : null;
+  const normal = options?.normalPrice ?? null;
+  const supportPlanned = options?.supportPlannedPrice ?? null;
+  const supportApplied = options?.supportAppliedPrice ?? null;
+  const supportConfirmed = options?.supportConfirmed === true;
+
+  const fromLabel = storedLabel ? labelToSelectedPriceType(storedLabel) : null;
+  if (
+    fromLabel &&
+    fromLabel !== "normal" &&
+    !isStoredNormalLabelInconsistent(storedLabel, selected, normal)
+  ) {
+    return fromLabel;
+  }
+
+  const inferred = inferSelectedPriceTypeFromAmounts(
+    selected,
+    normal,
+    supportPlanned,
+    supportApplied,
+    supportConfirmed,
+  );
+
+  if (storedType === "normal" || isStoredNormalLabelInconsistent(storedLabel, selected, normal)) {
+    if (inferred && inferred !== "normal") return inferred;
+  }
+
+  if (storedType) return storedType;
+  if (fromLabel && !isStoredNormalLabelInconsistent(storedLabel, selected, normal)) return fromLabel;
+  return inferred;
+}
+
 export function resolveSelectedPriceType(
   source?: SelectedPriceSource | null,
 ): SelectedPriceType | null {
@@ -29,21 +123,41 @@ export function resolveSelectedPriceType(
   return null;
 }
 
-export function isNormalPriceSelection(source?: SelectedPriceSource | null): boolean {
-  return resolveSelectedPriceType(source) === "normal";
+export function isNormalPriceSelection(
+  source?: SelectedPriceSource | null,
+  options?: SelectedPriceDisplayOptions,
+): boolean {
+  return resolveEffectiveSelectedPriceType(source, options) === "normal";
 }
 
-export function isSupportPriceSelection(source?: SelectedPriceSource | null): boolean {
-  const type = resolveSelectedPriceType(source);
+export function isSupportPriceSelection(
+  source?: SelectedPriceSource | null,
+  options?: SelectedPriceDisplayOptions,
+): boolean {
+  const type = resolveEffectiveSelectedPriceType(source, options);
   return type === "support_planned" || type === "support_confirmed";
 }
 
-export function resolveSelectedPriceLabel(source?: SelectedPriceSource | null): string {
-  if (source?.selected_price_label?.trim()) return source.selected_price_label.trim();
-  const type = resolveSelectedPriceType(source);
-  if (type === "normal") return "일반견적가";
-  if (type === "support_planned") return "지원금 할인 예정가";
-  if (type === "support_confirmed") return "지원금 할인 적용가";
+export function resolveSelectedPriceLabel(
+  source?: SelectedPriceSource | null,
+  options?: SelectedPriceDisplayOptions,
+): string {
+  const storedLabel = source?.selected_price_label?.trim() ?? "";
+  const selected =
+    source?.selected_price != null && Number.isFinite(source.selected_price)
+      ? Math.trunc(source.selected_price)
+      : null;
+  const normal = options?.normalPrice ?? null;
+
+  if (
+    storedLabel &&
+    !isStoredNormalLabelInconsistent(storedLabel, selected, normal)
+  ) {
+    return storedLabel;
+  }
+
+  const type = resolveEffectiveSelectedPriceType(source, options);
+  if (type) return labelForSelectedPriceType(type);
   return "";
 }
 
@@ -90,46 +204,18 @@ export function isApplicationMatched(source: {
 }
 
 /** 매칭 완료 후 일반견적가 선택 → 후원/지원 UI 숨김 */
-/** 클라이언트 매칭완료 — 매칭견적가 한 줄 (종류 + 금액) */
+/** 클라이언트·파트너 매칭완료 — 매칭견적가 한 줄 (종류 + 금액) */
 export function resolveClientMatchedQuoteLine(
   source: SelectedPriceSource | null | undefined,
-  options?: {
-    normalPrice?: number | null;
-    supportPlannedPrice?: number | null;
-    supportAppliedPrice?: number | null;
-    supportConfirmed?: boolean;
-  },
+  options?: SelectedPriceDisplayOptions,
 ): { kindLabel: string; amount: number | null } {
-  let kindLabel = resolveSelectedPriceLabel(source);
-  let type = resolveSelectedPriceType(source);
-
   const normal = options?.normalPrice ?? null;
   const supportPlanned = options?.supportPlannedPrice ?? null;
   const supportApplied = options?.supportAppliedPrice ?? null;
   const supportConfirmed = options?.supportConfirmed === true;
 
-  if (!type) {
-    if (source?.client_price_selection_kind === "normal_price_selected") {
-      type = "normal";
-    } else if (source?.client_price_selection_kind === "support_planned_selected") {
-      type = "support_planned";
-    } else if (source?.client_price_selection_kind === "support_price_selected") {
-      type = "support_confirmed";
-    } else if (
-      supportApplied != null &&
-      normal != null &&
-      supportApplied < normal
-    ) {
-      type = supportConfirmed ? "support_confirmed" : "support_planned";
-    } else if (normal != null) {
-      type = "normal";
-    }
-    if (!kindLabel && type) {
-      if (type === "normal") kindLabel = "일반견적가";
-      else if (type === "support_planned") kindLabel = "지원금 할인 예정가";
-      else if (type === "support_confirmed") kindLabel = "지원금 할인 적용가";
-    }
-  }
+  const type = resolveEffectiveSelectedPriceType(source, options);
+  const kindLabel = resolveSelectedPriceLabel(source, options);
 
   let amount =
     source?.selected_price != null && Number.isFinite(source.selected_price)
@@ -148,15 +234,19 @@ export function resolveClientMatchedQuoteLine(
   if (amount == null && type === "support_confirmed") amount = supportApplied ?? supportPlanned;
   if (amount == null) amount = supportApplied ?? supportPlanned ?? normal;
 
-  return { kindLabel: kindLabel || "일반견적가", amount };
+  return {
+    kindLabel: kindLabel || (type ? labelForSelectedPriceType(type) : LABEL_BY_TYPE.normal),
+    amount,
+  };
 }
 
 export function shouldHideSponsorSupportUiForMatch(
   source?: SelectedPriceSource | null,
   matched = true,
+  options?: SelectedPriceDisplayOptions,
 ): boolean {
   if (!matched) return false;
-  return isNormalPriceSelection(source);
+  return isNormalPriceSelection(source, options);
 }
 
 export function isSponsorSupportUnusedByNormalMatch(

@@ -8,12 +8,11 @@ import { LABEL, SUPPORT_UI } from "@/lib/partner-dashboard-labels";
 import type { PartnerCallLike } from "@/lib/partner-call-view-model";
 import { fmt } from "@/lib/partner-call-view-model";
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
+import type { SelectedPriceDisplayOptions } from "@/lib/selected-price-display";
 import {
   isNormalPriceSelection,
   isSupportPriceSelection,
-  resolveFinalPaymentPrice,
-  resolveSelectedPriceLabel,
-  resolveSelectedPriceType,
+  resolveClientMatchedQuoteLine,
 } from "@/lib/selected-price-display";
 
 function formatWon(value: number | null | undefined): string {
@@ -40,44 +39,29 @@ export function PartnerMatchedPricePanel({
   sponsorConfirmed: boolean;
 }) {
   const normalPrice = call.my_quote?.price ?? breakdown?.normalPrice ?? null;
-  const plannedPrice = breakdown?.supportDiscountPlannedPrice ?? call.my_quote?.member_price ?? null;
+  const plannedPrice = breakdown?.supportDiscountPlannedPrice ?? null;
   const appliedPrice =
     breakdown?.finalDiscountAppliedPrice ?? breakdown?.supportDiscountAppliedPrice ?? null;
 
-  const finalPay = resolveFinalPaymentPrice(call, {
+  const priceOptions: SelectedPriceDisplayOptions = {
     normalPrice,
     supportPlannedPrice: plannedPrice,
     supportAppliedPrice: appliedPrice,
-  });
-  const selectedType = resolveSelectedPriceType(call);
-  const hideSupport = isNormalPriceSelection(call);
+    supportConfirmed: sponsorConfirmed,
+  };
+  const { kindLabel, amount: matchedAmount } = resolveClientMatchedQuoteLine(call, priceOptions);
+  const hideSupport = isNormalPriceSelection(call, priceOptions);
 
   return (
     <div className="mt-3 space-y-2">
       <DetailRow label={LABEL.selectedPriceKind}>
-        {resolveSelectedPriceLabel(call) || LABEL.dash}
+        {[kindLabel, formatWon(matchedAmount)].filter((s) => s !== LABEL.dash && s !== "").join(" ") ||
+          LABEL.dash}
       </DetailRow>
-      <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-        <p className="text-[11px] font-bold text-emerald-800">{LABEL.finalPaymentPrice}</p>
-        <p className="mt-1 text-lg font-black text-emerald-950">{formatWon(finalPay)}</p>
-      </div>
 
       {!hideSupport && breakdown ? (
         <div className="space-y-2">
           <DetailRow label={LABEL.normalPrice}>{formatWon(normalPrice)}</DetailRow>
-          <DetailRow
-            label={
-              selectedType === "support_planned"
-                ? LABEL.supportDiscountPlannedPrice
-                : LABEL.supportDiscountAppliedPrice
-            }
-          >
-            {formatWon(
-              selectedType === "support_planned"
-                ? (plannedPrice ?? finalPay)
-                : (appliedPrice ?? finalPay),
-            )}
-          </DetailRow>
           <div className={`rounded-xl p-3 ring-1 ${SUPPORT_UI.planned}`}>
             <p className="text-[11px] font-bold">
               {sponsorConfirmed ? LABEL.totalConfirmedSupport : LABEL.totalPlannedSupport}
