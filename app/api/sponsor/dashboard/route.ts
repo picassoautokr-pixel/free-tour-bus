@@ -8,12 +8,29 @@ import {
   catalogFromSettings,
   parseDashboardSettings,
 } from "@/lib/sponsor-catalog";
+import { mapSponsorApplicationTripFields } from "@/lib/sponsor-application-map";
 import {
   normalizeStringArray,
   parseInteger,
   parseSponsorSupportType,
   safeText,
 } from "@/lib/sponsor";
+
+const APPLICATION_TRIP_SELECT_FULL =
+  "id, created_at, application_type, organization_type, organization_name, applicant_name, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
+
+const APPLICATION_TRIP_SELECT_BASE =
+  "id, created_at, application_type, organization_type, organization_name, applicant_name, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id";
+
+function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    /does not exist|column .* does not exist|could not find .* column|schema cache/i.test(
+      error?.message ?? "",
+    )
+  );
+}
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -104,15 +121,26 @@ export async function GET() {
   const ruleIds = [
     ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).sponsor_rule_id)).filter(Boolean)),
   ];
-  const [{ data: applicationRows }, { data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
-    applicationIds.length > 0
-      ? admin
-          .from("applications")
-          .select(
-            "id, created_at, application_type, organization_name, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, client_price_selection_kind, selected_price_type, selected_price_label, selected_price",
-          )
-          .in("id", applicationIds)
-      : Promise.resolve({ data: [] }),
+  let applicationRows: unknown[] = [];
+  if (applicationIds.length > 0) {
+    const applicationResultFull = await admin
+      .from("applications")
+      .select(APPLICATION_TRIP_SELECT_FULL)
+      .in("id", applicationIds);
+    const applicationResult =
+      isMissingColumnError(applicationResultFull.error)
+        ? await admin
+            .from("applications")
+            .select(APPLICATION_TRIP_SELECT_BASE)
+            .in("id", applicationIds)
+        : applicationResultFull;
+    if (applicationResult.error) {
+      return NextResponse.json({ error: applicationResult.error.message }, { status: 502 });
+    }
+    applicationRows = Array.isArray(applicationResult.data) ? applicationResult.data : [];
+  }
+
+  const [{ data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
     ruleIds.length > 0
       ? admin
           .from("sponsor_rules")
@@ -172,6 +200,7 @@ export async function GET() {
     const quoteStats =
       quoteStatsByApplication.get(applicationId) ??
       { quote_count: 0, sponsor_quote_count: 0, matched_quote_count: 0, final_quote_count: 0 };
+    const trip = mapSponsorApplicationTripFields(application, preapproval, rule);
     const row: SponsorCallRow = {
       id: safeText(preapproval.id),
       application_id: applicationId,
@@ -184,25 +213,25 @@ export async function GET() {
       support_kind: safeText(preapproval.support_kind) || undefined,
       support_form_kind: safeText(preapproval.support_form_kind) || undefined,
       support_condition_label: safeText(preapproval.support_condition_label) || undefined,
-      departure_region: safeText(application.departure_region),
-      departure: safeText(application.departure),
-      destination: safeText(application.destination),
-      stopovers: normalizeStringArray(application.stopovers),
-      departure_date: safeText(application.departure_date),
-      departure_time: safeText(application.departure_time),
-      passenger_count: parseInteger(preapproval.passenger_count) ?? parseInteger(application.passenger_count),
-      trip_type: safeText(application.trip_type),
-      bus_grade: safeText(application.bus_grade),
-      group_type: safeText(application.application_type) || safeText(rule.target_group),
-      quote_status: safeText(application.quote_status, "collecting"),
-      quote_deadline_at: safeText(application.quote_deadline_at),
-      quote_limit_count: parseInteger(application.quote_limit_count),
+      departure_region: trip.departure_region,
+      departure: trip.departure,
+      destination: trip.destination,
+      stopovers: trip.stopovers,
+      departure_date: trip.departure_date,
+      departure_time: trip.departure_time,
+      passenger_count: trip.passenger_count,
+      trip_type: trip.trip_type,
+      bus_grade: trip.bus_grade,
+      group_type: trip.group_type,
+      quote_status: trip.quote_status,
+      quote_deadline_at: trip.quote_deadline_at,
+      quote_limit_count: trip.quote_limit_count,
       final_selected_quote_id: safeText(application.final_selected_quote_id),
       selected_price_type: safeText(application.selected_price_type) || undefined,
       selected_price_label: safeText(application.selected_price_label) || undefined,
       selected_price: parseInteger(application.selected_price),
       client_price_selection_kind: safeText(application.client_price_selection_kind) || undefined,
-      organization_name: safeText(application.organization_name),
+      organization_name: trip.organization_name,
       quote_closed_at: safeText(application.quote_closed_at),
       estimated_support_amount: parseInteger(preapproval.estimated_support_amount) ?? 0,
       approved_support_amount: parseInteger(preapproval.approved_support_amount),

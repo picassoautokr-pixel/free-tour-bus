@@ -90,6 +90,67 @@ export function isApplicationMatched(source: {
 }
 
 /** 매칭 완료 후 일반견적가 선택 → 후원/지원 UI 숨김 */
+/** 클라이언트 매칭완료 — 매칭견적가 한 줄 (종류 + 금액) */
+export function resolveClientMatchedQuoteLine(
+  source: SelectedPriceSource | null | undefined,
+  options?: {
+    normalPrice?: number | null;
+    supportPlannedPrice?: number | null;
+    supportAppliedPrice?: number | null;
+    supportConfirmed?: boolean;
+  },
+): { kindLabel: string; amount: number | null } {
+  let kindLabel = resolveSelectedPriceLabel(source);
+  let type = resolveSelectedPriceType(source);
+
+  const normal = options?.normalPrice ?? null;
+  const supportPlanned = options?.supportPlannedPrice ?? null;
+  const supportApplied = options?.supportAppliedPrice ?? null;
+  const supportConfirmed = options?.supportConfirmed === true;
+
+  if (!type) {
+    if (source?.client_price_selection_kind === "normal_price_selected") {
+      type = "normal";
+    } else if (source?.client_price_selection_kind === "support_planned_selected") {
+      type = "support_planned";
+    } else if (source?.client_price_selection_kind === "support_price_selected") {
+      type = "support_confirmed";
+    } else if (
+      supportApplied != null &&
+      normal != null &&
+      supportApplied < normal
+    ) {
+      type = supportConfirmed ? "support_confirmed" : "support_planned";
+    } else if (normal != null) {
+      type = "normal";
+    }
+    if (!kindLabel && type) {
+      if (type === "normal") kindLabel = "일반견적가";
+      else if (type === "support_planned") kindLabel = "지원금 할인 예정가";
+      else if (type === "support_confirmed") kindLabel = "지원금 할인 적용가";
+    }
+  }
+
+  let amount =
+    source?.selected_price != null && Number.isFinite(source.selected_price)
+      ? Math.trunc(source.selected_price)
+      : null;
+
+  if (amount == null) {
+    amount = resolveFinalPaymentPrice(source, {
+      normalPrice: normal,
+      supportPlannedPrice: supportPlanned,
+      supportAppliedPrice: supportApplied,
+    });
+  }
+  if (amount == null && type === "normal") amount = normal;
+  if (amount == null && type === "support_planned") amount = supportPlanned ?? supportApplied;
+  if (amount == null && type === "support_confirmed") amount = supportApplied ?? supportPlanned;
+  if (amount == null) amount = supportApplied ?? supportPlanned ?? normal;
+
+  return { kindLabel: kindLabel || "일반견적가", amount };
+}
+
 export function shouldHideSponsorSupportUiForMatch(
   source?: SelectedPriceSource | null,
   matched = true,
