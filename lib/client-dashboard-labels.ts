@@ -64,7 +64,10 @@ export const LABEL = {
   matchWithNormal: "일반견적으로 매칭완료",
   matchWithSupportPlanned: "지원금 할인 예정가로 매칭완료",
   matchWithSupportApplied: "지원금 할인 적용가로 매칭완료",
-  selectedPriceKind: "선택 견적가",
+  /** @deprecated 매칭완료 섹션 제목 — matchedDetailTitle 사용 */
+  selectedPriceKind: "매칭견적가",
+  matchedPriceKind: "매칭견적가",
+  matchedDetailTitle: "매칭 세부내역",
   matchedAmount: "매칭금액",
   finalPaymentPrice: "최종 결제가격",
   memberQuote: "제휴기사 견적",
@@ -73,7 +76,8 @@ export const LABEL = {
   supportConfirmed: "지원금 확정",
   supportRejected: "지원금 미승인",
   generalQuote: "일반견적",
-  matchedPrice: "매칭견적가",
+  /** @deprecated — matchedDetailTitle 사용 */
+  matchedPrice: "매칭 세부내역",
   selectedNormal: "일반견적가 선택",
   selectedSupportPlanned: "지원금 할인 예정가 선택",
   selectedSupportApplied: "지원금 할인 적용가 선택",

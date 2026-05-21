@@ -156,7 +156,7 @@ export function ClientApplicationListItem({
 
           {tab === "matched" && selectedQuote ? (
             <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
-              <p className="text-sm font-black text-emerald-950">{LABEL.matchedPrice}</p>
+              <p className="text-sm font-black text-emerald-950">{LABEL.matchedDetailTitle}</p>
               <ClientMatchedPricePanel application={application} selectedQuote={selectedQuote} />
               {revealed ? (
                 <div className="mt-4 space-y-2 rounded-xl bg-white p-3 ring-1 ring-emerald-100">

@@ -37,6 +37,13 @@ import {
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
+/** 매칭완료 탭 — 매칭 세부내역 영역 표시 용어 */
+export const CLIENT_MATCHED_DETAIL_LABEL = {
+  sectionTitle: LABEL.matchedDetailTitle,
+  matchedPriceKind: LABEL.matchedPriceKind,
+  finalPaymentPrice: LABEL.finalPaymentPrice,
+} as const;
+
 /** API 견적 응답 — 제휴기사 필수 지원금 숫자 필드 보강 후 normalize */
 function normalizeClientApplicationFromApi(app: ClientApplication): ClientApplication {
   const withQuotes: ClientApplication = {
