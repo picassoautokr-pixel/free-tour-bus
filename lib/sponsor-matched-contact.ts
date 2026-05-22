@@ -11,8 +11,9 @@ export type DebugContactLookupError = {
 } | null;
 
 export type DebugContactLookup = {
-  final_selected_quote_id: string;
+  application_id: string;
   sponsor_preapproval_id: string;
+  final_selected_quote_id: string;
   lookup_map_key: string;
   application_id_from_preapproval: string;
   application_row_id: string;
@@ -22,6 +23,7 @@ export type DebugContactLookup = {
   driver_quote_error: DebugContactLookupError;
   driver_quote_count: number;
   tried_driver_quotes_by_application_id: boolean;
+  tried_application_id_values: string[];
   application_id_candidates: Array<{ label: string; value: string }>;
   fetched_driver_quote_by_application_id: Record<string, unknown> | null;
   driver_quote_by_application_id_error: DebugContactLookupError;
@@ -34,6 +36,13 @@ export type DebugContactLookup = {
   partner_driver_error: DebugContactLookupError;
   fetched_profile: Record<string, unknown> | null;
   profile_error: DebugContactLookupError;
+  application_fetch_error: DebugContactLookupError;
+  fetched_application_contact: Record<string, unknown> | null;
+  popup_customer_name: string;
+  popup_customer_phone: string;
+  popup_driver_company: string;
+  popup_driver_name: string;
+  popup_driver_phone: string;
 };
 
 export type SponsorMatchedContactDebug = {
@@ -93,6 +102,12 @@ const PARTNER_DRIVER_SELECT_CANDIDATES = [
 ];
 
 const PROFILE_SELECT = "user_id, name, phone, email, role, partner_driver_id";
+
+const APPLICATION_CONTACT_SELECT_CANDIDATES = [
+  "id, customer_name, name, applicant_name, organization_name, group_name, phone, customer_phone, contact_phone, user_phone, applicant_phone, mobile, final_selected_quote_id, final_selected_quote_source, final_selected_guest_quote_id",
+  "id, applicant_name, organization_name, phone, final_selected_quote_id, final_selected_quote_source",
+  "id, applicant_name, phone, final_selected_quote_id, final_selected_quote_source",
+];
 
 function pickText(
   sources: Array<Record<string, unknown> | null | undefined>,
@@ -447,8 +462,8 @@ export function buildApplicationDebugFields(
       safeText(application.name) ||
       safeText(application.applicant_name),
     customer_phone: pickText([application], [
-      "customer_phone",
       "phone",
+      "customer_phone",
       "contact_phone",
       "user_phone",
       "applicant_phone",
@@ -529,8 +544,8 @@ export function resolveSponsorCustomerInfoPopup(params: {
 
   const customerPhone =
     pickText([app], [
-      "customer_phone",
       "phone",
+      "customer_phone",
       "contact_phone",
       "user_phone",
       "applicant_phone",
@@ -607,122 +622,279 @@ async function resolveGuestQuoteIfNeeded(
   return { guestQuote, isGuestQuote: Boolean(guestQuote) };
 }
 
+/** applications.id로 고객 연락처 원본 재조회 */
+export async function fetchApplicationContactById(
+  admin: SupabaseClient,
+  applicationId: string,
+): Promise<{
+  row: Record<string, unknown> | null;
+  error: DebugContactLookupError;
+}> {
+  const id = applicationId.trim();
+  if (!id) {
+    return {
+      row: null,
+      error: { message: "application_id empty", code: null, details: null, hint: null },
+    };
+  }
+
+  let lastError: DebugContactLookupError = null;
+  for (const select of APPLICATION_CONTACT_SELECT_CANDIDATES) {
+    const r = await admin.from("applications").select(select).eq("id", id).maybeSingle();
+    if (!r.error && r.data) {
+      return { row: r.data as unknown as Record<string, unknown>, error: null };
+    }
+    lastError = formatLookupError(r.error);
+    if (!isMissingColumnError(r.error)) break;
+  }
+  return { row: null, error: lastError };
+}
+
+export function buildEmptyDebugContactLookup(params: {
+  applicationId: string;
+  sponsorPreapprovalId: string;
+  finalQuoteId: string;
+  mapKey: string;
+  reason: string;
+}): DebugContactLookup {
+  return {
+    application_id: params.applicationId,
+    sponsor_preapproval_id: params.sponsorPreapprovalId,
+    final_selected_quote_id: params.finalQuoteId,
+    lookup_map_key: params.mapKey,
+    application_id_from_preapproval: params.applicationId,
+    application_row_id: "",
+    tried_driver_quotes_by_id: false,
+    driver_quote_select_used: null,
+    fetched_driver_quote: null,
+    driver_quote_error: {
+      message: params.reason,
+      code: null,
+      details: null,
+      hint: null,
+    },
+    driver_quote_count: 0,
+    tried_driver_quotes_by_application_id: false,
+    tried_application_id_values: [
+      params.finalQuoteId,
+      params.applicationId,
+      params.sponsorPreapprovalId,
+    ].filter(Boolean),
+    application_id_candidates: [],
+    fetched_driver_quote_by_application_id: null,
+    driver_quote_by_application_id_error: null,
+    driver_quote_by_application_id_matched_via: null,
+    driver_quote_by_application_id_count: 0,
+    resolved_driver_quote_source: null,
+    tried_partner_driver_id: null,
+    tried_auth_user_id: null,
+    fetched_partner_driver: null,
+    partner_driver_error: null,
+    fetched_profile: null,
+    profile_error: null,
+    application_fetch_error: null,
+    fetched_application_contact: null,
+    popup_customer_name: "고객명 미등록",
+    popup_customer_phone: "전화번호 미등록",
+    popup_driver_company: "업체명 미등록",
+    popup_driver_name: "기사명 미등록",
+    popup_driver_phone: "전화번호 미등록",
+  };
+}
+
+/** 스폰서 콜 1건 — debug_contact_lookup 항상 반환 */
+export async function resolveSponsorCallContact(
+  admin: SupabaseClient,
+  input: SponsorContactLookupInput,
+): Promise<SponsorMatchedContactBundle & { mapKey: string }> {
+  const applicationId = safeText(input.applicationId);
+  const sponsorPreapprovalId = safeText(input.sponsorPreapprovalId);
+  const mapKey = safeText(input.mapKey) || applicationId;
+
+  const { row: fetchedApp, error: applicationFetchError } = await fetchApplicationContactById(
+    admin,
+    applicationId,
+  );
+
+  const app: Record<string, unknown> = {
+    ...input.applicationRow,
+    ...(fetchedApp ?? {}),
+  };
+
+  const finalQuoteId =
+    safeText(input.finalSelectedQuoteId) || safeText(app.final_selected_quote_id);
+
+  if (!finalQuoteId) {
+    const emptyLookup = buildEmptyDebugContactLookup({
+      applicationId,
+      sponsorPreapprovalId,
+      finalQuoteId: "",
+      mapKey,
+      reason: "final_selected_quote_id 없음",
+    });
+    emptyLookup.application_fetch_error = applicationFetchError;
+    emptyLookup.fetched_application_contact = fetchedApp;
+    return {
+      mapKey,
+      debug: {
+        debug_contact_lookup: emptyLookup,
+        final_selected_quote_id: "",
+        fetched_driver_quote: null,
+        fetched_partner_driver: null,
+        fetched_profile: null,
+        fetched_guest_quote: null,
+        application: buildApplicationDebugFields(app, applicationId, sponsorPreapprovalId),
+        driver_quote: null,
+        guest_driver_quote: null,
+        partner_driver: null,
+        profile: null,
+        popup_customer_name: emptyLookup.popup_customer_name,
+        popup_customer_phone: emptyLookup.popup_customer_phone,
+        popup_driver_company: emptyLookup.popup_driver_company,
+        popup_driver_name: emptyLookup.popup_driver_name,
+        popup_driver_phone: emptyLookup.popup_driver_phone,
+        data_source: "none",
+      },
+      popup: {
+        customer_name: emptyLookup.popup_customer_name,
+        customer_phone: emptyLookup.popup_customer_phone,
+        driver_company: emptyLookup.popup_driver_company,
+        driver_name: emptyLookup.popup_driver_name,
+        driver_phone: emptyLookup.popup_driver_phone,
+        data_source: "none",
+      },
+      quote: null,
+      matched_driver: null,
+      debug_contact_lookup: emptyLookup,
+    };
+  }
+
+  const triedApplicationIdValues = uniqueCandidates([
+    { label: "final_selected_quote_id(debug only)", value: finalQuoteId },
+    { label: "call.application_id", value: applicationId },
+    { label: "call.id(sponsor_preapproval)", value: sponsorPreapprovalId },
+  ]).map((c) => c.value);
+
+  const byId = await lookupDriverQuoteById(admin, finalQuoteId);
+
+  let driverQuote = byId.quote;
+  let resolvedSource = driverQuote ? "driver_quotes.by_id" : null;
+
+  const appIdCandidates = uniqueCandidates([
+    { label: "call.application_id", value: applicationId },
+    { label: "call.id(sponsor_preapproval)", value: sponsorPreapprovalId },
+    { label: "application.id(row)", value: safeText(app.id) },
+  ]);
+
+  const byApp = await lookupDriverQuoteByApplicationIds(admin, appIdCandidates);
+  if (!driverQuote && byApp.quote) {
+    driverQuote = byApp.quote;
+    resolvedSource = `driver_quotes.by_application_id:${byApp.lookup.driver_quote_by_application_id_matched_via}`;
+  }
+
+  const source = safeText(app.final_selected_quote_source);
+  const explicitGuestId = safeText(app.final_selected_guest_quote_id);
+  const { guestQuote, isGuestQuote } = await resolveGuestQuoteIfNeeded(
+    admin,
+    finalQuoteId,
+    driverQuote,
+    explicitGuestId,
+    source,
+  );
+
+  const effectiveQuote = isGuestQuote ? guestQuote : driverQuote;
+
+  const { partner, profile, lookup: partnerLookup } = await lookupPartnerDriver(
+    admin,
+    isGuestQuote ? null : driverQuote,
+  );
+
+  const matchedDriver = buildMatchedDriverRecord(partner, profile);
+  const applicationDebug = buildApplicationDebugFields(
+    app,
+    applicationId,
+    sponsorPreapprovalId,
+  );
+
+  const popup = resolveSponsorCustomerInfoPopup({
+    application: { ...app, ...applicationDebug },
+    driverQuote: isGuestQuote ? null : driverQuote,
+    guestQuote,
+    matchedDriver,
+    profile,
+    isGuestQuote,
+  });
+
+  const debugContactLookup: DebugContactLookup = {
+    application_id: applicationId,
+    sponsor_preapproval_id: sponsorPreapprovalId,
+    final_selected_quote_id: finalQuoteId,
+    lookup_map_key: mapKey,
+    application_id_from_preapproval: applicationId,
+    application_row_id: safeText(app.id),
+    ...byId.lookup,
+    ...byApp.lookup,
+    tried_application_id_values: triedApplicationIdValues,
+    resolved_driver_quote_source: resolvedSource,
+    ...partnerLookup,
+    application_fetch_error: applicationFetchError,
+    fetched_application_contact: fetchedApp,
+    popup_customer_name: popup.customer_name,
+    popup_customer_phone: popup.customer_phone,
+    popup_driver_company: popup.driver_company,
+    popup_driver_name: popup.driver_name,
+    popup_driver_phone: popup.driver_phone,
+  };
+
+  const enrichedApplication = {
+    ...applicationDebug,
+    customer_name: popup.customer_name,
+    customer_phone: popup.customer_phone,
+    driver_name: popup.driver_name,
+    driver_phone: popup.driver_phone,
+    driver_company_name: popup.driver_company,
+  };
+
+  const debug: SponsorMatchedContactDebug = {
+    debug_contact_lookup: debugContactLookup,
+    final_selected_quote_id: finalQuoteId,
+    fetched_driver_quote: driverQuote,
+    fetched_partner_driver: partner,
+    fetched_profile: partnerLookup.fetched_profile,
+    fetched_guest_quote: guestQuote,
+    application: enrichedApplication,
+    driver_quote: isGuestQuote ? null : driverQuote,
+    guest_driver_quote: guestQuote,
+    partner_driver: partner,
+    profile: partnerLookup.fetched_profile,
+    popup_customer_name: popup.customer_name,
+    popup_customer_phone: popup.customer_phone,
+    popup_driver_company: popup.driver_company,
+    popup_driver_name: popup.driver_name,
+    popup_driver_phone: popup.driver_phone,
+    data_source: popup.data_source,
+  };
+
+  return {
+    mapKey,
+    debug,
+    popup,
+    quote: effectiveQuote,
+    matched_driver: matchedDriver,
+    debug_contact_lookup: debugContactLookup,
+  };
+}
+
 /** 스폰서 콜별 연락처 조회 — debug_contact_lookup에 실제 DB 오류 포함 */
 export async function loadMatchedContactsForSponsorCalls(
   admin: SupabaseClient,
   inputs: SponsorContactLookupInput[],
 ): Promise<Map<string, SponsorMatchedContactBundle>> {
   const out = new Map<string, SponsorMatchedContactBundle>();
-
-  for (const input of inputs) {
-    const finalQuoteId = safeText(input.finalSelectedQuoteId);
-    if (!finalQuoteId) continue;
-
-    const app = input.applicationRow;
-    const applicationId = safeText(input.applicationId);
-    const mapKey = safeText(input.mapKey) || applicationId;
-    const sponsorPreapprovalId = safeText(input.sponsorPreapprovalId);
-
-    const byId = await lookupDriverQuoteById(admin, finalQuoteId);
-
-    let driverQuote = byId.quote;
-    let resolvedSource = driverQuote ? "driver_quotes.by_id" : null;
-
-    const appIdCandidates = uniqueCandidates([
-      { label: "preapproval.application_id", value: applicationId },
-      { label: "application.id", value: safeText(app.id) },
-      { label: "sponsor_preapproval.id", value: sponsorPreapprovalId },
-    ]);
-
-    const byApp = await lookupDriverQuoteByApplicationIds(admin, appIdCandidates);
-    if (!driverQuote && byApp.quote) {
-      driverQuote = byApp.quote;
-      resolvedSource = `driver_quotes.by_application_id:${byApp.lookup.driver_quote_by_application_id_matched_via}`;
-    }
-
-    const source = safeText(app.final_selected_quote_source);
-    const explicitGuestId = safeText(app.final_selected_guest_quote_id);
-    const { guestQuote, isGuestQuote } = await resolveGuestQuoteIfNeeded(
-      admin,
-      finalQuoteId,
-      driverQuote,
-      explicitGuestId,
-      source,
-    );
-
-    const effectiveQuote = isGuestQuote ? guestQuote : driverQuote;
-
-    const { partner, profile, lookup: partnerLookup } = await lookupPartnerDriver(
-      admin,
-      isGuestQuote ? null : driverQuote,
-    );
-
-    const debugContactLookup: DebugContactLookup = {
-      final_selected_quote_id: finalQuoteId,
-      sponsor_preapproval_id: sponsorPreapprovalId,
-      lookup_map_key: mapKey,
-      application_id_from_preapproval: applicationId,
-      application_row_id: safeText(app.id),
-      ...byId.lookup,
-      ...byApp.lookup,
-      resolved_driver_quote_source: resolvedSource,
-      ...partnerLookup,
-    };
-
-    const matchedDriver = buildMatchedDriverRecord(partner, profile);
-    const applicationDebug = buildApplicationDebugFields(
-      app,
-      applicationId,
-      sponsorPreapprovalId,
-    );
-
-    const popup = resolveSponsorCustomerInfoPopup({
-      application: { ...app, ...applicationDebug },
-      driverQuote: isGuestQuote ? null : driverQuote,
-      guestQuote,
-      matchedDriver,
-      profile,
-      isGuestQuote,
-    });
-
-    const enrichedApplication = {
-      ...applicationDebug,
-      customer_name: popup.customer_name,
-      customer_phone: popup.customer_phone,
-      driver_name: popup.driver_name,
-      driver_phone: popup.driver_phone,
-      driver_company_name: popup.driver_company,
-    };
-
-    const debug: SponsorMatchedContactDebug = {
-      debug_contact_lookup: debugContactLookup,
-      final_selected_quote_id: finalQuoteId,
-      fetched_driver_quote: driverQuote,
-      fetched_partner_driver: partner,
-      fetched_profile: partnerLookup.fetched_profile,
-      fetched_guest_quote: guestQuote,
-      application: enrichedApplication,
-      driver_quote: isGuestQuote ? null : driverQuote,
-      guest_driver_quote: guestQuote,
-      partner_driver: partner,
-      profile: partnerLookup.fetched_profile,
-      popup_customer_name: popup.customer_name,
-      popup_customer_phone: popup.customer_phone,
-      popup_driver_company: popup.driver_company,
-      popup_driver_name: popup.driver_name,
-      popup_driver_phone: popup.driver_phone,
-      data_source: popup.data_source,
-    };
-
-    out.set(mapKey, {
-      debug,
-      popup,
-      quote: effectiveQuote,
-      matched_driver: matchedDriver,
-      debug_contact_lookup: debugContactLookup,
-    });
+  const bundles = await Promise.all(inputs.map((input) => resolveSponsorCallContact(admin, input)));
+  for (const bundle of bundles) {
+    out.set(bundle.mapKey, bundle);
   }
-
   return out;
 }
 

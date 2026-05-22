@@ -69,4 +69,19 @@ describe("resolveSponsorCustomerInfoPopup", () => {
     assert.equal(popup.customer_name, "안현정");
     assert.equal(popup.customer_phone, "010-1234-5678");
   });
+
+  it("prefers applications.phone over customer_phone", () => {
+    const popup = resolveSponsorCustomerInfoPopup({
+      application: {
+        customer_phone: "010-0000-0000",
+        phone: "010-9999-1111",
+      },
+      driverQuote: null,
+      guestQuote: null,
+      matchedDriver: null,
+      profile: null,
+      isGuestQuote: false,
+    });
+    assert.equal(popup.customer_phone, "010-9999-1111");
+  });
 });

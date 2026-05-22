@@ -9,7 +9,10 @@ import {
   parseDashboardSettings,
 } from "@/lib/sponsor-catalog";
 import { mapSponsorApplicationTripFields } from "@/lib/sponsor-application-map";
-import { loadMatchedContactsForSponsorCalls } from "@/lib/sponsor-matched-contact";
+import {
+  buildEmptyDebugContactLookup,
+  loadMatchedContactsForSponsorCalls,
+} from "@/lib/sponsor-matched-contact";
 import { DEFAULT_SPONSOR_RULE_TITLE } from "@/lib/sponsor-rule-helpers";
 import { sponsorRuleIsInUse } from "@/lib/sponsor-rule-usage";
 import {
@@ -178,22 +181,6 @@ export async function GET() {
     return NextResponse.json({ error: applicationFetchError }, { status: 502 });
   }
 
-  const matchedContactByAppId = await loadMatchedContactsForSponsorCalls(
-    admin,
-    preapprovals.map((raw) => {
-      const preapproval = raw as Record<string, unknown>;
-      const applicationId = safeText(preapproval.application_id);
-      const application = applicationRecords.find((row) => safeText(row.id) === applicationId) ?? {};
-      return {
-        mapKey: applicationId,
-        applicationRow: application,
-        applicationId,
-        sponsorPreapprovalId: safeText(preapproval.id),
-        finalSelectedQuoteId: safeText(application.final_selected_quote_id),
-      };
-    }),
-  );
-
   const [{ data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
     ruleIds.length > 0
       ? admin
@@ -212,6 +199,23 @@ export async function GET() {
   const applicationById = new Map(
     applicationRecords.map((row) => [safeText(row.id), row]),
   );
+
+  const matchedContactByAppId = await loadMatchedContactsForSponsorCalls(
+    admin,
+    preapprovals.map((raw) => {
+      const preapproval = raw as Record<string, unknown>;
+      const applicationId = safeText(preapproval.application_id);
+      const application = applicationById.get(applicationId) ?? {};
+      return {
+        mapKey: applicationId,
+        applicationRow: application,
+        applicationId,
+        sponsorPreapprovalId: safeText(preapproval.id),
+        finalSelectedQuoteId: safeText(application.final_selected_quote_id),
+      };
+    }),
+  );
+
   const ruleTitleById = new Map(
     (Array.isArray(matchedRuleRows) ? matchedRuleRows : []).map((row) => [
       safeText((row as Record<string, unknown>).id),
@@ -256,6 +260,15 @@ export async function GET() {
     const matchCompleted = Boolean(finalQuoteId);
     const contactBundle = matchedContactByAppId.get(applicationId);
     const popup = contactBundle?.popup;
+    const debugContactLookup =
+      contactBundle?.debug_contact_lookup ??
+      buildEmptyDebugContactLookup({
+        applicationId,
+        sponsorPreapprovalId: safeText(preapproval.id),
+        finalQuoteId,
+        mapKey: applicationId,
+        reason: "contact lookup map miss",
+      });
     const row: SponsorCallRow = {
       id: safeText(preapproval.id),
       application_id: applicationId,
@@ -307,21 +320,21 @@ export async function GET() {
       sponsor_quote_count: quoteStats.sponsor_quote_count,
       matched_quote_count: quoteStats.matched_quote_count,
       final_quote_count: quoteStats.final_quote_count,
-      customer_name: matchCompleted && popup ? popup.customer_name : "",
-      customer_phone: matchCompleted && popup ? popup.customer_phone : "",
-      driver_name: matchCompleted && popup ? popup.driver_name : "",
-      driver_phone: matchCompleted && popup ? popup.driver_phone : "",
-      driver_company: matchCompleted && popup ? popup.driver_company : "",
-      driver_company_name: matchCompleted && popup ? popup.driver_company : "",
-      quote: matchCompleted ? contactBundle?.quote ?? null : null,
-      matched_driver: matchCompleted ? contactBundle?.matched_driver ?? null : null,
-      popup_customer_name: popup?.customer_name,
-      popup_customer_phone: popup?.customer_phone,
-      popup_driver_company: popup?.driver_company,
-      popup_driver_name: popup?.driver_name,
-      popup_driver_phone: popup?.driver_phone,
+      customer_name: popup?.customer_name ?? debugContactLookup.popup_customer_name,
+      customer_phone: popup?.customer_phone ?? debugContactLookup.popup_customer_phone,
+      driver_name: popup?.driver_name ?? debugContactLookup.popup_driver_name,
+      driver_phone: popup?.driver_phone ?? debugContactLookup.popup_driver_phone,
+      driver_company: popup?.driver_company ?? debugContactLookup.popup_driver_company,
+      driver_company_name: popup?.driver_company ?? debugContactLookup.popup_driver_company,
+      quote: contactBundle?.quote ?? debugContactLookup.fetched_driver_quote ?? debugContactLookup.fetched_driver_quote_by_application_id ?? null,
+      matched_driver: contactBundle?.matched_driver ?? debugContactLookup.fetched_partner_driver ?? null,
+      popup_customer_name: debugContactLookup.popup_customer_name,
+      popup_customer_phone: debugContactLookup.popup_customer_phone,
+      popup_driver_company: debugContactLookup.popup_driver_company,
+      popup_driver_name: debugContactLookup.popup_driver_name,
+      popup_driver_phone: debugContactLookup.popup_driver_phone,
       contact_data_source: popup?.data_source,
-      debug_contact_lookup: contactBundle?.debug_contact_lookup ?? null,
+      debug_contact_lookup: debugContactLookup,
       matched_contact_debug: contactBundle?.debug ?? null,
     };
     return row;

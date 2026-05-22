@@ -816,31 +816,35 @@ export function buildQuoteDebugReport(ctx: QuoteDebugContext): QuoteDebugReport 
     generatedAt: new Date().toISOString(),
     sections,
     errors,
-    raw: {
-      application: app,
-      quote,
-      matched_driver: ctx.matched_driver ?? null,
-      sponsor_support: ctx.sponsorPreapproval ?? null,
-      support_breakdown: breakdownRecord,
-      sponsor_rule: ctx.sponsorRule ?? null,
-      ...(ctx.role === "sponsor"
+    raw:
+      ctx.role === "sponsor"
         ? {
             debug_contact_lookup: ctx.debug_contact_lookup ?? null,
-            final_selected_quote_id: String(app.final_selected_quote_id ?? "").trim() || null,
+            quote,
+            matched_driver: ctx.matched_driver ?? null,
             fetched_driver_quote: ctx.quote ?? null,
             fetched_partner_driver: ctx.matched_driver ?? null,
-            fetched_profile:
-              (app.fetched_profile as Record<string, unknown> | null | undefined) ?? null,
-            popup_customer_name: String(app.popup_customer_name ?? app.customer_name ?? "").trim() || null,
+            popup_customer_name:
+              String(app.popup_customer_name ?? app.customer_name ?? "").trim() || null,
             popup_customer_phone:
               String(app.popup_customer_phone ?? app.customer_phone ?? "").trim() || null,
             popup_driver_company:
               String(app.popup_driver_company ?? app.driver_company_name ?? "").trim() || null,
             popup_driver_name: String(app.popup_driver_name ?? app.driver_name ?? "").trim() || null,
             popup_driver_phone: String(app.popup_driver_phone ?? app.driver_phone ?? "").trim() || null,
+            application: app,
+            sponsor_support: ctx.sponsorPreapproval ?? null,
+            support_breakdown: breakdownRecord,
+            sponsor_rule: ctx.sponsorRule ?? null,
           }
-        : {}),
-    },
+        : {
+            application: app,
+            quote,
+            matched_driver: ctx.matched_driver ?? null,
+            sponsor_support: ctx.sponsorPreapproval ?? null,
+            support_breakdown: breakdownRecord,
+            sponsor_rule: ctx.sponsorRule ?? null,
+          },
   };
 }
 

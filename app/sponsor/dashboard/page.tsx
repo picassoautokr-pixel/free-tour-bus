@@ -727,12 +727,14 @@ export default function SponsorDashboardPage() {
                 <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
                   <dt className="text-[11px] font-bold text-emerald-700">{LABEL.customer}</dt>
                   <dd className="mt-1 font-black">
-                    {customerDetailCall.popup_customer_name ||
+                    {customerDetailCall.debug_contact_lookup?.popup_customer_name ||
+                      customerDetailCall.popup_customer_name ||
                       customerDetailCall.customer_name ||
                       LABEL.dash}
                   </dd>
                   <dd className="mt-1 font-semibold">
-                    {customerDetailCall.popup_customer_phone ||
+                    {customerDetailCall.debug_contact_lookup?.popup_customer_phone ||
+                      customerDetailCall.popup_customer_phone ||
                       customerDetailCall.customer_phone ||
                       LABEL.dash}
                   </dd>
@@ -743,18 +745,21 @@ export default function SponsorDashboardPage() {
                   customerDetailCall.driver_company ||
                   customerDetailCall.driver_company_name ? (
                     <dd className="mt-1 text-xs font-bold text-blue-800">
-                      {customerDetailCall.popup_driver_company ||
+                      {customerDetailCall.debug_contact_lookup?.popup_driver_company ||
+                        customerDetailCall.popup_driver_company ||
                         customerDetailCall.driver_company ||
                         customerDetailCall.driver_company_name}
                     </dd>
                   ) : null}
                   <dd className="mt-1 font-black">
-                    {customerDetailCall.popup_driver_name ||
+                    {customerDetailCall.debug_contact_lookup?.popup_driver_name ||
+                      customerDetailCall.popup_driver_name ||
                       customerDetailCall.driver_name ||
                       LABEL.dash}
                   </dd>
                   <dd className="mt-1 font-semibold">
-                    {customerDetailCall.popup_driver_phone ||
+                    {customerDetailCall.debug_contact_lookup?.popup_driver_phone ||
+                      customerDetailCall.popup_driver_phone ||
                       customerDetailCall.driver_phone ||
                       LABEL.dash}
                   </dd>
