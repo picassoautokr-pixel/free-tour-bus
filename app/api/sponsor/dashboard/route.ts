@@ -10,6 +10,10 @@ import {
 } from "@/lib/sponsor-catalog";
 import { mapSponsorApplicationTripFields } from "@/lib/sponsor-application-map";
 import {
+  DEFAULT_SPONSOR_RULE_PATCH,
+  DEFAULT_SPONSOR_RULE_TITLE,
+} from "@/lib/sponsor-rule-helpers";
+import {
   normalizeStringArray,
   parseInteger,
   parseSponsorSupportType,
@@ -113,7 +117,25 @@ export async function GET() {
       .limit(80),
   ]);
 
-  const rules = Array.isArray(ruleRows) ? ruleRows : [];
+  let rules = Array.isArray(ruleRows) ? ruleRows : [];
+  const hasDefaultRule = rules.some(
+    (raw) => safeText((raw as Record<string, unknown>).title) === DEFAULT_SPONSOR_RULE_TITLE,
+  );
+  if (!hasDefaultRule) {
+    const { data: insertedDefault, error: defaultErr } = await admin
+      .from("sponsor_rules")
+      .insert({
+        sponsor_company_id: company.id,
+        ...DEFAULT_SPONSOR_RULE_PATCH,
+        service_regions: [],
+        memo: "",
+      })
+      .select("*")
+      .single();
+    if (!defaultErr && insertedDefault) {
+      rules = [insertedDefault, ...rules];
+    }
+  }
   const preapprovals = Array.isArray(preapprovalRows) ? preapprovalRows : [];
   const applicationIds = [
     ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).application_id)).filter(Boolean)),
@@ -140,7 +162,15 @@ export async function GET() {
     applicationRows = Array.isArray(applicationResult.data) ? applicationResult.data : [];
   }
 
-  const [{ data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
+  const finalQuoteIds = [
+    ...new Set(
+      (Array.isArray(applicationRows) ? applicationRows : [])
+        .map((row) => safeText((row as Record<string, unknown>).final_selected_quote_id))
+        .filter(Boolean),
+    ),
+  ];
+  const [{ data: matchedRuleRows }, { data: quoteRows }, { data: finalQuoteRows }] =
+    await Promise.all([
     ruleIds.length > 0
       ? admin
           .from("sponsor_rules")
@@ -153,7 +183,40 @@ export async function GET() {
           .select("application_id, sponsor_quote_enabled, status")
           .in("application_id", applicationIds)
       : Promise.resolve({ data: [] }),
+    finalQuoteIds.length > 0
+      ? admin
+          .from("driver_quotes")
+          .select("id, application_id, partner_driver_id, auth_user_id")
+          .in("id", finalQuoteIds)
+      : Promise.resolve({ data: [] }),
   ]);
+
+  const partnerDriverIds = [
+    ...new Set(
+      (Array.isArray(finalQuoteRows) ? finalQuoteRows : [])
+        .map((raw) => safeText((raw as Record<string, unknown>).partner_driver_id))
+        .filter(Boolean),
+    ),
+  ];
+  const { data: partnerDriverRows } =
+    partnerDriverIds.length > 0
+      ? await admin
+          .from("partner_drivers")
+          .select("id, name, phone")
+          .in("id", partnerDriverIds)
+      : { data: [] };
+  const driverByPartnerId = new Map(
+    (Array.isArray(partnerDriverRows) ? partnerDriverRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
+    ]),
+  );
+  const finalQuoteById = new Map(
+    (Array.isArray(finalQuoteRows) ? finalQuoteRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
+    ]),
+  );
 
   const applicationById = new Map(
     (Array.isArray(applicationRows) ? applicationRows : []).map((row) => [
@@ -201,6 +264,11 @@ export async function GET() {
       quoteStatsByApplication.get(applicationId) ??
       { quote_count: 0, sponsor_quote_count: 0, matched_quote_count: 0, final_quote_count: 0 };
     const trip = mapSponsorApplicationTripFields(application, preapproval, rule);
+    const finalQuoteId = safeText(application.final_selected_quote_id);
+    const finalQuote = finalQuoteById.get(finalQuoteId);
+    const partnerDriver = finalQuote
+      ? driverByPartnerId.get(safeText(finalQuote.partner_driver_id))
+      : null;
     const row: SponsorCallRow = {
       id: safeText(preapproval.id),
       application_id: applicationId,
@@ -249,6 +317,10 @@ export async function GET() {
       sponsor_quote_count: quoteStats.sponsor_quote_count,
       matched_quote_count: quoteStats.matched_quote_count,
       final_quote_count: quoteStats.final_quote_count,
+      customer_name: safeText(application.applicant_name),
+      customer_phone: safeText(application.phone),
+      driver_name: safeText(partnerDriver?.name),
+      driver_phone: safeText(partnerDriver?.phone),
     };
     return row;
   });
@@ -288,7 +360,8 @@ export async function POST(request: Request) {
   const payload = (body.payload ?? {}) as Record<string, unknown>;
 
   if (type === "rule") {
-    const patch = {
+    const targetGroups = normalizeStringArray(payload.target_groups);
+    const patch: Record<string, unknown> = {
       sponsor_company_id: company.id,
       title: safeText(payload.title),
       service_regions: normalizeStringArray(payload.service_regions),
@@ -297,18 +370,58 @@ export async function POST(request: Request) {
       max_support_amount: parseInteger(payload.max_support_amount) ?? 0,
       min_passenger_count: parseInteger(payload.min_passenger_count),
       max_passenger_count: parseInteger(payload.max_passenger_count),
-      target_group: safeText(payload.target_group),
+      target_group: targetGroups[0] ?? safeText(payload.target_group),
       support_condition: safeText(payload.support_condition),
       support_type: parseSponsorSupportType(payload.support_type),
       daily_budget: parseInteger(payload.daily_budget),
       monthly_budget: parseInteger(payload.monthly_budget),
       is_active: payload.is_active !== false,
       memo: safeText(payload.memo),
+      target_groups: targetGroups.length > 0 ? targetGroups : null,
     };
-    const query = id
+    let query = id
       ? admin.from("sponsor_rules").update(patch).eq("id", id).eq("sponsor_company_id", company.id)
       : admin.from("sponsor_rules").insert(patch);
-    const { error } = await query;
+    let { error } = await query;
+    if (error && /target_groups|does not exist|42703/i.test(error.message)) {
+      const legacy = { ...patch };
+      delete legacy.target_groups;
+      query = id
+        ? admin.from("sponsor_rules").update(legacy).eq("id", id).eq("sponsor_company_id", company.id)
+        : admin.from("sponsor_rules").insert(legacy);
+      ({ error } = await query);
+    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (type === "rule_delete") {
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+    const { data: target } = await admin
+      .from("sponsor_rules")
+      .select("title")
+      .eq("id", id)
+      .eq("sponsor_company_id", company.id)
+      .maybeSingle();
+    if (safeText((target as Record<string, unknown> | null)?.title) === DEFAULT_SPONSOR_RULE_TITLE) {
+      return NextResponse.json({ error: "기본지원은 삭제할 수 없습니다." }, { status: 400 });
+    }
+    const { error } = await admin
+      .from("sponsor_rules")
+      .delete()
+      .eq("id", id)
+      .eq("sponsor_company_id", company.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (type === "staff_delete") {
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+    const { error } = await admin
+      .from("sponsor_staff")
+      .delete()
+      .eq("id", id)
+      .eq("sponsor_company_id", company.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 502 });
     return NextResponse.json({ ok: true });
   }

@@ -69,6 +69,7 @@ export async function approveSponsorPreapproval(
     supportKind?: unknown;
     supportFormKind?: unknown;
     supportConditionLabel?: unknown;
+    sponsorRuleId?: unknown;
     actor: Actor;
   },
 ) {
@@ -109,6 +110,8 @@ export async function approveSponsorPreapproval(
     support_form_kind: safeText(params.supportFormKind) || null,
     support_condition_label: safeText(params.supportConditionLabel) || null,
   };
+  const ruleId = safeText(params.sponsorRuleId);
+  if (ruleId) patch.sponsor_rule_id = ruleId;
 
   let { error } = await admin
     .from("sponsor_preapprovals")
@@ -116,7 +119,7 @@ export async function approveSponsorPreapproval(
     .eq("id", params.preapprovalId);
   if (
     error &&
-    /payout_status|support_kind|support_form_kind|support_condition_label|does not exist|42703/i.test(
+    /payout_status|support_kind|support_form_kind|support_condition_label|sponsor_rule_id|does not exist|42703/i.test(
       error.message,
     )
   ) {
@@ -206,6 +209,7 @@ export async function updateApprovedSponsorPreapproval(
     supportKind?: unknown;
     supportFormKind?: unknown;
     supportConditionLabel?: unknown;
+    sponsorRuleId?: unknown;
     payoutStatus?: unknown;
     actor: Actor;
   },
@@ -233,6 +237,8 @@ export async function updateApprovedSponsorPreapproval(
     decided_at: new Date().toISOString(),
     decided_by: params.actor.userId,
   };
+  const ruleId = safeText(params.sponsorRuleId);
+  if (ruleId) patch.sponsor_rule_id = ruleId;
   if (payoutStatus === "processing" || payoutStatus === "completed" || payoutStatus === "pending") {
     patch.payout_status = payoutStatus;
   }

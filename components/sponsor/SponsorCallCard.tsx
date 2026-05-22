@@ -2,45 +2,41 @@
 
 import type { ReactNode } from "react";
 
-import { SponsorCatalogSelect } from "@/components/sponsor/SponsorCatalogSelect";
 import {
-  CANCEL_REASONS,
   LABEL,
   SUPPORT_UI,
   type CardExpandMode,
 } from "@/lib/sponsor-dashboard-labels";
 import {
-  displaySupportCondition,
-  displaySupportForm,
-  displaySupportKind,
-  formatDepartureAt,
-  formatQuoteCount,
-  formatQuoteDeadline,
+  formatUntilDeparture,
   formatWon,
   isMatchCompleted,
   matchStageLabel,
-  payoutStatusLabel,
   type SponsorCallRow,
 } from "@/lib/sponsor-call-view-model";
+import {
+  calculatePlannedSupportFromRule,
+  filterRulesForPassengers,
+  findDefaultRule,
+  ruleSupportConditionLabel,
+  ruleSupportFormLabel,
+  sortStaffForCall,
+  staffMatchesDepartureRegion,
+  type SponsorRuleRecord,
+} from "@/lib/sponsor-rule-helpers";
 import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
 import { sponsorCallDebugContext } from "@/lib/quote-debug-trace";
-import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
 export type SponsorCardForm = {
+  ruleId: string;
   amount: string;
   staffId: string;
   memo: string;
-  supportKind: string;
-  supportForm: string;
-  supportCondition: string;
-  payoutStatus: string;
-  cancelReason: string;
-  cancelReasonCustom: string;
 };
 
-function CompactCell({ label, children }: { label: string; children: ReactNode }) {
+function ListCell({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
       <p className="text-[10px] font-bold text-slate-400">{label}</p>
@@ -49,414 +45,236 @@ function CompactCell({ label, children }: { label: string; children: ReactNode }
   );
 }
 
+function applyRuleToForm(
+  rule: SponsorRuleRecord,
+  passengerCount: number | null,
+  onFormChange: (patch: Partial<SponsorCardForm>) => void,
+) {
+  const passengers = passengerCount ?? 0;
+  const planned = calculatePlannedSupportFromRule(rule, passengers);
+  onFormChange({
+    ruleId: rule.id,
+    amount: String(planned),
+  });
+}
+
 export function SponsorCallCard({
   call,
   listMode,
-  detailExpanded,
-  onToggleDetail,
-  actionMode,
-  onActionMode,
+  expandMode,
+  onToggleExpand,
   form,
   onFormChange,
-  catalog,
-  onAddCatalogOption,
+  rules,
   staff,
   busy,
-  onSubmitApprove,
-  onSubmitReject,
-  onSubmitChange,
-  onSubmitRevert,
-  onSubmitPayoutComplete,
+  onSubmitConfirm,
+  onOpenCustomerInfo,
   sponsorRule = null,
 }: {
   call: SponsorCallRow;
   listMode: "review" | "confirmed";
-  detailExpanded: boolean;
-  onToggleDetail: () => void;
-  actionMode: CardExpandMode;
-  onActionMode: (mode: CardExpandMode) => void;
+  expandMode: CardExpandMode;
+  onToggleExpand: () => void;
   form: SponsorCardForm;
   onFormChange: (patch: Partial<SponsorCardForm>) => void;
-  catalog: {
-    supportKinds: string[];
-    supportForms: string[];
-    supportConditions: string[];
-  };
-  onAddCatalogOption: (
-    field: "supportKinds" | "supportForms" | "supportConditions",
-    value: string,
-  ) => void;
-  staff: Array<{ id: string; name?: string; phone?: string; is_active?: boolean }>;
+  rules: SponsorRuleRecord[];
+  staff: Array<{
+    id: string;
+    name?: string;
+    phone?: string;
+    role?: string;
+    service_regions?: string[];
+    is_active?: boolean;
+  }>;
   busy: boolean;
-  onSubmitApprove: () => void;
-  onSubmitReject: () => void;
-  onSubmitChange: () => void;
-  onSubmitRevert: () => void;
-  onSubmitPayoutComplete: () => void;
+  onSubmitConfirm: () => void;
+  onOpenCustomerInfo?: () => void;
   sponsorRule?: Record<string, unknown> | null;
 }) {
   const matched = isMatchCompleted(call);
-  const route = formatRouteWithStopovers(call.departure, call.stopovers, call.destination);
-  const stopoverText = formatStopovers(call.stopovers);
+  const eligibleRules = filterRulesForPassengers(rules, call.passenger_count);
+  const defaultRule = findDefaultRule(rules);
+  const selectedRule =
+    eligibleRules.find((r) => r.id === form.ruleId) ??
+    eligibleRules.find((r) => r.id === call.sponsor_rule_id) ??
+    defaultRule;
+  const passengers = call.passenger_count ?? 0;
+  const plannedPreview = selectedRule
+    ? calculatePlannedSupportFromRule(selectedRule, passengers)
+    : call.estimated_support_amount;
+  const sortedStaff = sortStaffForCall(
+    staff.filter((s) => s.is_active !== false),
+    call.departure_region,
+  );
 
-  const openAction = (mode: CardExpandMode) => {
-    if (actionMode === mode) {
-      onActionMode(null);
-      return;
-    }
-    onActionMode(mode);
-    if (!detailExpanded) onToggleDetail();
-  };
+  const expandOpen = expandMode != null;
 
   return (
     <article className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
-      <button
-        type="button"
-        onClick={onToggleDetail}
-        className="w-full px-3 py-3 text-left"
-        style={tapStyle}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-black text-slate-950">{route}</p>
-            <p className="mt-1 text-[11px] font-semibold text-slate-500">
-              {formatDepartureAt(call)} · {call.passenger_count ?? LABEL.dash}
-              {LABEL.passengers}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <span
-              className={`rounded-full px-2 py-1 text-[10px] font-black ring-1 ${
-                matched ? SUPPORT_UI.confirmed : SUPPORT_UI.muted
-              }`}
-            >
-              {matchStageLabel(call)}
-            </span>
-            <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-              <QuoteDebugButton context={sponsorCallDebugContext(call, sponsorRule)} />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
-          <CompactCell label={LABEL.departureRegion}>
+      <div className="p-3">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+          <ListCell label={LABEL.departureRegion}>
             {call.departure_region || LABEL.dash}
-          </CompactCell>
-          <CompactCell label={LABEL.departure}>{call.departure || LABEL.dash}</CompactCell>
-          <CompactCell label={LABEL.waypoint}>{stopoverText || LABEL.dash}</CompactCell>
-          <CompactCell label={LABEL.destination}>
-            {call.destination || LABEL.dash}
-          </CompactCell>
-          <CompactCell label={LABEL.tripType}>{call.trip_type || LABEL.dash}</CompactCell>
-          <CompactCell label={LABEL.busGrade}>{call.bus_grade || LABEL.dash}</CompactCell>
-          <CompactCell label={LABEL.groupType}>{call.group_type || LABEL.dash}</CompactCell>
-          <CompactCell label={LABEL.quoteDeadline}>
-            {formatQuoteDeadline(call.quote_deadline_at)}
-          </CompactCell>
-          <CompactCell label={LABEL.quoteProgress}>{formatQuoteCount(call)}</CompactCell>
+          </ListCell>
+          <ListCell label={LABEL.departure}>{call.departure || LABEL.dash}</ListCell>
+          <ListCell label={LABEL.departureTime}>
+            {call.departure_time?.trim() || LABEL.dash}
+          </ListCell>
+          <ListCell label={LABEL.passengers}>
+            {call.passenger_count != null
+              ? `${call.passenger_count}${LABEL.passengers}`
+              : LABEL.unconfirmed}
+          </ListCell>
+          <ListCell label={LABEL.groupType}>{call.group_type || LABEL.dash}</ListCell>
+          <ListCell label={LABEL.tripType}>{call.trip_type || LABEL.dash}</ListCell>
+          <ListCell label={LABEL.untilDeparture}>{formatUntilDeparture(call)}</ListCell>
+          {listMode === "confirmed" ? (
+            <>
+              <ListCell label={LABEL.confirmedSupport}>
+                {formatWon(call.approved_support_amount)}
+              </ListCell>
+              <ListCell label={LABEL.staff}>
+                {call.assigned_staff_name || LABEL.dash}
+              </ListCell>
+              <ListCell label={LABEL.supportKind}>
+                {call.support_kind || call.sponsor_rule_title || LABEL.dash}
+              </ListCell>
+              <ListCell label={LABEL.matchStage}>{matchStageLabel(call)}</ListCell>
+            </>
+          ) : null}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {listMode === "review" ? (
-            <span
-              className={`rounded-xl px-2.5 py-1 text-xs font-black ring-1 ${SUPPORT_UI.planned}`}
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-black text-white"
+              style={tapStyle}
             >
-              {LABEL.totalPlannedSupport}: {formatWon(call.estimated_support_amount)}
-            </span>
-          ) : (
-            <>
-              <span
-                className={`rounded-xl px-2.5 py-1 text-xs font-black ring-1 ${SUPPORT_UI.confirmed}`}
-              >
-                {LABEL.confirmedSupport}: {formatWon(call.approved_support_amount)}
-              </span>
-              <span className={`rounded-xl px-2.5 py-1 text-xs font-black ring-1 ${SUPPORT_UI.payout}`}>
-                {LABEL.payoutStatus}: {payoutStatusLabel(call.payout_status)}
-              </span>
-              <span className="rounded-xl bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-600">
-                {LABEL.supportKind}: {displaySupportKind(call)}
-              </span>
-            </>
-          )}
+              {expandOpen ? LABEL.collapse : LABEL.supportInput}
+            </button>
+          ) : matched && onOpenCustomerInfo ? (
+            <button
+              type="button"
+              onClick={onOpenCustomerInfo}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white"
+              style={tapStyle}
+            >
+              {LABEL.customerInfo}
+            </button>
+          ) : listMode === "confirmed" ? (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-900"
+              style={tapStyle}
+            >
+              {expandOpen ? LABEL.collapse : LABEL.editSupport}
+            </button>
+          ) : null}
+          <QuoteDebugButton context={sponsorCallDebugContext(call, sponsorRule)} />
         </div>
-      </button>
-
-      {detailExpanded ? (
-        <div className="border-t border-slate-100 px-3 pb-2 pt-2">
-          {listMode === "confirmed" ? (
-            <div className="flex flex-wrap gap-1 text-[10px] font-bold text-slate-500">
-              <span>{LABEL.supportForm}: {displaySupportForm(call)}</span>
-              <span>·</span>
-              <span>{LABEL.supportCondition}: {displaySupportCondition(call)}</span>
-            </div>
-          ) : (
-            <p
-              className={`inline-flex rounded-xl px-2 py-1 text-xs font-black ring-1 ${SUPPORT_UI.planned}`}
-            >
-              {LABEL.estimatedSupport}: {formatWon(call.estimated_support_amount)}
-            </p>
-          )}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2 border-t border-slate-100 px-3 py-3">
-        {listMode === "review" ? (
-          <>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => openAction("approve")}
-              className="min-h-10 flex-1 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
-              style={tapStyle}
-            >
-              {LABEL.confirmSupport}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => openAction("reject")}
-              className="min-h-10 flex-1 rounded-xl border border-red-200 bg-white px-3 text-xs font-black text-red-700 disabled:opacity-50"
-              style={tapStyle}
-            >
-              {LABEL.cancelSupport}
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => openAction("change")}
-              className="min-h-10 flex-1 rounded-xl bg-blue-600 px-3 text-xs font-black text-white disabled:opacity-50"
-              style={tapStyle}
-            >
-              {LABEL.changeSupport}
-            </button>
-            <button
-              type="button"
-              disabled={busy || matched}
-              onClick={() => openAction("reject")}
-              className="min-h-10 flex-1 rounded-xl border border-red-200 bg-white px-3 text-xs font-black text-red-700 disabled:opacity-50"
-              style={tapStyle}
-              title={matched ? LABEL.matchedLockHint : undefined}
-            >
-              {LABEL.cancelSupport}
-            </button>
-            {call.payout_status !== "completed" ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void onSubmitPayoutComplete()}
-                className={`min-h-10 w-full rounded-xl px-3 text-xs font-black ring-1 sm:w-auto ${SUPPORT_UI.payout}`}
-                style={tapStyle}
-              >
-                {LABEL.completePayout}
-              </button>
-            ) : null}
-          </>
-        )}
       </div>
 
-      {matched && listMode === "confirmed" ? (
-        <p className="px-3 pb-2 text-[11px] font-bold text-amber-800">{LABEL.matchedLockHint}</p>
-      ) : null}
-
-      {actionMode === "approve" && listMode === "review" ? (
+      {expandOpen ? (
         <div className="space-y-3 border-t border-slate-100 bg-slate-50/80 px-3 py-4">
-          <p className={`text-sm font-black ${SUPPORT_UI.planned} inline-flex rounded-lg px-2 py-1 ring-1`}>
-            {LABEL.estimatedSupport}: {formatWon(call.estimated_support_amount)}
-          </p>
+          {eligibleRules.length === 0 ? (
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+              인원 조건을 충족하는 지원종류가 없습니다. 설정에서 최소 인원을 확인해 주세요.
+            </p>
+          ) : null}
+          <label className="block">
+            <span className="text-xs font-bold text-slate-500">{LABEL.selectSupportKind}</span>
+            <select
+              value={form.ruleId || selectedRule?.id || ""}
+              onChange={(e) => {
+                const rule = eligibleRules.find((r) => r.id === e.target.value);
+                if (rule) applyRuleToForm(rule, call.passenger_count, onFormChange);
+              }}
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold"
+            >
+              {eligibleRules.length === 0 ? (
+                <option value="">{LABEL.dash}</option>
+              ) : (
+                eligibleRules.map((rule) => (
+                  <option key={rule.id} value={rule.id}>
+                    {safeText(rule.title)}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+
+          <div className={`rounded-xl p-3 ring-1 ${SUPPORT_UI.planned}`}>
+            <p className="text-[11px] font-bold">{LABEL.plannedSupportAuto}</p>
+            <p className="mt-1 text-sm font-black">{formatWon(plannedPreview)}</p>
+          </div>
+
           <label className="block">
             <span className="text-xs font-bold text-slate-500">{LABEL.confirmedSupport}</span>
             <input
+              inputMode="numeric"
               value={form.amount}
-              onChange={(e) => onFormChange({ amount: e.target.value })}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
+              onChange={(e) => onFormChange({ amount: e.target.value.replace(/[^\d]/g, "") })}
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold"
             />
           </label>
+
+          {selectedRule ? (
+            <div className="grid gap-2 text-sm">
+              <p>
+                <span className="text-xs font-bold text-slate-500">{LABEL.supportCondition}</span>
+                <span className="ml-2 font-black">{ruleSupportConditionLabel(selectedRule)}</span>
+              </p>
+              <p>
+                <span className="text-xs font-bold text-slate-500">{LABEL.supportForm}</span>
+                <span className="ml-2 font-black">{ruleSupportFormLabel(selectedRule)}</span>
+              </p>
+            </div>
+          ) : null}
+
           <label className="block">
-            <span className="text-xs font-bold text-slate-500">{LABEL.staff}</span>
+            <span className="text-xs font-bold text-slate-500">{LABEL.selectStaff}</span>
             <select
               value={form.staffId}
               onChange={(e) => onFormChange({ staffId: e.target.value })}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold"
             >
               <option value="">{LABEL.dash}</option>
-              {staff
-                .filter((s) => s.is_active !== false)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name ?? s.id} / {s.phone ?? LABEL.dash}
-                  </option>
-                ))}
+              {sortedStaff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name ?? s.id}
+                  {staffMatchesDepartureRegion(s, call.departure_region) ? " · 담당지역" : ""}
+                </option>
+              ))}
             </select>
           </label>
+
           <textarea
             value={form.memo}
             onChange={(e) => onFormChange({ memo: e.target.value })}
             placeholder={LABEL.memo}
-            className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+            className="min-h-16 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold"
           />
-          <SponsorCatalogSelect
-            label={LABEL.supportKind}
-            value={form.supportKind}
-            options={catalog.supportKinds}
-            onChange={(v) => onFormChange({ supportKind: v })}
-            onAddOption={(v) => onAddCatalogOption("supportKinds", v)}
-          />
-          <SponsorCatalogSelect
-            label={LABEL.supportForm}
-            value={form.supportForm}
-            options={catalog.supportForms}
-            onChange={(v) => onFormChange({ supportForm: v })}
-            onAddOption={(v) => onAddCatalogOption("supportForms", v)}
-          />
-          <SponsorCatalogSelect
-            label={LABEL.supportCondition}
-            value={form.supportCondition}
-            options={catalog.supportConditions}
-            onChange={(v) => onFormChange({ supportCondition: v })}
-            onAddOption={(v) => onAddCatalogOption("supportConditions", v)}
-          />
+
           <button
             type="button"
-            disabled={busy || !form.staffId}
-            onClick={() => void onSubmitApprove()}
+            disabled={busy || !form.ruleId || !form.staffId || form.amount.trim() === ""}
+            onClick={() => void onSubmitConfirm()}
             className="min-h-11 w-full rounded-xl bg-emerald-600 text-sm font-black text-white disabled:opacity-50"
           >
             {LABEL.confirmSupport}
           </button>
         </div>
       ) : null}
-
-      {actionMode === "change" && listMode === "confirmed" ? (
-        <div className="space-y-3 border-t border-slate-100 bg-slate-50/80 px-3 py-4">
-          <label className="block">
-            <span className="text-xs font-bold text-slate-500">{LABEL.confirmedSupport}</span>
-            <input
-              value={form.amount}
-              onChange={(e) => onFormChange({ amount: e.target.value })}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-bold text-slate-500">{LABEL.staff}</span>
-            <select
-              value={form.staffId}
-              onChange={(e) => onFormChange({ staffId: e.target.value })}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
-            >
-              <option value="">{LABEL.dash}</option>
-              {staff
-                .filter((s) => s.is_active !== false)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name ?? s.id} / {s.phone ?? LABEL.dash}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <textarea
-            value={form.memo}
-            onChange={(e) => onFormChange({ memo: e.target.value })}
-            placeholder={LABEL.memo}
-            className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
-          />
-          <SponsorCatalogSelect
-            label={LABEL.supportKind}
-            value={form.supportKind}
-            options={catalog.supportKinds}
-            onChange={(v) => onFormChange({ supportKind: v })}
-            onAddOption={(v) => onAddCatalogOption("supportKinds", v)}
-          />
-          <SponsorCatalogSelect
-            label={LABEL.supportForm}
-            value={form.supportForm}
-            options={catalog.supportForms}
-            onChange={(v) => onFormChange({ supportForm: v })}
-            onAddOption={(v) => onAddCatalogOption("supportForms", v)}
-          />
-          <SponsorCatalogSelect
-            label={LABEL.supportCondition}
-            value={form.supportCondition}
-            options={catalog.supportConditions}
-            onChange={(v) => onFormChange({ supportCondition: v })}
-            onAddOption={(v) => onAddCatalogOption("supportConditions", v)}
-          />
-          <label className="block">
-            <span className="text-xs font-bold text-slate-500">{LABEL.payoutStatus}</span>
-            <select
-              value={form.payoutStatus}
-              onChange={(e) => onFormChange({ payoutStatus: e.target.value })}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
-            >
-              <option value="processing">{LABEL.payoutProcessing}</option>
-              <option value="completed">{LABEL.payoutCompleted}</option>
-            </select>
-          </label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onSubmitChange()}
-              className="min-h-11 rounded-xl bg-blue-600 text-sm font-black text-white disabled:opacity-50"
-            >
-              {LABEL.changeSupport}
-            </button>
-            <button
-              type="button"
-              disabled={busy || matched}
-              onClick={() => void onSubmitRevert()}
-              className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 text-sm font-black text-amber-900 disabled:opacity-50"
-              title={matched ? LABEL.matchedLockHint : undefined}
-            >
-              {LABEL.revertToPlanned}
-            </button>
-          </div>
-          <button
-            type="button"
-            disabled={busy || matched}
-            onClick={() => openAction("reject")}
-            className="min-h-10 w-full rounded-xl border border-red-200 bg-white text-sm font-black text-red-700 disabled:opacity-50"
-          >
-            {LABEL.cancelSupport}
-          </button>
-        </div>
-      ) : null}
-
-      {actionMode === "reject" ? (
-        <div className="space-y-3 border-t border-slate-100 bg-red-50/50 px-3 py-4">
-          <label className="block">
-            <span className="text-xs font-bold text-slate-500">{LABEL.cancelReason}</span>
-            <select
-              value={form.cancelReason}
-              onChange={(e) => onFormChange({ cancelReason: e.target.value })}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
-            >
-              <option value="">{LABEL.dash}</option>
-              {CANCEL_REASONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
-          <textarea
-            value={form.cancelReasonCustom}
-            onChange={(e) => onFormChange({ cancelReasonCustom: e.target.value })}
-            placeholder={LABEL.cancelReasonCustom}
-            className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
-          />
-          <button
-            type="button"
-            disabled={busy || (listMode === "confirmed" && matched) || !form.cancelReason}
-            onClick={() => void onSubmitReject()}
-            className="min-h-11 w-full rounded-xl bg-red-600 text-sm font-black text-white disabled:opacity-50"
-          >
-            {LABEL.cancelConfirm}
-          </button>
-        </div>
-      ) : null}
     </article>
   );
+}
+
+function safeText(value: unknown, fallback = ""): string {
+  if (value == null) return fallback;
+  const s = String(value).trim();
+  return s === "" ? fallback : s;
 }

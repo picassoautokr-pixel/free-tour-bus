@@ -66,6 +66,7 @@ export async function POST(request: Request) {
         supportKind: body?.support_kind,
         supportFormKind: body?.support_form_kind,
         supportConditionLabel: body?.support_condition_label,
+        sponsorRuleId: body?.sponsor_rule_id,
         actor,
       });
       return NextResponse.json(result);
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
         supportKind: body?.support_kind,
         supportFormKind: body?.support_form_kind,
         supportConditionLabel: body?.support_condition_label,
+        sponsorRuleId: body?.sponsor_rule_id,
         payoutStatus: body?.payout_status,
         actor,
       });

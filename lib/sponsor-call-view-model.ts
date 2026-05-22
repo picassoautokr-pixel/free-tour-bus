@@ -53,6 +53,10 @@ export type SponsorCallRow = {
   selected_price?: number | null;
   client_price_selection_kind?: string | null;
   organization_name?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  driver_name?: string;
+  driver_phone?: string;
 };
 
 const REVIEW_STATUSES = new Set(["pending", "preapproved", "reviewing"]);
@@ -86,8 +90,37 @@ export function isMatchCompleted(call: SponsorCallRow): boolean {
   return (call.final_selected_quote_id ?? "").trim() !== "";
 }
 
+function isQuoteAutoClosed(call: SponsorCallRow): boolean {
+  if (isMatchCompleted(call)) return false;
+  if ((call.quote_closed_at ?? "").trim() !== "") return true;
+  const status = (call.quote_status ?? "").trim().toLowerCase();
+  return status === "closed" || status === "quote_closed";
+}
+
 export function matchStageLabel(call: SponsorCallRow): string {
-  return isMatchCompleted(call) ? LABEL.matchDone : LABEL.matchBefore;
+  if (isMatchCompleted(call)) return LABEL.matchCompleted;
+  if (isQuoteAutoClosed(call)) return LABEL.matchAutoClosed;
+  return LABEL.matchQuoteCollecting;
+}
+
+export function departureTimestamp(call: SponsorCallRow): number | null {
+  const date = call.departure_date.trim();
+  if (!date) return null;
+  const time = call.departure_time.trim();
+  const iso = time && time !== LABEL.dash ? `${date}T${time}` : `${date}T00:00:00`;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+export function formatUntilDeparture(call: SponsorCallRow): string {
+  const t = departureTimestamp(call);
+  if (t == null) return LABEL.unconfirmed;
+  const diffMs = t - Date.now();
+  const abs = Math.abs(diffMs);
+  const hours = Math.floor(abs / (60 * 60 * 1000));
+  const minutes = Math.ceil((abs % (60 * 60 * 1000)) / (60 * 1000));
+  const span = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+  return diffMs >= 0 ? `${span} 남음` : `${span} 경과`;
 }
 
 export function payoutStatusLabel(status?: string | null): string {

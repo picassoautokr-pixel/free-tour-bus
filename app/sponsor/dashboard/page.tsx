@@ -6,8 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type Dispatch,
-  type SetStateAction,
 } from "react";
 import { useRouter } from "next/navigation";
 
@@ -15,14 +13,19 @@ import {
   SponsorCallCard,
   type SponsorCardForm,
 } from "@/components/sponsor/SponsorCallCard";
-import { SponsorRejectedCallCard } from "@/components/sponsor/SponsorRejectedCallCard";
 import { SponsorReportCards } from "@/components/sponsor/SponsorReportCards";
-import { SERVICE_REGIONS } from "@/lib/regions";
+import {
+  SponsorSettingsRulePanel,
+  type SponsorRuleFormState,
+} from "@/components/sponsor/SponsorSettingsRulePanel";
+import {
+  SponsorSettingsStaffPanel,
+  type SponsorStaffFormState,
+} from "@/components/sponsor/SponsorSettingsStaffPanel";
 import { roleLoginPath } from "@/lib/role-hosts";
 import {
   isConfirmedCall,
   isReviewCall,
-  isSupportRejectedCall,
   matchesPayoutFilter,
   sponsorTabCounts,
   type SponsorCallRow,
@@ -39,15 +42,12 @@ import {
   type SponsorMainTab,
 } from "@/lib/sponsor-dashboard-labels";
 import {
-  catalogFromSettings,
-  parseDashboardSettings,
-  type SponsorDashboardSettings,
-} from "@/lib/sponsor-catalog";
-import {
-  SPONSOR_SUPPORT_TYPES,
-  sponsorSupportTypeLabel,
-  safeText,
-} from "@/lib/sponsor";
+  findDefaultRule,
+  ruleSupportConditionLabel,
+  ruleSupportFormLabel,
+  type SponsorRuleRecord,
+} from "@/lib/sponsor-rule-helpers";
+import { safeText } from "@/lib/sponsor";
 import { createSponsorBrowserClient } from "@/lib/supabase";
 import {
   realtimeStatusLabel,
@@ -66,27 +66,19 @@ type Staff = Record<string, unknown> & {
   is_active?: boolean;
 };
 
-type SettingsSubTab = "rules" | "staff" | "catalog";
+type SettingsSubTab = "rules" | "staff";
 
-function defaultFormFromCall(call: SponsorCallRow): SponsorCardForm {
+function defaultFormFromCall(
+  call: SponsorCallRow,
+  rules: SponsorRuleRecord[],
+): SponsorCardForm {
+  const defaultRule = findDefaultRule(rules);
   return {
+    ruleId: call.sponsor_rule_id || defaultRule?.id || "",
     amount: String(call.approved_support_amount ?? call.estimated_support_amount ?? ""),
     staffId: call.assigned_staff_id ?? "",
     memo: call.decision_memo ?? "",
-    supportKind: call.support_kind?.trim() || call.sponsor_rule_title?.trim() || "",
-    supportForm: call.support_form_kind?.trim() || call.support_type?.trim() || "",
-    supportCondition:
-      call.support_condition_label?.trim() || call.support_condition?.trim() || "",
-    payoutStatus: call.payout_status === "completed" ? "completed" : "processing",
-    cancelReason: "",
-    cancelReasonCustom: "",
   };
-}
-
-function buildCancelMemo(form: SponsorCardForm): string {
-  const custom = form.cancelReasonCustom.trim();
-  if (form.cancelReason === "기타" && custom) return custom;
-  return [form.cancelReason, custom].filter(Boolean).join(" — ");
 }
 
 export default function SponsorDashboardPage() {
@@ -94,17 +86,13 @@ export default function SponsorDashboardPage() {
   const [mainTab, setMainTab] = useState<SponsorMainTab>("review");
   const [payoutFilter, setPayoutFilter] = useState<ConfirmedPayoutFilter>("all");
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>("rules");
+  const [customerDetailCall, setCustomerDetailCall] = useState<SponsorCallRow | null>(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
   const [company, setCompany] = useState<Record<string, unknown> | null>(null);
   const [rules, setRules] = useState<Rule[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [calls, setCalls] = useState<SponsorCallRow[]>([]);
   const [summary, setSummary] = useState<SponsorSummary | null>(null);
-  const [catalog, setCatalog] = useState({
-    supportKinds: [] as string[],
-    supportForms: [] as string[],
-    supportConditions: [] as string[],
-  });
-  const [catalogDraft, setCatalogDraft] = useState<SponsorDashboardSettings>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -112,35 +100,27 @@ export default function SponsorDashboardPage() {
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >("default");
-  const [expandedDetailId, setExpandedDetailId] = useState<string | null>(null);
-  const [actionByCallId, setActionByCallId] = useState<Record<string, CardExpandMode>>({});
+  const [expandByCallId, setExpandByCallId] = useState<Record<string, CardExpandMode>>({});
   const [formsByCallId, setFormsByCallId] = useState<Record<string, SponsorCardForm>>({});
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
-  const [ruleForm, setRuleForm] = useState({
+  const [ruleForm, setRuleForm] = useState<SponsorRuleFormState>({
     id: "",
     title: "",
-    service_regions: [] as string[],
     support_per_person: "",
     support_per_case: "",
     max_support_amount: "",
     min_passenger_count: "",
-    max_passenger_count: "",
-    target_group: "",
-    support_condition: "",
+    target_groups: [],
     support_type: "cash",
-    daily_budget: "",
-    monthly_budget: "",
-    is_active: true,
-    memo: "",
+    support_condition: "홍보시",
   });
-  const [staffForm, setStaffForm] = useState({
+  const [staffForm, setStaffForm] = useState<SponsorStaffFormState>({
     id: "",
     name: "",
     phone: "",
     email: "",
     role: "",
-    service_regions: [] as string[],
-    is_active: true,
+    service_regions: [],
   });
   const callIdsRef = useRef<Set<string>>(new Set());
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -168,12 +148,6 @@ export default function SponsorDashboardPage() {
         staff?: Staff[];
         calls?: SponsorCallRow[];
         summary?: SponsorSummary | null;
-        catalog?: {
-          supportKinds: string[];
-          supportForms: string[];
-          supportConditions: string[];
-        };
-        dashboard_settings?: SponsorDashboardSettings;
       };
       if (!res.ok) {
         if ([401, 403, 404].includes(res.status)) {
@@ -227,11 +201,6 @@ export default function SponsorDashboardPage() {
       callIdsRef.current = new Set(nextCalls.map((call) => call.id));
       setCalls(nextCalls);
       setSummary(json.summary ?? null);
-      const settings = parseDashboardSettings(json.dashboard_settings);
-      setCatalogDraft(settings);
-      setCatalog(
-        json.catalog ?? catalogFromSettings(settings),
-      );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -285,30 +254,47 @@ export default function SponsorDashboardPage() {
     [calls, payoutFilter],
   );
 
-  const rejectedCalls = useMemo(
-    () => calls.filter((call) => isSupportRejectedCall(call)),
-    [calls],
+  const sponsorRules = useMemo(
+    () => rules as SponsorRuleRecord[],
+    [rules],
   );
 
-  const mergedCatalog = useMemo(() => catalog, [catalog]);
-
   const getForm = (call: SponsorCallRow) =>
-    formsByCallId[call.id] ?? defaultFormFromCall(call);
+    formsByCallId[call.id] ?? defaultFormFromCall(call, sponsorRules);
 
   const patchForm = (callId: string, call: SponsorCallRow, patch: Partial<SponsorCardForm>) => {
     setFormsByCallId((prev) => ({
       ...prev,
-      [callId]: { ...(prev[callId] ?? defaultFormFromCall(call)), ...patch },
+      [callId]: { ...(prev[callId] ?? defaultFormFromCall(call, sponsorRules)), ...patch },
     }));
   };
 
-  const setActionMode = (callId: string, mode: CardExpandMode) => {
-    setActionByCallId((prev) => {
-      const next = { ...prev };
-      if (mode == null) delete next[callId];
-      else next[callId] = mode;
-      return next;
+  const toggleExpand = (callId: string, mode: CardExpandMode) => {
+    setExpandByCallId((prev) => {
+      const current = prev[callId];
+      if (current === mode) {
+        const next = { ...prev };
+        delete next[callId];
+        return next;
+      }
+      return { ...prev, [callId]: mode };
     });
+  };
+
+  const resolveRuleForForm = (form: SponsorCardForm): SponsorRuleRecord | null =>
+    sponsorRules.find((r) => r.id === form.ruleId) ?? null;
+
+  const buildApprovePayload = (form: SponsorCardForm) => {
+    const rule = resolveRuleForForm(form);
+    return {
+      approved_support_amount: form.amount,
+      assigned_staff_id: form.staffId,
+      decision_memo: form.memo,
+      sponsor_rule_id: form.ruleId,
+      support_kind: safeText(rule?.title),
+      support_form_kind: rule ? ruleSupportFormLabel(rule) : "",
+      support_condition_label: rule ? ruleSupportConditionLabel(rule) : "",
+    };
   };
 
   const postPreapproval = async (
@@ -330,8 +316,11 @@ export default function SponsorDashboardPage() {
         setMessage(json?.error ?? "처리에 실패했습니다.");
         return;
       }
-      setActionMode(callId, null);
-      setExpandedDetailId(null);
+      setExpandByCallId((prev) => {
+        const next = { ...prev };
+        delete next[callId];
+        return next;
+      });
       await load();
     } finally {
       setBusyCallId(null);
@@ -339,71 +328,114 @@ export default function SponsorDashboardPage() {
   };
 
   const saveRule = async () => {
-    await fetch("/api/sponsor/dashboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ type: "rule", id: ruleForm.id, payload: ruleForm }),
-    });
-    setRuleForm((prev) => ({ ...prev, id: "", title: "" }));
-    await load();
+    setSettingsBusy(true);
+    try {
+      const res = await fetch("/api/sponsor/dashboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ type: "rule", id: ruleForm.id, payload: ruleForm }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setMessage(json?.error ?? "지원종류 저장에 실패했습니다.");
+        return;
+      }
+      await load();
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+
+  const deleteRule = async (id: string) => {
+    setSettingsBusy(true);
+    try {
+      const res = await fetch("/api/sponsor/dashboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ type: "rule_delete", id }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setMessage(json?.error ?? "삭제에 실패했습니다.");
+        return;
+      }
+      setRuleForm({
+        id: "",
+        title: "",
+        support_per_person: "",
+        support_per_case: "",
+        max_support_amount: "",
+        min_passenger_count: "",
+        target_groups: [],
+        support_type: "cash",
+        support_condition: "홍보시",
+      });
+      await load();
+    } finally {
+      setSettingsBusy(false);
+    }
   };
 
   const saveStaff = async () => {
-    await fetch("/api/sponsor/dashboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ type: "staff", id: staffForm.id, payload: staffForm }),
-    });
-    setStaffForm({
-      id: "",
-      name: "",
-      phone: "",
-      email: "",
-      role: "",
-      service_regions: [],
-      is_active: true,
-    });
-    await load();
-  };
-
-  const saveCatalogSettings = async () => {
-    const res = await fetch("/api/sponsor/dashboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        type: "settings",
-        support_kinds: catalog.supportKinds,
-        support_forms: catalog.supportForms,
-        support_conditions: catalog.supportConditions,
-        total_budget: catalogDraft.total_budget,
-        monthly_budget: catalogDraft.monthly_budget,
-      }),
-    });
-    if (!res.ok) {
+    setSettingsBusy(true);
+    try {
+      const res = await fetch("/api/sponsor/dashboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          type: "staff",
+          id: staffForm.id,
+          payload: { ...staffForm, is_active: true },
+        }),
+      });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      setMessage(json?.error ?? "설정 저장에 실패했습니다.");
-      return;
+      if (!res.ok) {
+        setMessage(json?.error ?? "담당자 저장에 실패했습니다.");
+        return;
+      }
+      setStaffForm({
+        id: "",
+        name: "",
+        phone: "",
+        email: "",
+        role: "",
+        service_regions: [],
+      });
+      await load();
+    } finally {
+      setSettingsBusy(false);
     }
-    await load();
   };
 
-  const addCatalogOption = (
-    field: "supportKinds" | "supportForms" | "supportConditions",
-    value: string,
-  ) => {
-    setCatalog((prev) => {
-      const key =
-        field === "supportKinds"
-          ? "supportKinds"
-          : field === "supportForms"
-            ? "supportForms"
-            : "supportConditions";
-      if (prev[key].includes(value)) return prev;
-      return { ...prev, [key]: [...prev[key], value] };
-    });
+  const deleteStaff = async (id: string) => {
+    setSettingsBusy(true);
+    try {
+      const res = await fetch("/api/sponsor/dashboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ type: "staff_delete", id }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setMessage(json?.error ?? "삭제에 실패했습니다.");
+        return;
+      }
+      setStaffForm({
+        id: "",
+        name: "",
+        phone: "",
+        email: "",
+        role: "",
+        service_regions: [],
+      });
+      await load();
+    } finally {
+      setSettingsBusy(false);
+    }
   };
 
   const toggleSound = async () => {
@@ -444,17 +476,11 @@ export default function SponsorDashboardPage() {
   };
 
   const settingsLinks: Array<{ id: SettingsSubTab; label: string }> = [
-    { id: "rules", label: LABEL.settingsRules },
+    { id: "rules", label: LABEL.settingsSupportKinds },
     { id: "staff", label: LABEL.settingsStaff },
-    { id: "catalog", label: LABEL.settingsSupportKind },
   ];
 
-  const listCalls =
-    mainTab === "review"
-      ? reviewCalls
-      : mainTab === "rejected"
-        ? rejectedCalls
-        : confirmedCalls;
+  const listCalls = mainTab === "review" ? reviewCalls : confirmedCalls;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-4 py-6 pb-16 sm:px-5">
@@ -547,9 +573,7 @@ export default function SponsorDashboardPage() {
                   ? labelWithCount(tab.label, tabCounts.review)
                   : tab.id === "confirmed"
                     ? labelWithCount(tab.label, tabCounts.confirmed)
-                    : tab.id === "rejected"
-                      ? labelWithCount(tab.label, tabCounts.rejected)
-                      : tab.label;
+                    : tab.label;
               return (
                 <button
                   key={tab.id}
@@ -579,9 +603,7 @@ export default function SponsorDashboardPage() {
                       : "bg-slate-100 text-slate-700"
                   }`}
                 >
-                  {link.id === "catalog"
-                    ? `${LABEL.settingsSupportKind} · ${LABEL.settingsSupportForm} · ${LABEL.settingsSupportCondition}`
-                    : link.label}
+                  {link.label}
                 </button>
               ))}
             </div>
@@ -616,7 +638,7 @@ export default function SponsorDashboardPage() {
           ) : null}
         </div>
 
-        {mainTab === "review" || mainTab === "confirmed" || mainTab === "rejected" ? (
+        {mainTab === "review" || mainTab === "confirmed" ? (
           <div className="mt-5 space-y-3">
             {loading ? (
               <p className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500">
@@ -624,350 +646,117 @@ export default function SponsorDashboardPage() {
               </p>
             ) : listCalls.length === 0 ? (
               <p className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-500">
-                {mainTab === "review"
-                  ? LABEL.noReviewItems
-                  : mainTab === "rejected"
-                    ? LABEL.noRejectedItems
-                    : LABEL.noConfirmedItems}
+                {mainTab === "review" ? LABEL.noReviewItems : LABEL.noConfirmedItems}
               </p>
-            ) : mainTab === "rejected" ? (
-              listCalls.map((call) => (
-                <SponsorRejectedCallCard
-                  key={call.id}
-                  call={call}
-                  sponsorRule={
-                    rules.find((r) => r.id === call.sponsor_rule_id) ?? null
-                  }
-                  expanded={expandedDetailId === call.id}
-                  onToggleExpand={() =>
-                    setExpandedDetailId((prev) => (prev === call.id ? null : call.id))
-                  }
-                />
-              ))
             ) : (
-              listCalls.map((call) => (
-                <SponsorCallCard
-                  key={call.id}
-                  call={call}
-                  sponsorRule={
-                    rules.find((r) => r.id === call.sponsor_rule_id) ?? null
-                  }
-                  listMode={mainTab === "review" ? "review" : "confirmed"}
-                  detailExpanded={expandedDetailId === call.id}
-                  onToggleDetail={() =>
-                    setExpandedDetailId((prev) => (prev === call.id ? null : call.id))
-                  }
-                  actionMode={actionByCallId[call.id] ?? null}
-                  onActionMode={(mode) => {
-                    setActionMode(call.id, mode);
-                    if (mode) {
-                      setFormsByCallId((prev) => ({
-                        ...prev,
-                        [call.id]: prev[call.id] ?? defaultFormFromCall(call),
-                      }));
+              listCalls.map((call) => {
+                const expandMode = expandByCallId[call.id] ?? null;
+                const listMode = mainTab === "review" ? "review" : "confirmed";
+                const toggleMode: CardExpandMode =
+                  listMode === "review" ? "support_input" : "edit";
+                return (
+                  <SponsorCallCard
+                    key={call.id}
+                    call={call}
+                    sponsorRule={
+                      rules.find((r) => r.id === call.sponsor_rule_id) ?? null
                     }
-                  }}
-                  form={getForm(call)}
-                  onFormChange={(patch) => patchForm(call.id, call, patch)}
-                  catalog={mergedCatalog}
-                  onAddCatalogOption={addCatalogOption}
-                  staff={staff}
-                  busy={busyCallId === call.id}
-                  onSubmitApprove={() => {
-                    const form = getForm(call);
-                    void postPreapproval(call.id, "approve", {
-                      approved_support_amount: form.amount,
-                      assigned_staff_id: form.staffId,
-                      decision_memo: form.memo,
-                      support_kind: form.supportKind,
-                      support_form_kind: form.supportForm,
-                      support_condition_label: form.supportCondition,
-                    });
-                  }}
-                  onSubmitReject={() => {
-                    const form = getForm(call);
-                    void postPreapproval(call.id, "reject", {
-                      decision_memo: buildCancelMemo(form),
-                    });
-                  }}
-                  onSubmitChange={() => {
-                    const form = getForm(call);
-                    void postPreapproval(call.id, "change", {
-                      approved_support_amount: form.amount,
-                      assigned_staff_id: form.staffId,
-                      decision_memo: form.memo,
-                      support_kind: form.supportKind,
-                      support_form_kind: form.supportForm,
-                      support_condition_label: form.supportCondition,
-                      payout_status: form.payoutStatus,
-                    });
-                  }}
-                  onSubmitRevert={() => {
-                    void postPreapproval(call.id, "revert", {});
-                  }}
-                  onSubmitPayoutComplete={() => {
-                    void postPreapproval(call.id, "payout", { payout_status: "completed" });
-                  }}
-                />
-              ))
+                    listMode={listMode}
+                    expandMode={expandMode}
+                    onToggleExpand={() => {
+                      if (!expandMode) {
+                        setFormsByCallId((prev) => ({
+                          ...prev,
+                          [call.id]: prev[call.id] ?? defaultFormFromCall(call, sponsorRules),
+                        }));
+                      }
+                      toggleExpand(call.id, toggleMode);
+                    }}
+                    form={getForm(call)}
+                    onFormChange={(patch) => patchForm(call.id, call, patch)}
+                    rules={sponsorRules}
+                    staff={staff}
+                    busy={busyCallId === call.id}
+                    onOpenCustomerInfo={() => setCustomerDetailCall(call)}
+                    onSubmitConfirm={() => {
+                      const form = getForm(call);
+                      const action =
+                        listMode === "review" ? "approve" : "change";
+                      void postPreapproval(call.id, action, buildApprovePayload(form));
+                    }}
+                  />
+                );
+              })
             )}
           </div>
         ) : null}
 
+        {customerDetailCall ? (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
+            role="dialog"
+            aria-modal="true"
+          >
+            <button
+              type="button"
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+              aria-label="닫기"
+              onClick={() => setCustomerDetailCall(null)}
+            />
+            <div className="relative w-full max-w-md rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+              <h2 className="text-lg font-black text-slate-950">{LABEL.customerInfoTitle}</h2>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+                  <dt className="text-[11px] font-bold text-emerald-700">{LABEL.customer}</dt>
+                  <dd className="mt-1 font-black">
+                    {customerDetailCall.customer_name || LABEL.dash}
+                  </dd>
+                  <dd className="mt-1 font-semibold">
+                    {customerDetailCall.customer_phone || LABEL.dash}
+                  </dd>
+                </div>
+                <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
+                  <dt className="text-[11px] font-bold text-blue-700">{LABEL.driverInfo}</dt>
+                  <dd className="mt-1 font-black">
+                    {customerDetailCall.driver_name || LABEL.dash}
+                  </dd>
+                  <dd className="mt-1 font-semibold">
+                    {customerDetailCall.driver_phone || LABEL.dash}
+                  </dd>
+                </div>
+              </dl>
+              <button
+                type="button"
+                className="mt-6 min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-black text-white"
+                onClick={() => setCustomerDetailCall(null)}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {mainTab === "settings" && settingsSubTab === "rules" ? (
-          <SponsorRulePanel rules={rules} form={ruleForm} setForm={setRuleForm} onSave={saveRule} />
+          <SponsorSettingsRulePanel
+            rules={rules}
+            form={ruleForm}
+            setForm={setRuleForm}
+            onSave={() => void saveRule()}
+            onDelete={(id) => void deleteRule(id)}
+            busy={settingsBusy}
+          />
         ) : null}
         {mainTab === "settings" && settingsSubTab === "staff" ? (
-          <SponsorStaffPanel
+          <SponsorSettingsStaffPanel
             staff={staff}
             form={staffForm}
             setForm={setStaffForm}
-            onSave={saveStaff}
-          />
-        ) : null}
-        {mainTab === "settings" && settingsSubTab === "catalog" ? (
-          <SponsorCatalogSettingsPanel
-            catalog={catalog}
-            draft={catalogDraft}
-            onDraftChange={setCatalogDraft}
-            onSave={() => void saveCatalogSettings()}
+            onSave={() => void saveStaff()}
+            onDelete={(id) => void deleteStaff(id)}
+            busy={settingsBusy}
           />
         ) : null}
       </section>
     </main>
-  );
-}
-
-function SponsorCatalogSettingsPanel({
-  catalog,
-  draft,
-  onDraftChange,
-  onSave,
-}: {
-  catalog: { supportKinds: string[]; supportForms: string[]; supportConditions: string[] };
-  draft: SponsorDashboardSettings;
-  onDraftChange: (v: SponsorDashboardSettings) => void;
-  onSave: () => void;
-}) {
-  return (
-    <div className="mt-5 space-y-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-      <h2 className="text-lg font-black text-slate-950">
-        {LABEL.settingsSupportKind} · {LABEL.settingsSupportForm} ·{" "}
-        {LABEL.settingsSupportCondition}
-      </h2>
-      <p className="text-xs font-bold text-slate-500">
-        카드에서 선택·추가할 목록입니다. 견적 처리 시에도 동일 목록이 사용됩니다.
-      </p>
-      {[
-        [LABEL.settingsSupportKind, "supportKinds", catalog.supportKinds] as const,
-        [LABEL.settingsSupportForm, "supportForms", catalog.supportForms] as const,
-        [LABEL.settingsSupportCondition, "supportConditions", catalog.supportConditions] as const,
-      ].map(([title, , items]) => (
-        <div key={title}>
-          <p className="text-xs font-black text-slate-600">{title}</p>
-          <ul className="mt-2 flex flex-wrap gap-1">
-            {items.map((item) => (
-              <li
-                key={item}
-                className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"
-              >
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-      <label className="block">
-        <span className="text-xs font-bold text-slate-500">{LABEL.reportTotalBudget}</span>
-        <input
-          type="number"
-          value={draft.total_budget ?? ""}
-          onChange={(e) =>
-            onDraftChange({
-              ...draft,
-              total_budget: e.target.value ? Number(e.target.value) : undefined,
-            })
-          }
-          className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
-        />
-      </label>
-      <button
-        type="button"
-        onClick={onSave}
-        className="min-h-11 w-full rounded-xl bg-blue-600 text-sm font-black text-white"
-      >
-        설정 저장
-      </button>
-    </div>
-  );
-}
-
-function RegionChecks({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (value: string[]) => void;
-}) {
-  return (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {SERVICE_REGIONS.map((region) => {
-        const checked = value.includes(region);
-        return (
-          <button
-            key={region}
-            type="button"
-            onClick={() =>
-              onChange(checked ? value.filter((item) => item !== region) : [...value, region])
-            }
-            className={`min-h-9 rounded-full border px-3 text-xs font-black ${
-              checked ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"
-            }`}
-          >
-            {region}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function SponsorRulePanel({
-  rules,
-  form,
-  setForm,
-  onSave,
-}: {
-  rules: Rule[];
-  form: Record<string, unknown> & { service_regions: string[] };
-  setForm: Dispatch<SetStateAction<any>>;
-  onSave: () => void;
-}) {
-  return (
-    <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-      <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-        <h2 className="text-lg font-black text-slate-950">{LABEL.settingsRules}</h2>
-        {[
-          ["title", "조건명"],
-          ["support_per_person", "인당 지원금"],
-          ["support_per_case", "건당 지원금"],
-          ["max_support_amount", "최대 지원금"],
-          ["min_passenger_count", "최소 인원"],
-          ["max_passenger_count", "최대 인원"],
-          ["target_group", "지원대상 조건"],
-          ["support_condition", "지원조건"],
-          ["daily_budget", "일 예산"],
-          ["monthly_budget", "월 예산"],
-          ["memo", "메모"],
-        ].map(([key, label]) => (
-          <label key={key} className="mt-3 block">
-            <span className="text-xs font-bold text-slate-500">{label}</span>
-            <input
-              value={safeText(form[key])}
-              onChange={(event) => setForm((prev: any) => ({ ...prev, [key]: event.target.value }))}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold outline-none focus:border-blue-500"
-            />
-          </label>
-        ))}
-        <label className="mt-3 block">
-          <span className="text-xs font-bold text-slate-500">{LABEL.supportForm}</span>
-          <select
-            value={safeText(form.support_type, "cash")}
-            onChange={(event) => setForm((prev: any) => ({ ...prev, support_type: event.target.value }))}
-            className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold"
-          >
-            {SPONSOR_SUPPORT_TYPES.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="mt-3">
-          <span className="text-xs font-bold text-slate-500">지원지역</span>
-          <RegionChecks
-            value={form.service_regions}
-            onChange={(next) => setForm((prev: any) => ({ ...prev, service_regions: next }))}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => void onSave()}
-          className="mt-5 min-h-11 w-full rounded-xl bg-blue-600 text-sm font-black text-white"
-        >
-          저장
-        </button>
-      </div>
-      <div className="space-y-3">
-        {rules.map((rule) => (
-          <article key={rule.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-            <p className="font-black text-slate-950">{safeText(rule.title, "조건명 없음")}</p>
-            <p className="mt-1 text-sm font-bold text-slate-500">
-              {sponsorSupportTypeLabel(rule.support_type)} ·{" "}
-              {rule.is_active === false ? "비활성" : "활성"}
-            </p>
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SponsorStaffPanel({
-  staff,
-  form,
-  setForm,
-  onSave,
-}: {
-  staff: Staff[];
-  form: Record<string, unknown> & { service_regions: string[] };
-  setForm: Dispatch<SetStateAction<any>>;
-  onSave: () => void;
-}) {
-  return (
-    <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-      <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-        <h2 className="text-lg font-black text-slate-950">{LABEL.settingsStaff}</h2>
-        {[
-          ["name", "이름"],
-          ["phone", "연락처"],
-          ["email", "이메일"],
-          ["role", "역할"],
-        ].map(([key, label]) => (
-          <label key={key} className="mt-3 block">
-            <span className="text-xs font-bold text-slate-500">{label}</span>
-            <input
-              value={safeText(form[key])}
-              onChange={(event) => setForm((prev: any) => ({ ...prev, [key]: event.target.value }))}
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold outline-none focus:border-blue-500"
-            />
-          </label>
-        ))}
-        <div className="mt-3">
-          <span className="text-xs font-bold text-slate-500">담당지역</span>
-          <RegionChecks
-            value={form.service_regions}
-            onChange={(next) => setForm((prev: any) => ({ ...prev, service_regions: next }))}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => void onSave()}
-          className="mt-5 min-h-11 w-full rounded-xl bg-blue-600 text-sm font-black text-white"
-        >
-          저장
-        </button>
-      </div>
-      <div className="space-y-3">
-        {staff.map((item) => (
-          <article key={item.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-            <p className="font-black text-slate-950">{safeText(item.name, "이름 없음")}</p>
-            <p className="mt-1 text-sm font-bold text-slate-500">
-              {safeText(item.role, "역할 미정")} · {item.is_active === false ? "비활성" : "활성"}
-            </p>
-          </article>
-        ))}
-      </div>
-    </div>
   );
 }
