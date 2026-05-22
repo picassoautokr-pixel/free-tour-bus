@@ -16,7 +16,7 @@ import {
 } from "@/lib/sponsor-call-view-model";
 import {
   calculatePlannedSupportFromRule,
-  filterRulesForPassengers,
+  filterRulesForCall,
   findDefaultRule,
   ruleSupportConditionLabel,
   ruleSupportFormLabel,
@@ -93,7 +93,11 @@ export function SponsorCallCard({
   sponsorRule?: Record<string, unknown> | null;
 }) {
   const matched = isMatchCompleted(call);
-  const eligibleRules = filterRulesForPassengers(rules, call.passenger_count);
+  const eligibleRules = filterRulesForCall(rules, {
+    passengerCount: call.passenger_count,
+    groupType: call.group_type ?? "",
+    linkedRuleId: call.sponsor_rule_id,
+  });
   const defaultRule = findDefaultRule(rules);
   const selectedRule =
     eligibleRules.find((r) => r.id === form.ruleId) ??
@@ -109,6 +113,7 @@ export function SponsorCallCard({
   );
 
   const expandOpen = expandMode != null;
+  const readOnlyMatched = listMode === "confirmed" && matched;
 
   return (
     <article className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
@@ -147,6 +152,12 @@ export function SponsorCallCard({
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {listMode === "review" ? (
+            <div className={`rounded-xl px-3 py-2 ring-1 ${SUPPORT_UI.planned}`}>
+              <p className="text-[10px] font-bold">{LABEL.estimatedSupport}</p>
+              <p className="text-sm font-black">{formatWon(call.estimated_support_amount)}</p>
+            </div>
+          ) : null}
+          {listMode === "review" ? (
             <button
               type="button"
               onClick={onToggleExpand}
@@ -164,7 +175,7 @@ export function SponsorCallCard({
             >
               {LABEL.customerInfo}
             </button>
-          ) : listMode === "confirmed" ? (
+          ) : listMode === "confirmed" && !matched ? (
             <button
               type="button"
               onClick={onToggleExpand}
@@ -180,11 +191,31 @@ export function SponsorCallCard({
 
       {expandOpen ? (
         <div className="space-y-3 border-t border-slate-100 bg-slate-50/80 px-3 py-4">
-          {eligibleRules.length === 0 ? (
+          {readOnlyMatched ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-xs font-bold text-amber-800">{LABEL.matchedReadOnlyHint}</p>
+              <p>
+                <span className="font-bold text-slate-500">{LABEL.supportKind}</span>{" "}
+                {call.support_kind || call.sponsor_rule_title || LABEL.dash}
+              </p>
+              <p>
+                <span className="font-bold text-slate-500">{LABEL.confirmedSupport}</span>{" "}
+                {formatWon(call.approved_support_amount)}
+              </p>
+              <p>
+                <span className="font-bold text-slate-500">{LABEL.staff}</span>{" "}
+                {call.assigned_staff_name || LABEL.dash}{" "}
+                {call.assigned_staff_phone ? `(${call.assigned_staff_phone})` : ""}
+              </p>
+            </div>
+          ) : null}
+          {!readOnlyMatched && eligibleRules.length === 0 ? (
             <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-              인원 조건을 충족하는 지원종류가 없습니다. 설정에서 최소 인원을 확인해 주세요.
+              인원·단체 조건을 충족하는 지원종류가 없습니다. 설정을 확인해 주세요.
             </p>
           ) : null}
+          {!readOnlyMatched ? (
+          <>
           <label className="block">
             <span className="text-xs font-bold text-slate-500">{LABEL.selectSupportKind}</span>
             <select
@@ -267,6 +298,8 @@ export function SponsorCallCard({
           >
             {LABEL.confirmSupport}
           </button>
+          </>
+          ) : null}
         </div>
       ) : null}
     </article>

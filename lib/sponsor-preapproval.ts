@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { parseInteger, safeText } from "@/lib/sponsor";
+import {
+  findDefaultRule,
+  normalizeApplicationGroupType,
+  parseRuleTargetGroups,
+  ruleMatchesApplication,
+} from "@/lib/sponsor-rule-helpers";
+import { parseInteger, safeText, sponsorSupportTypeLabel } from "@/lib/sponsor";
 import { calculateTotalPlannedSupport } from "@/lib/support-calculation";
 import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
@@ -93,7 +99,7 @@ export async function matchSponsorPreapprovals(
   const { data: application, error: applicationError } = await supabase
     .from("applications")
     .select(
-      "id, application_type, departure_region, passenger_count, departure, destination",
+      "id, application_type, departure_region, passenger_count, departure, destination, organization_type, organization_name",
     )
     .eq("id", id)
     .maybeSingle();
@@ -110,6 +116,10 @@ export async function matchSponsorPreapprovals(
 
   const departureRegion = safeText(applicationRow.departure_region);
   const passengerCount = parseInteger(applicationRow.passenger_count);
+  const groupType = normalizeApplicationGroupType(
+    safeText(applicationRow.organization_type) ||
+      safeText(applicationRow.organization_name),
+  );
 
   const { data: companies, error: companiesError } = await supabase
     .from("sponsor_companies")
@@ -132,33 +142,61 @@ export async function matchSponsorPreapprovals(
     .in("sponsor_company_id", approvedCompanyIds);
   if (rulesError) throw new Error(rulesError.message);
 
+  const rulesByCompany = new Map<string, Record<string, unknown>[]>();
+  for (const rawRule of Array.isArray(rules) ? rules : []) {
+    const rule = rawRule as Record<string, unknown>;
+    const sponsorCompanyId = safeText(rule.sponsor_company_id);
+    if (!sponsorCompanyId) continue;
+    const list = rulesByCompany.get(sponsorCompanyId) ?? [];
+    list.push(rule);
+    rulesByCompany.set(sponsorCompanyId, list);
+  }
+
   const bestByCompany = new Map<
     string,
     { row: Record<string, unknown>; matched: MatchResult["matched"][number] }
   >();
   const dailyApprovedByCompany = new Map<string, number>();
 
-  for (const rawRule of Array.isArray(rules) ? rules : []) {
-    const rule = rawRule as Record<string, unknown>;
-    const sponsorCompanyId = safeText(rule.sponsor_company_id);
-    const sponsorRuleId = safeText(rule.id);
-    if (!sponsorCompanyId || !sponsorRuleId) continue;
-
-    const serviceRegions = normalizeRegions(rule.service_regions);
-    const regionMatches =
-      serviceRegions.length === 0 || serviceRegions.includes(departureRegion);
-    if (!regionMatches) continue;
-
-    if (
-      !passengerInRange(
+  for (const [sponsorCompanyId, companyRules] of rulesByCompany) {
+    const matching = companyRules.filter((rule) => {
+      const serviceRegions = normalizeRegions(rule.service_regions);
+      const regionMatches =
+        serviceRegions.length === 0 || serviceRegions.includes(departureRegion);
+      if (!regionMatches) return false;
+      return ruleMatchesApplication(rule as { id: string }, {
         passengerCount,
-        rule.min_passenger_count,
-        rule.max_passenger_count,
-      )
-    ) {
-      continue;
-    }
+        groupType,
+      });
+    });
 
+    if (matching.length === 0) continue;
+
+    const defaultRule = findDefaultRule(matching as { id: string }[]);
+    let picked: Record<string, unknown> | null = null;
+    if (defaultRule) {
+      picked = matching.find((r) => safeText(r.id) === defaultRule.id) ?? defaultRule;
+    } else {
+      let bestAmt = -1;
+      for (const candidate of matching) {
+        const ruleAmt = estimateSupport({
+          passengerCount,
+          supportPerPerson: parseInteger(candidate.support_per_person) ?? 0,
+          supportPerCase: parseInteger(candidate.support_per_case) ?? 0,
+          maxSupportAmount: parseInteger(candidate.max_support_amount) ?? 0,
+          maxPassengerCount: parseInteger(candidate.max_passenger_count) ?? 0,
+          remainingDailyBudget: null,
+        });
+        if (ruleAmt > bestAmt) {
+          bestAmt = ruleAmt;
+          picked = candidate;
+        }
+      }
+    }
+    if (!picked) continue;
+
+    const rule = picked as Record<string, unknown>;
+    const sponsorRuleId = safeText(rule.id);
     const supportPerPerson = parseInteger(rule.support_per_person) ?? 0;
     const supportPerCase = parseInteger(rule.support_per_case) ?? 0;
     const maxSupportAmount = parseInteger(rule.max_support_amount) ?? 0;
@@ -182,6 +220,8 @@ export async function matchSponsorPreapprovals(
       remainingDailyBudget,
     });
 
+    const serviceRegions = normalizeRegions(rule.service_regions);
+    const targetGroups = parseRuleTargetGroups(rule);
     const row = {
       application_id: id,
       sponsor_company_id: sponsorCompanyId,
@@ -193,25 +233,28 @@ export async function matchSponsorPreapprovals(
       passenger_count: passengerCount,
       matched_region: serviceRegions.length === 0 ? "전국" : departureRegion,
       matched_reason: [
-        serviceRegions.length === 0
-          ? "전국 조건"
-          : `지역 ${departureRegion}`,
+        serviceRegions.length === 0 ? "전국" : `지역 ${departureRegion}`,
         passengerCount != null ? `인원 ${passengerCount}명` : "인원 미정",
-        dailyBudget > 0 ? `일 예산 잔여 ${remainingDailyBudget?.toLocaleString("ko-KR")}원` : "",
-      ].join(" · "),
+        groupType ? `단체 ${groupType}` : "단체 미정",
+        targetGroups.length > 0 ? `지원단체 ${targetGroups.join(",")}` : "",
+        rule.is_default === true || safeText(rule.title) === "기본지원"
+          ? "기본지원"
+          : safeText(rule.title),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      support_kind: safeText(rule.title),
+      support_form_kind: sponsorSupportTypeLabel(rule.support_type),
+      support_condition_label: safeText(rule.support_condition),
     };
-    const matchedItem = {
-      sponsor_company_id: sponsorCompanyId,
-      sponsor_rule_id: sponsorRuleId,
-      estimated_support_amount: estimatedSupportAmount,
-    };
-    const current = bestByCompany.get(sponsorCompanyId);
-    if (
-      !current ||
-      estimatedSupportAmount > (Number(current.row.estimated_support_amount) || 0)
-    ) {
-      bestByCompany.set(sponsorCompanyId, { row, matched: matchedItem });
-    }
+    bestByCompany.set(sponsorCompanyId, {
+      row,
+      matched: {
+        sponsor_company_id: sponsorCompanyId,
+        sponsor_rule_id: sponsorRuleId,
+        estimated_support_amount: estimatedSupportAmount,
+      },
+    });
   }
 
   const rowsToInsert = [...bestByCompany.values()].map((item) => item.row);

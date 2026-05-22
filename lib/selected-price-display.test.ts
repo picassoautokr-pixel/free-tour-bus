@@ -42,12 +42,12 @@ describe("resolveApplicationMatchedPriceDisplay", () => {
     const line = resolveApplicationMatchedPriceDisplay(
       {
         selected_price_type: "support_planned",
-        selected_price_label: "지원금 할인 예정가",
+        selected_price_label: "지원금 할인 예상가",
         selected_price: 200_000,
       },
       { quoteNormalPrice: 500_000, quoteSupportPlannedPrice: 200_000 },
     );
-    assert.equal(line.label, "지원금 할인 예정가");
+    assert.equal(line.label, "지원금 할인 예상가");
     assert.equal(line.amount, 200_000);
   });
 
@@ -82,7 +82,7 @@ describe("resolveApplicationMatchedPriceDisplay", () => {
       },
       { quoteNormalPrice: 500_000, quoteSupportPlannedPrice: 200_000 },
     );
-    assert.equal(line.label, "지원금 할인 예정가");
+    assert.equal(line.label, "지원금 할인 예상가");
     assert.equal(line.amount, 200_000);
   });
 });
@@ -101,7 +101,7 @@ describe("resolveClientMatchedQuoteLine", () => {
         supportConfirmed: false,
       },
     );
-    assert.equal(line.kindLabel, "지원금 할인 예정가");
+    assert.equal(line.kindLabel, "지원금 할인 예상가");
     assert.equal(line.amount, 200_000);
   });
 
@@ -109,12 +109,12 @@ describe("resolveClientMatchedQuoteLine", () => {
     const line = resolveClientMatchedQuoteLine(
       {
         selected_price_type: "support_planned",
-        selected_price_label: "지원금 할인 예정가",
+        selected_price_label: "지원금 할인 예상가",
         selected_price: 200_000,
       },
       { normalPrice: 500_000, supportPlannedPrice: 200_000 },
     );
-    assert.equal(line.kindLabel, "지원금 할인 예정가");
+    assert.equal(line.kindLabel, "지원금 할인 예상가");
     assert.equal(line.amount, 200_000);
   });
 });

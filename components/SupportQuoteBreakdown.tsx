@@ -26,24 +26,24 @@ function buildRows(breakdown: QuoteSupportBreakdown, mode: "full" | "customer"):
       value: SETTLEMENT_TYPE_LABELS[breakdown.settlementType],
     });
     rows.push({
-      label: "총 예정 지원금",
+      label: "총 예상 지원금",
       value: fmt(breakdown.totalPlannedSupport, "planned"),
       emphasis: "planned",
     });
     rows.push({
-      label: "고객 예정 지원금",
+      label: "고객 예상 지원금",
       value: fmt(breakdown.customerPlannedSupport, "planned"),
       emphasis: "planned",
     });
     rows.push({
-      label: "기사 예정 지원금",
+      label: "기사 예상 지원금",
       value: fmt(breakdown.partnerPlannedSupport, "planned"),
       emphasis: "planned",
     });
   }
 
   rows.push({
-    label: "지원금 할인 예정가",
+    label: "지원금 할인 예상가",
     value: fmt(breakdown.supportDiscountPlannedPrice, "planned"),
     emphasis: "planned",
   });

@@ -9,10 +9,8 @@ import {
   parseDashboardSettings,
 } from "@/lib/sponsor-catalog";
 import { mapSponsorApplicationTripFields } from "@/lib/sponsor-application-map";
-import {
-  DEFAULT_SPONSOR_RULE_PATCH,
-  DEFAULT_SPONSOR_RULE_TITLE,
-} from "@/lib/sponsor-rule-helpers";
+import { DEFAULT_SPONSOR_RULE_TITLE } from "@/lib/sponsor-rule-helpers";
+import { sponsorRuleIsInUse } from "@/lib/sponsor-rule-usage";
 import {
   normalizeStringArray,
   parseInteger,
@@ -69,7 +67,7 @@ async function resolveSponsor() {
     .eq("auth_user_id", user.id)
     .maybeSingle();
   if (error) return { error: error.message, status: 502 } as const;
-  if (!data) return { error: "후원업체 신청 정보를 찾을 수 없습니다.", status: 404 } as const;
+  if (!data) return { error: "스폰서 신청 정보를 찾을 수 없습니다.", status: 404 } as const;
 
   return { admin, company: data as SponsorCompany, userId: user.id } as const;
 }
@@ -117,25 +115,7 @@ export async function GET() {
       .limit(80),
   ]);
 
-  let rules = Array.isArray(ruleRows) ? ruleRows : [];
-  const hasDefaultRule = rules.some(
-    (raw) => safeText((raw as Record<string, unknown>).title) === DEFAULT_SPONSOR_RULE_TITLE,
-  );
-  if (!hasDefaultRule) {
-    const { data: insertedDefault, error: defaultErr } = await admin
-      .from("sponsor_rules")
-      .insert({
-        sponsor_company_id: company.id,
-        ...DEFAULT_SPONSOR_RULE_PATCH,
-        service_regions: [],
-        memo: "",
-      })
-      .select("*")
-      .single();
-    if (!defaultErr && insertedDefault) {
-      rules = [insertedDefault, ...rules];
-    }
-  }
+  const rules = Array.isArray(ruleRows) ? ruleRows : [];
   const preapprovals = Array.isArray(preapprovalRows) ? preapprovalRows : [];
   const applicationIds = [
     ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).application_id)).filter(Boolean)),
@@ -265,6 +245,7 @@ export async function GET() {
       { quote_count: 0, sponsor_quote_count: 0, matched_quote_count: 0, final_quote_count: 0 };
     const trip = mapSponsorApplicationTripFields(application, preapproval, rule);
     const finalQuoteId = safeText(application.final_selected_quote_id);
+    const matchCompleted = Boolean(finalQuoteId);
     const finalQuote = finalQuoteById.get(finalQuoteId);
     const partnerDriver = finalQuote
       ? driverByPartnerId.get(safeText(finalQuote.partner_driver_id))
@@ -317,10 +298,10 @@ export async function GET() {
       sponsor_quote_count: quoteStats.sponsor_quote_count,
       matched_quote_count: quoteStats.matched_quote_count,
       final_quote_count: quoteStats.final_quote_count,
-      customer_name: safeText(application.applicant_name),
-      customer_phone: safeText(application.phone),
-      driver_name: safeText(partnerDriver?.name),
-      driver_phone: safeText(partnerDriver?.phone),
+      customer_name: matchCompleted ? safeText(application.applicant_name) : "",
+      customer_phone: matchCompleted ? safeText(application.phone) : "",
+      driver_name: matchCompleted ? safeText(partnerDriver?.name) : "",
+      driver_phone: matchCompleted ? safeText(partnerDriver?.phone) : "",
     };
     return row;
   });
@@ -376,6 +357,7 @@ export async function POST(request: Request) {
       daily_budget: parseInteger(payload.daily_budget),
       monthly_budget: parseInteger(payload.monthly_budget),
       is_active: payload.is_active !== false,
+      is_default: payload.is_default === true,
       memo: safeText(payload.memo),
       target_groups: targetGroups.length > 0 ? targetGroups : null,
     };
@@ -399,12 +381,26 @@ export async function POST(request: Request) {
     if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
     const { data: target } = await admin
       .from("sponsor_rules")
-      .select("title")
+      .select("title, is_default")
       .eq("id", id)
       .eq("sponsor_company_id", company.id)
       .maybeSingle();
-    if (safeText((target as Record<string, unknown> | null)?.title) === DEFAULT_SPONSOR_RULE_TITLE) {
+    const targetRow = (target ?? {}) as Record<string, unknown>;
+    if (
+      targetRow.is_default === true ||
+      safeText(targetRow.title) === DEFAULT_SPONSOR_RULE_TITLE
+    ) {
       return NextResponse.json({ error: "기본지원은 삭제할 수 없습니다." }, { status: 400 });
+    }
+    const inUse = await sponsorRuleIsInUse(admin, id, company.id);
+    if (inUse) {
+      const { error } = await admin
+        .from("sponsor_rules")
+        .update({ is_active: false })
+        .eq("id", id)
+        .eq("sponsor_company_id", company.id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+      return NextResponse.json({ ok: true, soft_deleted: true });
     }
     const { error } = await admin
       .from("sponsor_rules")
@@ -412,7 +408,7 @@ export async function POST(request: Request) {
       .eq("id", id)
       .eq("sponsor_company_id", company.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 502 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, soft_deleted: false });
   }
 
   if (type === "staff_delete") {
@@ -427,13 +423,17 @@ export async function POST(request: Request) {
   }
 
   if (type === "staff") {
-    const patch = {
+    const regions = normalizeStringArray(
+      payload.assigned_regions ?? payload.service_regions,
+    );
+    const patch: Record<string, unknown> = {
       sponsor_company_id: company.id,
       name: safeText(payload.name),
       phone: safeText(payload.phone),
       email: safeText(payload.email),
       role: safeText(payload.role),
-      service_regions: normalizeStringArray(payload.service_regions),
+      service_regions: regions,
+      assigned_regions: regions,
       is_active: payload.is_active !== false,
     };
     const query = id

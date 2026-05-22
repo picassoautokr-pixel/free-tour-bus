@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 
 import { LABEL } from "@/lib/sponsor-dashboard-labels";
 import { SERVICE_REGIONS } from "@/lib/regions";
+import { parseStaffAssignedRegions } from "@/lib/sponsor-rule-helpers";
 import { safeText } from "@/lib/sponsor";
 
 export type SponsorStaffFormState = {
@@ -25,9 +26,7 @@ const emptyStaffForm = (): SponsorStaffFormState => ({
 });
 
 function staffToForm(item: Record<string, unknown>): SponsorStaffFormState {
-  const regions = Array.isArray(item.service_regions)
-    ? (item.service_regions as string[]).filter(Boolean)
-    : [];
+  const regions = parseStaffAssignedRegions(item);
   return {
     id: safeText(item.id),
     name: safeText(item.name),

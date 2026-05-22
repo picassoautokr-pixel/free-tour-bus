@@ -33,7 +33,7 @@ export const CLIENT_UI = {
   remainingCount: "자동마감까지 남은 건수",
   groupType: "단체유형",
   normalPrice: "일반견적가",
-  supportDiscountPlanned: "지원금 할인 예정가",
+  supportDiscountPlanned: "지원금 할인 예상가",
   supportDiscountApplied: "지원금 할인 적용가",
   supportReviewing: "지원금 검토중",
   supportConfirmed: "지원금 확정",

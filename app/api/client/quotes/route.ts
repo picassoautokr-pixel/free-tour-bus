@@ -616,7 +616,7 @@ export async function POST(request: Request) {
       string
     > = {
       normal: "일반견적가",
-      support_planned: "지원금 할인 예정가",
+      support_planned: "지원금 할인 예상가",
       support_confirmed: "지원금 할인 적용가",
     };
     if (selectedPriceLabel === "") {

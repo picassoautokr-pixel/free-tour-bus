@@ -130,5 +130,11 @@ export async function PATCH(request: Request) {
     .select("*")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+
+  if (status === "approved") {
+    const { ensureDefaultSponsorRuleForCompany } = await import("@/lib/sponsor-default-rule");
+    await ensureDefaultSponsorRuleForCompany(resolved.admin, id);
+  }
+
   return NextResponse.json({ ok: true, sponsor: data });
 }

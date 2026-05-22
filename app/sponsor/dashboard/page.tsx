@@ -42,6 +42,7 @@ import {
   type SponsorMainTab,
 } from "@/lib/sponsor-dashboard-labels";
 import {
+  calculatePlannedSupportFromRule,
   findDefaultRule,
   ruleSupportConditionLabel,
   ruleSupportFormLabel,
@@ -284,16 +285,23 @@ export default function SponsorDashboardPage() {
   const resolveRuleForForm = (form: SponsorCardForm): SponsorRuleRecord | null =>
     sponsorRules.find((r) => r.id === form.ruleId) ?? null;
 
-  const buildApprovePayload = (form: SponsorCardForm) => {
+  const buildApprovePayload = (call: SponsorCallRow, form: SponsorCardForm) => {
     const rule = resolveRuleForForm(form);
+    const passengers = call.passenger_count ?? 0;
+    const plannedTotal = rule
+      ? calculatePlannedSupportFromRule(rule, passengers)
+      : call.estimated_support_amount ?? 0;
     return {
       approved_support_amount: form.amount,
+      planned_total_support: plannedTotal,
       assigned_staff_id: form.staffId,
       decision_memo: form.memo,
       sponsor_rule_id: form.ruleId,
+      sponsor_rule_name: safeText(rule?.title),
       support_kind: safeText(rule?.title),
       support_form_kind: rule ? ruleSupportFormLabel(rule) : "",
       support_condition_label: rule ? ruleSupportConditionLabel(rule) : "",
+      support_settlement_mode: "client_priority",
     };
   };
 
@@ -356,10 +364,16 @@ export default function SponsorDashboardPage() {
         credentials: "same-origin",
         body: JSON.stringify({ type: "rule_delete", id }),
       });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        soft_deleted?: boolean;
+      } | null;
       if (!res.ok) {
         setMessage(json?.error ?? "삭제에 실패했습니다.");
         return;
+      }
+      if (json?.soft_deleted) {
+        setMessage(LABEL.softDeleteDone);
       }
       setRuleForm({
         id: "",
@@ -388,7 +402,11 @@ export default function SponsorDashboardPage() {
         body: JSON.stringify({
           type: "staff",
           id: staffForm.id,
-          payload: { ...staffForm, is_active: true },
+          payload: {
+            ...staffForm,
+            assigned_regions: staffForm.service_regions,
+            is_active: true,
+          },
         }),
       });
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -682,7 +700,7 @@ export default function SponsorDashboardPage() {
                       const form = getForm(call);
                       const action =
                         listMode === "review" ? "approve" : "change";
-                      void postPreapproval(call.id, action, buildApprovePayload(form));
+                      void postPreapproval(call.id, action, buildApprovePayload(call, form));
                     }}
                   />
                 );

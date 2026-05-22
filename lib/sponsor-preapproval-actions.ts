@@ -2,7 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recalculateDriverQuoteSupport } from "@/lib/driver-quote-support";
 import { formatWon, sendNotificationSms, siteBaseUrl } from "@/lib/notification-service";
-import { parseInteger, safeText } from "@/lib/sponsor";
+import {
+  ruleSupportConditionLabel,
+  ruleSupportFormLabel,
+  type SponsorRuleRecord,
+} from "@/lib/sponsor-rule-helpers";
+import { parseInteger, safeText, sponsorSupportTypeLabel } from "@/lib/sponsor";
 import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
 type Actor = {
@@ -59,6 +64,64 @@ function assertOwner(ctx: { preapproval: Record<string, unknown> }, actor: Actor
   }
 }
 
+async function assertNotLockedAfterMatch(
+  admin: SupabaseClient,
+  applicationId: string,
+  actor: Actor,
+) {
+  if (actor.admin) return;
+  const { data: application } = await admin
+    .from("applications")
+    .select("final_selected_quote_id")
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (safeText((application as Record<string, unknown> | null)?.final_selected_quote_id)) {
+    throw new Error("매칭완료 후에는 지원종류·지원금·담당자를 변경할 수 없습니다.");
+  }
+}
+
+async function loadRuleById(
+  admin: SupabaseClient,
+  ruleId: string,
+): Promise<SponsorRuleRecord | null> {
+  if (!ruleId) return null;
+  const { data } = await admin.from("sponsor_rules").select("*").eq("id", ruleId).maybeSingle();
+  return data ? (data as SponsorRuleRecord) : null;
+}
+
+function buildConfirmSnapshotPatch(params: {
+  rule: SponsorRuleRecord | null;
+  plannedTotal: number;
+  confirmedTotal: number;
+  staff: Record<string, unknown> | null;
+  supportKind?: string;
+  supportFormKind?: string;
+  supportConditionLabel?: string;
+  sponsorRuleId?: string;
+  supportSettlementMode?: string;
+}): Record<string, unknown> {
+  const rule = params.rule;
+  const ruleName = safeText(params.supportKind) || safeText(rule?.title);
+  return {
+    planned_total_support: params.plannedTotal,
+    approved_support_amount: params.confirmedTotal,
+    sponsor_rule_id: params.sponsorRuleId || safeText(rule?.id) || null,
+    sponsor_rule_name: ruleName || null,
+    support_kind: ruleName || null,
+    support_form_kind:
+      safeText(params.supportFormKind) ||
+      (rule ? ruleSupportFormLabel(rule) : "") ||
+      null,
+    support_condition_label:
+      safeText(params.supportConditionLabel) ||
+      (rule ? ruleSupportConditionLabel(rule) : "") ||
+      null,
+    support_settlement_mode: safeText(params.supportSettlementMode) || "client_priority",
+    manager_name: params.staff ? safeText(params.staff.name) : null,
+    manager_phone: params.staff ? safeText(params.staff.phone) : null,
+  };
+}
+
 export async function approveSponsorPreapproval(
   admin: SupabaseClient,
   params: {
@@ -70,6 +133,10 @@ export async function approveSponsorPreapproval(
     supportFormKind?: unknown;
     supportConditionLabel?: unknown;
     sponsorRuleId?: unknown;
+    plannedTotalSupport?: unknown;
+    sponsorRuleName?: unknown;
+    supportSettlementMode?: unknown;
+    supportType?: unknown;
     actor: Actor;
   },
 ) {
@@ -78,8 +145,11 @@ export async function approveSponsorPreapproval(
 
   const now = new Date().toISOString();
   const estimated = parseInteger(ctx.preapproval.estimated_support_amount) ?? 0;
-  const approvedAmount = parseInteger(params.approvedSupportAmount) ?? estimated;
+  const plannedTotal = parseInteger(params.plannedTotalSupport) ?? estimated;
+  const approvedAmount = parseInteger(params.approvedSupportAmount) ?? plannedTotal;
   const assignedStaffId = safeText(params.assignedStaffId);
+  const ruleId = safeText(params.sponsorRuleId) || safeText(ctx.preapproval.sponsor_rule_id);
+  const rule = await loadRuleById(admin, ruleId);
 
   let staff: Record<string, unknown> | null = null;
   if (assignedStaffId) {
@@ -98,7 +168,6 @@ export async function approveSponsorPreapproval(
 
   const patch: Record<string, unknown> = {
     status: "approved",
-    approved_support_amount: approvedAmount,
     assigned_staff_id: assignedStaffId || null,
     approved_at: now,
     decided_at: now,
@@ -106,28 +175,44 @@ export async function approveSponsorPreapproval(
     decision_memo: safeText(params.decisionMemo),
     staff_assigned_at: assignedStaffId ? now : null,
     payout_status: "processing",
-    support_kind: safeText(params.supportKind) || null,
-    support_form_kind: safeText(params.supportFormKind) || null,
-    support_condition_label: safeText(params.supportConditionLabel) || null,
+    ...buildConfirmSnapshotPatch({
+      rule,
+      plannedTotal,
+      confirmedTotal: approvedAmount,
+      staff,
+      supportKind: safeText(params.sponsorRuleName) || safeText(params.supportKind),
+      supportFormKind: safeText(params.supportFormKind) || (rule ? ruleSupportFormLabel(rule) : ""),
+      supportConditionLabel:
+        safeText(params.supportConditionLabel) ||
+        (rule ? ruleSupportConditionLabel(rule) : ""),
+      sponsorRuleId: ruleId,
+      supportSettlementMode: safeText(params.supportSettlementMode),
+    }),
   };
-  const ruleId = safeText(params.sponsorRuleId);
-  if (ruleId) patch.sponsor_rule_id = ruleId;
+  if (params.supportType && rule) {
+    patch.support_form_kind = sponsorSupportTypeLabel(params.supportType);
+  }
 
   let { error } = await admin
     .from("sponsor_preapprovals")
     .update(patch)
     .eq("id", params.preapprovalId);
-  if (
-    error &&
-    /payout_status|support_kind|support_form_kind|support_condition_label|sponsor_rule_id|does not exist|42703/i.test(
-      error.message,
-    )
-  ) {
+  if (error && /does not exist|42703|column/i.test(error.message)) {
     const legacyPatch = { ...patch };
-    delete legacyPatch.payout_status;
-    delete legacyPatch.support_kind;
-    delete legacyPatch.support_form_kind;
-    delete legacyPatch.support_condition_label;
+    for (const key of [
+      "payout_status",
+      "support_kind",
+      "support_form_kind",
+      "support_condition_label",
+      "sponsor_rule_id",
+      "planned_total_support",
+      "sponsor_rule_name",
+      "support_settlement_mode",
+      "manager_name",
+      "manager_phone",
+    ]) {
+      delete legacyPatch[key];
+    }
     const legacy = await admin
       .from("sponsor_preapprovals")
       .update(legacyPatch)
@@ -210,6 +295,9 @@ export async function updateApprovedSponsorPreapproval(
     supportFormKind?: unknown;
     supportConditionLabel?: unknown;
     sponsorRuleId?: unknown;
+    plannedTotalSupport?: unknown;
+    sponsorRuleName?: unknown;
+    supportSettlementMode?: unknown;
     payoutStatus?: unknown;
     actor: Actor;
   },
@@ -219,6 +307,8 @@ export async function updateApprovedSponsorPreapproval(
   if (safeText(ctx.preapproval.status) !== "approved") {
     throw new Error("지원확정된 건만 변경할 수 있습니다.");
   }
+  const applicationId = safeText(ctx.preapproval.application_id);
+  await assertNotLockedAfterMatch(admin, applicationId, params.actor);
 
   const approvedAmount =
     parseInteger(params.approvedSupportAmount) ??
@@ -227,35 +317,67 @@ export async function updateApprovedSponsorPreapproval(
     0;
   const assignedStaffId = safeText(params.assignedStaffId);
   const payoutStatus = safeText(params.payoutStatus);
+  const plannedTotal =
+    parseInteger(params.plannedTotalSupport) ??
+    parseInteger(ctx.preapproval.planned_total_support) ??
+    parseInteger(ctx.preapproval.estimated_support_amount) ??
+    0;
+  const ruleId = safeText(params.sponsorRuleId) || safeText(ctx.preapproval.sponsor_rule_id);
+  const rule = await loadRuleById(admin, ruleId);
+
+  let staff: Record<string, unknown> | null = null;
+  if (assignedStaffId) {
+    const { data } = await admin
+      .from("sponsor_staff")
+      .select("id, name, phone, sponsor_company_id")
+      .eq("id", assignedStaffId)
+      .maybeSingle();
+    staff = (data ?? null) as Record<string, unknown> | null;
+  }
+
   const patch: Record<string, unknown> = {
-    approved_support_amount: approvedAmount,
     assigned_staff_id: assignedStaffId || null,
     decision_memo: safeText(params.decisionMemo),
-    support_kind: safeText(params.supportKind) || null,
-    support_form_kind: safeText(params.supportFormKind) || null,
-    support_condition_label: safeText(params.supportConditionLabel) || null,
     decided_at: new Date().toISOString(),
     decided_by: params.actor.userId,
+    ...buildConfirmSnapshotPatch({
+      rule,
+      plannedTotal,
+      confirmedTotal: approvedAmount,
+      staff,
+      supportKind: safeText(params.sponsorRuleName) || safeText(params.supportKind),
+      supportFormKind: safeText(params.supportFormKind),
+      supportConditionLabel: safeText(params.supportConditionLabel),
+      sponsorRuleId: ruleId,
+      supportSettlementMode: safeText(params.supportSettlementMode),
+    }),
   };
-  const ruleId = safeText(params.sponsorRuleId);
-  if (ruleId) patch.sponsor_rule_id = ruleId;
   if (payoutStatus === "processing" || payoutStatus === "completed" || payoutStatus === "pending") {
     patch.payout_status = payoutStatus;
   }
 
   let { error } = await admin.from("sponsor_preapprovals").update(patch).eq("id", params.preapprovalId);
-  if (error && /payout_status|support_kind|does not exist|42703/i.test(error.message)) {
+  if (error && /does not exist|42703|column/i.test(error.message)) {
     const legacy = { ...patch };
-    delete legacy.payout_status;
-    delete legacy.support_kind;
-    delete legacy.support_form_kind;
-    delete legacy.support_condition_label;
+    for (const key of [
+      "payout_status",
+      "support_kind",
+      "support_form_kind",
+      "support_condition_label",
+      "sponsor_rule_id",
+      "planned_total_support",
+      "sponsor_rule_name",
+      "support_settlement_mode",
+      "manager_name",
+      "manager_phone",
+    ]) {
+      delete legacy[key];
+    }
     const res = await admin.from("sponsor_preapprovals").update(legacy).eq("id", params.preapprovalId);
     error = res.error;
   }
   if (error) throw new Error(error.message);
 
-  const applicationId = safeText(ctx.preapproval.application_id);
   await refreshApplicationSponsorSupportSummary(admin, applicationId);
   await recalculateDriverQuoteSupport(admin, applicationId);
   return { ok: true };

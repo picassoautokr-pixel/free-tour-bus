@@ -91,6 +91,7 @@ export function SponsorSettingsRulePanel({
           {rules.map((rule) => (
             <option key={rule.id} value={rule.id}>
               {safeText(rule.title, "지원종류")}
+              {rule.is_active === false ? ` (${LABEL.ruleInactive})` : ""}
             </option>
           ))}
         </select>

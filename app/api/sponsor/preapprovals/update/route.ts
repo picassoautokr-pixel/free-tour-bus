@@ -67,6 +67,9 @@ export async function POST(request: Request) {
         supportFormKind: body?.support_form_kind,
         supportConditionLabel: body?.support_condition_label,
         sponsorRuleId: body?.sponsor_rule_id,
+        plannedTotalSupport: body?.planned_total_support,
+        sponsorRuleName: body?.sponsor_rule_name,
+        supportSettlementMode: body?.support_settlement_mode,
         actor,
       });
       return NextResponse.json(result);
@@ -89,6 +92,9 @@ export async function POST(request: Request) {
         supportFormKind: body?.support_form_kind,
         supportConditionLabel: body?.support_condition_label,
         sponsorRuleId: body?.sponsor_rule_id,
+        plannedTotalSupport: body?.planned_total_support,
+        sponsorRuleName: body?.sponsor_rule_name,
+        supportSettlementMode: body?.support_settlement_mode,
         payoutStatus: body?.payout_status,
         actor,
       });

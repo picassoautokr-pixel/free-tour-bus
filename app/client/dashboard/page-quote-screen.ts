@@ -8,7 +8,7 @@ import { LABEL } from "@/lib/client-dashboard-labels";
 
 export const QUOTE_SCREEN_LABEL = {
   supportDiscountApplied: "지원금 할인 적용가",
-  supportDiscountPlanned: "지원금 할인 예정가",
+  supportDiscountPlanned: "지원금 할인 예상가",
   normalPrice: "일반견적가",
 } as const;
 
@@ -46,7 +46,7 @@ export function resolveQuoteNormalPrice(quote: ClientQuote): number | null {
   );
 }
 
-/** 지원금 할인 예정가 — 견적 필드만 */
+/** 지원금 할인 예상가 — 견적 필드만 */
 export function resolveQuoteSupportPlannedPrice(quote: ClientQuote): number | null {
   return (
     parseAmount(quote.support_discount_planned_price) ??

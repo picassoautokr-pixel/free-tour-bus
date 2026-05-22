@@ -1,6 +1,6 @@
-/** 후원업체(스폰서) 대시보드 UI 용어 — UTF-8 */
+/** 스폰서 대시보드 UI 용어 — UTF-8 */
 
-export const SPONSOR_DASHBOARD_TITLE = "후원업체 대시보드";
+export const SPONSOR_DASHBOARD_TITLE = "스폰서 대시보드";
 
 export type SponsorMainTab = "review" | "confirmed" | "settings";
 export type ConfirmedPayoutFilter = "all" | "processing" | "completed";
@@ -38,7 +38,7 @@ export const LABEL = {
   partnerDriver: "제휴기사",
   estimatedSupport: "예상 지원금",
   confirmedSupport: "확정 지원금",
-  totalPlannedSupport: "총 예정 지원금",
+  totalPlannedSupport: "총 예상 지원금",
   totalConfirmedSupport: "총 확정 지원금",
   tripType: "운행",
   busGrade: "차량등급",
@@ -131,7 +131,11 @@ export const LABEL = {
   reportPayoutProcessing: "지급중",
   reportPayoutCompleted: "지급완료",
   companyStatus: "상태",
-  plannedSupportAuto: "예정 지원금",
+  plannedSupportAuto: "예상 지원금",
+  matchedReadOnlyHint:
+    "매칭완료 후에는 지원종류·지원금·담당자를 변경할 수 없습니다. (관리자만 수정 가능)",
+  ruleInactive: "비활성",
+  softDeleteDone: "사용 이력이 있어 비활성 처리되었습니다.",
 } as const;
 
 export const SUPPORT_UI = {
