@@ -727,19 +727,34 @@ export default function SponsorDashboardPage() {
                 <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
                   <dt className="text-[11px] font-bold text-emerald-700">{LABEL.customer}</dt>
                   <dd className="mt-1 font-black">
-                    {customerDetailCall.customer_name || LABEL.dash}
+                    {customerDetailCall.popup_customer_name ||
+                      customerDetailCall.customer_name ||
+                      LABEL.dash}
                   </dd>
                   <dd className="mt-1 font-semibold">
-                    {customerDetailCall.customer_phone || LABEL.dash}
+                    {customerDetailCall.popup_customer_phone ||
+                      customerDetailCall.customer_phone ||
+                      LABEL.dash}
                   </dd>
                 </div>
                 <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                   <dt className="text-[11px] font-bold text-blue-700">{LABEL.driverInfo}</dt>
+                  {customerDetailCall.popup_driver_company ||
+                  customerDetailCall.driver_company ? (
+                    <dd className="mt-1 text-xs font-bold text-blue-800">
+                      {customerDetailCall.popup_driver_company ||
+                        customerDetailCall.driver_company}
+                    </dd>
+                  ) : null}
                   <dd className="mt-1 font-black">
-                    {customerDetailCall.driver_name || LABEL.dash}
+                    {customerDetailCall.popup_driver_name ||
+                      customerDetailCall.driver_name ||
+                      LABEL.dash}
                   </dd>
                   <dd className="mt-1 font-semibold">
-                    {customerDetailCall.driver_phone || LABEL.dash}
+                    {customerDetailCall.popup_driver_phone ||
+                      customerDetailCall.driver_phone ||
+                      LABEL.dash}
                   </dd>
                 </div>
               </dl>

@@ -9,6 +9,7 @@ import {
   parseDashboardSettings,
 } from "@/lib/sponsor-catalog";
 import { mapSponsorApplicationTripFields } from "@/lib/sponsor-application-map";
+import { loadMatchedContactsByApplication } from "@/lib/sponsor-matched-contact";
 import { DEFAULT_SPONSOR_RULE_TITLE } from "@/lib/sponsor-rule-helpers";
 import { sponsorRuleIsInUse } from "@/lib/sponsor-rule-usage";
 import {
@@ -19,10 +20,10 @@ import {
 } from "@/lib/sponsor";
 
 const APPLICATION_TRIP_SELECT_FULL =
-  "id, created_at, application_type, organization_type, organization_name, applicant_name, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
+  "id, created_at, receipt_number, application_type, organization_type, organization_name, applicant_name, phone, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, final_selected_quote_source, contact_revealed_at, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
 
 const APPLICATION_TRIP_SELECT_BASE =
-  "id, created_at, application_type, organization_type, organization_name, applicant_name, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id";
+  "id, created_at, receipt_number, application_type, organization_type, organization_name, applicant_name, phone, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, final_selected_quote_source, contact_revealed_at";
 
 function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
   return (
@@ -142,15 +143,16 @@ export async function GET() {
     applicationRows = Array.isArray(applicationResult.data) ? applicationResult.data : [];
   }
 
-  const finalQuoteIds = [
-    ...new Set(
-      (Array.isArray(applicationRows) ? applicationRows : [])
-        .map((row) => safeText((row as Record<string, unknown>).final_selected_quote_id))
-        .filter(Boolean),
-    ),
-  ];
-  const [{ data: matchedRuleRows }, { data: quoteRows }, { data: finalQuoteRows }] =
-    await Promise.all([
+  const applicationRecords = (Array.isArray(applicationRows)
+    ? applicationRows
+    : []) as Record<string, unknown>[];
+
+  const matchedContactByAppId = await loadMatchedContactsByApplication(
+    admin,
+    applicationRecords,
+  );
+
+  const [{ data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
     ruleIds.length > 0
       ? admin
           .from("sponsor_rules")
@@ -163,40 +165,7 @@ export async function GET() {
           .select("application_id, sponsor_quote_enabled, status")
           .in("application_id", applicationIds)
       : Promise.resolve({ data: [] }),
-    finalQuoteIds.length > 0
-      ? admin
-          .from("driver_quotes")
-          .select("id, application_id, partner_driver_id, auth_user_id")
-          .in("id", finalQuoteIds)
-      : Promise.resolve({ data: [] }),
   ]);
-
-  const partnerDriverIds = [
-    ...new Set(
-      (Array.isArray(finalQuoteRows) ? finalQuoteRows : [])
-        .map((raw) => safeText((raw as Record<string, unknown>).partner_driver_id))
-        .filter(Boolean),
-    ),
-  ];
-  const { data: partnerDriverRows } =
-    partnerDriverIds.length > 0
-      ? await admin
-          .from("partner_drivers")
-          .select("id, name, phone")
-          .in("id", partnerDriverIds)
-      : { data: [] };
-  const driverByPartnerId = new Map(
-    (Array.isArray(partnerDriverRows) ? partnerDriverRows : []).map((row) => [
-      safeText((row as Record<string, unknown>).id),
-      row as Record<string, unknown>,
-    ]),
-  );
-  const finalQuoteById = new Map(
-    (Array.isArray(finalQuoteRows) ? finalQuoteRows : []).map((row) => [
-      safeText((row as Record<string, unknown>).id),
-      row as Record<string, unknown>,
-    ]),
-  );
 
   const applicationById = new Map(
     (Array.isArray(applicationRows) ? applicationRows : []).map((row) => [
@@ -246,10 +215,8 @@ export async function GET() {
     const trip = mapSponsorApplicationTripFields(application, preapproval, rule);
     const finalQuoteId = safeText(application.final_selected_quote_id);
     const matchCompleted = Boolean(finalQuoteId);
-    const finalQuote = finalQuoteById.get(finalQuoteId);
-    const partnerDriver = finalQuote
-      ? driverByPartnerId.get(safeText(finalQuote.partner_driver_id))
-      : null;
+    const contactBundle = matchedContactByAppId.get(applicationId);
+    const popup = contactBundle?.popup;
     const row: SponsorCallRow = {
       id: safeText(preapproval.id),
       application_id: applicationId,
@@ -276,6 +243,9 @@ export async function GET() {
       quote_deadline_at: trip.quote_deadline_at,
       quote_limit_count: trip.quote_limit_count,
       final_selected_quote_id: safeText(application.final_selected_quote_id),
+      final_selected_quote_source:
+        safeText(application.final_selected_quote_source) || undefined,
+      receipt_number: safeText(application.receipt_number) || undefined,
       selected_price_type: safeText(application.selected_price_type) || undefined,
       selected_price_label: safeText(application.selected_price_label) || undefined,
       selected_price: parseInteger(application.selected_price),
@@ -298,10 +268,18 @@ export async function GET() {
       sponsor_quote_count: quoteStats.sponsor_quote_count,
       matched_quote_count: quoteStats.matched_quote_count,
       final_quote_count: quoteStats.final_quote_count,
-      customer_name: matchCompleted ? safeText(application.applicant_name) : "",
-      customer_phone: matchCompleted ? safeText(application.phone) : "",
-      driver_name: matchCompleted ? safeText(partnerDriver?.name) : "",
-      driver_phone: matchCompleted ? safeText(partnerDriver?.phone) : "",
+      customer_name: matchCompleted && popup ? popup.customer_name : "",
+      customer_phone: matchCompleted && popup ? popup.customer_phone : "",
+      driver_name: matchCompleted && popup ? popup.driver_name : "",
+      driver_phone: matchCompleted && popup ? popup.driver_phone : "",
+      driver_company: matchCompleted && popup ? popup.driver_company : "",
+      popup_customer_name: popup?.customer_name,
+      popup_customer_phone: popup?.customer_phone,
+      popup_driver_company: popup?.driver_company,
+      popup_driver_name: popup?.driver_name,
+      popup_driver_phone: popup?.driver_phone,
+      contact_data_source: popup?.data_source,
+      matched_contact_debug: contactBundle?.debug ?? null,
     };
     return row;
   });

@@ -1,4 +1,7 @@
 import {
+  breakdownFromQuoteRow,
+} from "@/lib/support-breakdown-snapshot";
+import {
   buildQuoteSupportBreakdown,
   type BuildQuoteSupportBreakdownOptions,
   type QuoteSupportBreakdown,
@@ -34,7 +37,9 @@ export function getQuoteDisplayPrices(
   quote: QuoteDisplayPriceInput,
   options?: BuildQuoteSupportBreakdownOptions,
 ): QuoteDisplayPrices {
-  const breakdown = buildQuoteSupportBreakdown(quote, options);
+  const breakdown =
+    breakdownFromQuoteRow(quote as QuoteDisplayPriceInput & { support_breakdown?: unknown }) ??
+    buildQuoteSupportBreakdown(quote, options);
   const customerAmount =
     breakdown.isConfirmed && breakdown.customerConfirmedSupport != null
       ? breakdown.customerConfirmedSupport

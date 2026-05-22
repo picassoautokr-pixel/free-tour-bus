@@ -8,6 +8,7 @@ import {
 } from "@/lib/sponsor-rule-helpers";
 import { parseInteger, safeText, sponsorSupportTypeLabel } from "@/lib/sponsor";
 import { calculateTotalPlannedSupport } from "@/lib/support-calculation";
+import { refreshApplicationSupportBreakdownSnapshot } from "@/lib/support-breakdown-snapshot";
 import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
@@ -262,6 +263,7 @@ export async function matchSponsorPreapprovals(
 
   if (rowsToInsert.length === 0) {
     await refreshApplicationSponsorSupportSummary(supabase, id);
+    await refreshApplicationSupportBreakdownSnapshot(supabase, id);
     return { created: 0, matched: [] };
   }
 
@@ -273,6 +275,7 @@ export async function matchSponsorPreapprovals(
     });
   if (insertError) throw new Error(insertError.message);
   await refreshApplicationSponsorSupportSummary(supabase, id);
+  await refreshApplicationSupportBreakdownSnapshot(supabase, id);
 
   return { created: rowsToInsert.length, matched };
 }

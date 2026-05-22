@@ -12,7 +12,9 @@ import {
   buildPlannedDbPayload,
   computeConfirmedFromPlanned,
 } from "@/lib/quote-support-snapshot";
+import { freezeQuotePlannedSupportBreakdown } from "@/lib/support-breakdown-snapshot";
 import { resolveSettlementType } from "@/lib/support-calculation";
+import type { SponsorRuleRecord } from "@/lib/sponsor-rule-helpers";
 import { getApprovedSponsorSupport, supportPlannedLimitForQuote } from "@/lib/sponsor-support";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
@@ -629,6 +631,39 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
+  }
+
+  if (insertedId !== "") {
+    const { data: topPre } = await admin
+      .from("sponsor_preapprovals")
+      .select("sponsor_rule_id")
+      .eq("application_id", applicationId)
+      .order("estimated_support_amount", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const ruleId = safeText((topPre as Record<string, unknown> | null)?.sponsor_rule_id);
+    let rule: SponsorRuleRecord | null = null;
+    if (ruleId) {
+      const { data: ruleRow } = await admin
+        .from("sponsor_rules")
+        .select("*")
+        .eq("id", ruleId)
+        .maybeSingle();
+      rule = ruleRow ? (ruleRow as SponsorRuleRecord) : null;
+    }
+    const { data: appExt } = await admin
+      .from("applications")
+      .select("extension_round")
+      .eq("id", applicationId)
+      .maybeSingle();
+    await freezeQuotePlannedSupportBreakdown(admin, insertedId, {
+      rule,
+      normalPrice: price,
+      planned: plannedSnapshot,
+      supportMode: resolveSettlementType(supportSettlementType),
+      extensionRound:
+        parsePrice((appExt as Record<string, unknown> | null)?.extension_round) ?? 0,
+    });
   }
 
   await processApplicationQuoteLifecycle(admin, applicationId);

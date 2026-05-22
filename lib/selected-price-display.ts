@@ -83,13 +83,15 @@ export type SelectedPriceDisplayOptions = {
   supportConfirmed?: boolean;
 };
 
-/** 화면·분기용 — DB 타입이 잘못되어도 금액·라벨로 보정 */
+/** 화면·분기용 — selected_price_type 이 있으면 금액 비교로 덮어쓰지 않음 */
 export function resolveEffectiveSelectedPriceType(
   source?: SelectedPriceSource | null,
   options?: SelectedPriceDisplayOptions,
 ): SelectedPriceType | null {
-  const storedLabel = source?.selected_price_label?.trim() ?? "";
   const storedType = resolveSelectedPriceType(source);
+  if (storedType) return storedType;
+
+  const storedLabel = source?.selected_price_label?.trim() ?? "";
   const selected =
     source?.selected_price != null && Number.isFinite(source.selected_price)
       ? Math.trunc(source.selected_price)
@@ -348,33 +350,19 @@ export function resolveApplicationMatchedPriceDisplay(
   const applied = compare?.quoteSupportAppliedPrice ?? null;
 
   const storedAmount = parseStoredAmount(application);
+  const storedType = resolveSelectedPriceType(application);
+
+  if (storedType) {
+    return {
+      label: labelForSelectedPriceType(storedType),
+      amount: storedAmount,
+    };
+  }
+
   const storedLabel = (application?.selected_price_label ?? "").trim();
 
-  if (storedAmount != null) {
-    let label = storedLabel;
-    const storedType = resolveSelectedPriceType(application);
-    if (
-      normal != null &&
-      storedAmount !== normal &&
-      (storedType === "normal" || label === LABEL_BY_TYPE.normal)
-    ) {
-      if (planned != null && storedAmount === planned) {
-        label = LABEL_BY_TYPE.support_planned;
-      } else if (applied != null && storedAmount === applied) {
-        label = LABEL_BY_TYPE.support_confirmed;
-      } else if (storedAmount < normal) {
-        label = LABEL_BY_TYPE.support_planned;
-      }
-    }
-    if (!label) {
-      const effective = resolveEffectiveSelectedPriceType(application, {
-        normalPrice: normal,
-        supportPlannedPrice: planned ?? null,
-        supportAppliedPrice: applied ?? null,
-      });
-      if (effective) label = labelForSelectedPriceType(effective);
-    }
-    return { label: label || LABEL_BY_TYPE.normal, amount: storedAmount };
+  if (storedAmount != null && storedLabel) {
+    return { label: storedLabel, amount: storedAmount };
   }
 
   const matchedQuoteId = (

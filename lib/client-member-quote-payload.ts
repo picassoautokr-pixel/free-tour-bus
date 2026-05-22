@@ -2,6 +2,7 @@
  * 클라이언트 API 견적 응답 — support_breakdown·확정 할인가 (UTF-8)
  */
 
+import { breakdownFromQuoteRow } from "@/lib/support-breakdown-snapshot";
 import {
   buildQuoteSupportBreakdown,
   type BuildQuoteSupportBreakdownOptions,
@@ -248,7 +249,8 @@ export function buildClientMemberQuoteSupport(
   options?: ClientMemberQuoteSupportOptions,
 ): ClientMemberQuoteSupportFields {
   const computed = computeClientSupportFromRow(row, options);
-  const baseBreakdown = buildQuoteSupportBreakdown(row, options);
+  const baseBreakdown =
+    breakdownFromQuoteRow(row) ?? buildQuoteSupportBreakdown(row, options);
   const clientBreakdown = mergeSerializedBreakdown(baseBreakdown, computed);
 
   const applied = computed.discountAppliedPrice;

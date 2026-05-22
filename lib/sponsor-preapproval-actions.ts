@@ -8,6 +8,7 @@ import {
   type SponsorRuleRecord,
 } from "@/lib/sponsor-rule-helpers";
 import { parseInteger, safeText, sponsorSupportTypeLabel } from "@/lib/sponsor";
+import { refreshQuoteSnapshotsAfterSponsorConfirm } from "@/lib/support-breakdown-snapshot";
 import { refreshApplicationSponsorSupportSummary } from "@/lib/sponsor-support";
 
 type Actor = {
@@ -223,6 +224,7 @@ export async function approveSponsorPreapproval(
   const applicationId = safeText(ctx.preapproval.application_id);
   await refreshApplicationSponsorSupportSummary(admin, applicationId);
   await recalculateDriverQuoteSupport(admin, applicationId);
+  await refreshQuoteSnapshotsAfterSponsorConfirm(admin, applicationId);
 
   await sendNotificationSms(admin, {
     target_type: "customer",
@@ -380,6 +382,7 @@ export async function updateApprovedSponsorPreapproval(
 
   await refreshApplicationSponsorSupportSummary(admin, applicationId);
   await recalculateDriverQuoteSupport(admin, applicationId);
+  await refreshQuoteSnapshotsAfterSponsorConfirm(admin, applicationId);
   return { ok: true };
 }
 

@@ -25,7 +25,9 @@ import {
   type SponsorRuleRecord,
 } from "@/lib/sponsor-rule-helpers";
 import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import { SponsorMatchedContactDebugButton } from "@/components/sponsor/SponsorMatchedContactDebugButton";
 import { sponsorCallDebugContext } from "@/lib/quote-debug-trace";
+import type { SponsorCustomerInfoPopup } from "@/lib/sponsor-matched-contact";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -167,14 +169,31 @@ export function SponsorCallCard({
               {expandOpen ? LABEL.collapse : LABEL.supportInput}
             </button>
           ) : matched && onOpenCustomerInfo ? (
-            <button
-              type="button"
-              onClick={onOpenCustomerInfo}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white"
-              style={tapStyle}
-            >
-              {LABEL.customerInfo}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onOpenCustomerInfo}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white"
+                style={tapStyle}
+              >
+                {LABEL.customerInfo}
+              </button>
+              <SponsorMatchedContactDebugButton
+                debug={call.matched_contact_debug}
+                popup={
+                  call.popup_customer_name
+                    ? ({
+                        customer_name: call.popup_customer_name,
+                        customer_phone: call.popup_customer_phone ?? "",
+                        driver_company: call.popup_driver_company ?? "",
+                        driver_name: call.popup_driver_name ?? "",
+                        driver_phone: call.popup_driver_phone ?? "",
+                        data_source: call.contact_data_source ?? "",
+                      } satisfies SponsorCustomerInfoPopup)
+                    : null
+                }
+              />
+            </>
           ) : listMode === "confirmed" && !matched ? (
             <button
               type="button"

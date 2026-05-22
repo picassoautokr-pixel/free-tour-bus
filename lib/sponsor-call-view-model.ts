@@ -2,6 +2,7 @@ import {
   LABEL,
   type ConfirmedPayoutFilter,
 } from "@/lib/sponsor-dashboard-labels";
+import type { SponsorMatchedContactDebug } from "@/lib/sponsor-matched-contact";
 import { sponsorSupportTypeLabel } from "@/lib/sponsor";
 import { isSponsorSupportUnusedByNormalMatch } from "@/lib/selected-price-display";
 
@@ -27,6 +28,8 @@ export type SponsorCallRow = {
   quote_count?: number;
   quote_closed_at?: string;
   final_selected_quote_id?: string;
+  final_selected_quote_source?: string;
+  receipt_number?: string;
   estimated_support_amount: number;
   approved_support_amount?: number | null;
   support_kind?: string;
@@ -57,6 +60,14 @@ export type SponsorCallRow = {
   customer_phone?: string;
   driver_name?: string;
   driver_phone?: string;
+  driver_company?: string;
+  popup_customer_name?: string;
+  popup_customer_phone?: string;
+  popup_driver_company?: string;
+  popup_driver_name?: string;
+  popup_driver_phone?: string;
+  contact_data_source?: string;
+  matched_contact_debug?: SponsorMatchedContactDebug | null;
 };
 
 const REVIEW_STATUSES = new Set(["pending", "preapproved", "reviewing"]);
