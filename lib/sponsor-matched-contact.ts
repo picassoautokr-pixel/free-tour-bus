@@ -1,8 +1,43 @@
+import type { PostgrestError } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { safeText } from "@/lib/sponsor";
 
+export type DebugContactLookupError = {
+  message: string;
+  code: string | null;
+  details: string | null;
+  hint: string | null;
+} | null;
+
+export type DebugContactLookup = {
+  final_selected_quote_id: string;
+  sponsor_preapproval_id: string;
+  lookup_map_key: string;
+  application_id_from_preapproval: string;
+  application_row_id: string;
+  tried_driver_quotes_by_id: boolean;
+  driver_quote_select_used: string | null;
+  fetched_driver_quote: Record<string, unknown> | null;
+  driver_quote_error: DebugContactLookupError;
+  driver_quote_count: number;
+  tried_driver_quotes_by_application_id: boolean;
+  application_id_candidates: Array<{ label: string; value: string }>;
+  fetched_driver_quote_by_application_id: Record<string, unknown> | null;
+  driver_quote_by_application_id_error: DebugContactLookupError;
+  driver_quote_by_application_id_matched_via: string | null;
+  driver_quote_by_application_id_count: number;
+  resolved_driver_quote_source: string | null;
+  tried_partner_driver_id: string | null;
+  tried_auth_user_id: string | null;
+  fetched_partner_driver: Record<string, unknown> | null;
+  partner_driver_error: DebugContactLookupError;
+  fetched_profile: Record<string, unknown> | null;
+  profile_error: DebugContactLookupError;
+};
+
 export type SponsorMatchedContactDebug = {
+  debug_contact_lookup: DebugContactLookup;
   final_selected_quote_id: string;
   fetched_driver_quote: Record<string, unknown> | null;
   fetched_partner_driver: Record<string, unknown> | null;
@@ -35,7 +70,29 @@ export type SponsorMatchedContactBundle = {
   popup: SponsorCustomerInfoPopup;
   quote: Record<string, unknown> | null;
   matched_driver: Record<string, unknown> | null;
+  debug_contact_lookup: DebugContactLookup;
 };
+
+export type SponsorContactLookupInput = {
+  mapKey: string;
+  applicationRow: Record<string, unknown>;
+  applicationId: string;
+  sponsorPreapprovalId: string;
+  finalSelectedQuoteId: string;
+};
+
+const DRIVER_QUOTE_SELECT_CANDIDATES = [
+  "id, application_id, partner_driver_id, auth_user_id, price, phone, driver_name, company_name, vehicle_type, available_time, message, status",
+  "id, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status",
+  "id, application_id, partner_driver_id, auth_user_id, price, status",
+];
+
+const PARTNER_DRIVER_SELECT_CANDIDATES = [
+  "id, auth_user_id, company_name, manager_name, driver_name, name, phone, mobile, contact_phone, email",
+  "id, auth_user_id, company_name, manager_name, phone, email",
+];
+
+const PROFILE_SELECT = "user_id, name, phone, email, role, partner_driver_id";
 
 function pickText(
   sources: Array<Record<string, unknown> | null | undefined>,
@@ -59,151 +116,322 @@ function isMissingColumnError(error: { message?: string; code?: string } | null)
   );
 }
 
-const DRIVER_QUOTE_SELECT_FULL =
-  "id, application_id, partner_driver_id, auth_user_id, price, phone, driver_name, company_name, vehicle_type, available_time, message, status";
+function formatLookupError(error: PostgrestError | null): DebugContactLookupError {
+  if (!error) return null;
+  return {
+    message: error.message ?? "unknown error",
+    code: error.code ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  };
+}
 
-const DRIVER_QUOTE_SELECT_BASE =
-  "id, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status";
+function rowArray(data: unknown): Record<string, unknown>[] {
+  return Array.isArray(data) ? (data as unknown as Record<string, unknown>[]) : [];
+}
 
-const GUEST_QUOTE_SELECT_FULL =
-  "id, application_id, guest_phone, guest_driver_name, guest_company_name, price, status, match_result, vehicle_type, available_time, message";
-
-const GUEST_QUOTE_SELECT_BASE =
-  "id, application_id, guest_phone, guest_driver_name, guest_company_name, price, status, match_result";
-
-const PARTNER_DRIVER_SELECT_FULL =
-  "id, auth_user_id, company_name, manager_name, driver_name, name, phone, mobile, contact_phone, email";
-
-const PARTNER_DRIVER_SELECT_BASE =
-  "id, auth_user_id, company_name, manager_name, phone, email";
-
-const PROFILE_SELECT = "user_id, name, phone, email, role, partner_driver_id";
-
-async function selectWithColumnFallback<T extends Record<string, unknown>>(
-  run: (
-    select: string,
-  ) => PromiseLike<{
-    data: T[] | null;
-    error: { message?: string; code?: string } | null;
-  }>,
-  candidates: string[],
-): Promise<T[]> {
-  for (const select of candidates) {
-    const { data, error } = await run(select);
-    if (!error && Array.isArray(data)) return data;
-    if (!isMissingColumnError(error)) break;
+function uniqueCandidates(
+  items: Array<{ label: string; value: string }>,
+): Array<{ label: string; value: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ label: string; value: string }> = [];
+  for (const item of items) {
+    const v = item.value.trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push({ label: item.label, value: v });
   }
-  return [];
+  return out;
 }
 
-async function fetchDriverQuoteById(
+async function queryDriverQuotesById(
   admin: SupabaseClient,
   quoteId: string,
-): Promise<Record<string, unknown> | null> {
-  const id = quoteId.trim();
-  if (!id) return null;
+): Promise<{
+  rows: Record<string, unknown>[];
+  error: DebugContactLookupError;
+  selectUsed: string | null;
+}> {
+  let lastError: DebugContactLookupError = null;
+  for (const select of DRIVER_QUOTE_SELECT_CANDIDATES) {
+    const r = await admin.from("driver_quotes").select(select).eq("id", quoteId).limit(1);
+    if (!r.error) {
+      return { rows: rowArray(r.data), error: null, selectUsed: select };
+    }
+    lastError = formatLookupError(r.error);
+    if (!isMissingColumnError(r.error)) {
+      return { rows: [], error: lastError, selectUsed: select };
+    }
+  }
+  return { rows: [], error: lastError, selectUsed: null };
+}
 
-  const rows = await selectWithColumnFallback<Record<string, unknown>>(
-    async (select) => {
-      const r = await admin.from("driver_quotes").select(select).eq("id", id).limit(1);
-      return {
-        data: Array.isArray(r.data) ? (r.data as unknown as Record<string, unknown>[]) : [],
-        error: r.error,
-      };
+async function queryDriverQuotesByApplicationId(
+  admin: SupabaseClient,
+  applicationId: string,
+): Promise<{
+  rows: Record<string, unknown>[];
+  error: DebugContactLookupError;
+  selectUsed: string | null;
+}> {
+  let lastError: DebugContactLookupError = null;
+  for (const select of DRIVER_QUOTE_SELECT_CANDIDATES) {
+    const r = await admin
+      .from("driver_quotes")
+      .select(select)
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (!r.error) {
+      return { rows: rowArray(r.data), error: null, selectUsed: select };
+    }
+    lastError = formatLookupError(r.error);
+    if (!isMissingColumnError(r.error)) {
+      return { rows: [], error: lastError, selectUsed: select };
+    }
+  }
+  return { rows: [], error: lastError, selectUsed: null };
+}
+
+async function lookupDriverQuoteById(
+  admin: SupabaseClient,
+  quoteId: string,
+): Promise<{
+  quote: Record<string, unknown> | null;
+  lookup: Pick<
+    DebugContactLookup,
+    | "tried_driver_quotes_by_id"
+    | "fetched_driver_quote"
+    | "driver_quote_error"
+    | "driver_quote_count"
+    | "driver_quote_select_used"
+  >;
+}> {
+  const id = quoteId.trim();
+  if (!id) {
+    return {
+      quote: null,
+      lookup: {
+        tried_driver_quotes_by_id: false,
+        fetched_driver_quote: null,
+        driver_quote_error: { message: "final_selected_quote_id empty", code: null, details: null, hint: null },
+        driver_quote_count: 0,
+        driver_quote_select_used: null,
+      },
+    };
+  }
+
+  const { rows, error, selectUsed } = await queryDriverQuotesById(admin, id);
+  const quote = rows[0] ?? null;
+  return {
+    quote,
+    lookup: {
+      tried_driver_quotes_by_id: true,
+      fetched_driver_quote: quote,
+      driver_quote_error: quote ? null : error,
+      driver_quote_count: rows.length,
+      driver_quote_select_used: selectUsed,
     },
-    [DRIVER_QUOTE_SELECT_FULL, DRIVER_QUOTE_SELECT_BASE],
-  );
-  return rows[0] ?? null;
+  };
 }
 
-async function fetchGuestQuoteById(
+async function lookupDriverQuoteByApplicationIds(
   admin: SupabaseClient,
-  quoteId: string,
-): Promise<Record<string, unknown> | null> {
-  const id = quoteId.trim();
-  if (!id) return null;
+  candidates: Array<{ label: string; value: string }>,
+): Promise<{
+  quote: Record<string, unknown> | null;
+  lookup: Pick<
+    DebugContactLookup,
+    | "tried_driver_quotes_by_application_id"
+    | "application_id_candidates"
+    | "fetched_driver_quote_by_application_id"
+    | "driver_quote_by_application_id_error"
+    | "driver_quote_by_application_id_matched_via"
+    | "driver_quote_by_application_id_count"
+  >;
+}> {
+  const list = uniqueCandidates(candidates);
+  if (list.length === 0) {
+    return {
+      quote: null,
+      lookup: {
+        tried_driver_quotes_by_application_id: false,
+        application_id_candidates: [],
+        fetched_driver_quote_by_application_id: null,
+        driver_quote_by_application_id_error: {
+          message: "no application_id candidates",
+          code: null,
+          details: null,
+          hint: null,
+        },
+        driver_quote_by_application_id_matched_via: null,
+        driver_quote_by_application_id_count: 0,
+      },
+    };
+  }
 
-  const rows = await selectWithColumnFallback<Record<string, unknown>>(
-    async (select) => {
+  let lastError: DebugContactLookupError = null;
+  for (const candidate of list) {
+    const { rows, error } = await queryDriverQuotesByApplicationId(
+      admin,
+      candidate.value,
+    );
+    if (rows[0]) {
+      return {
+        quote: rows[0],
+        lookup: {
+          tried_driver_quotes_by_application_id: true,
+          application_id_candidates: list,
+          fetched_driver_quote_by_application_id: rows[0],
+          driver_quote_by_application_id_error: null,
+          driver_quote_by_application_id_matched_via: candidate.label,
+          driver_quote_by_application_id_count: rows.length,
+        },
+      };
+    }
+    if (error) lastError = error;
+  }
+
+  return {
+    quote: null,
+    lookup: {
+      tried_driver_quotes_by_application_id: true,
+      application_id_candidates: list,
+      fetched_driver_quote_by_application_id: null,
+      driver_quote_by_application_id_error: lastError ?? {
+        message: "no driver_quotes row for any application_id candidate",
+        code: null,
+        details: null,
+        hint: null,
+      },
+      driver_quote_by_application_id_matched_via: null,
+      driver_quote_by_application_id_count: 0,
+    },
+  };
+}
+
+async function lookupPartnerDriver(
+  admin: SupabaseClient,
+  driverQuote: Record<string, unknown> | null,
+): Promise<{
+  partner: Record<string, unknown> | null;
+  profile: Record<string, unknown> | null;
+  lookup: Pick<
+    DebugContactLookup,
+    | "tried_partner_driver_id"
+    | "tried_auth_user_id"
+    | "fetched_partner_driver"
+    | "partner_driver_error"
+    | "fetched_profile"
+    | "profile_error"
+  >;
+}> {
+  const partnerId = safeText(driverQuote?.partner_driver_id);
+  const authUserId = safeText(driverQuote?.auth_user_id);
+
+  if (!partnerId && !authUserId) {
+    return {
+      partner: null,
+      profile: null,
+      lookup: {
+        tried_partner_driver_id: null,
+        tried_auth_user_id: null,
+        fetched_partner_driver: null,
+        partner_driver_error: {
+          message: "driver_quote has no partner_driver_id or auth_user_id",
+          code: null,
+          details: null,
+          hint: null,
+        },
+        fetched_profile: null,
+        profile_error: null,
+      },
+    };
+  }
+
+  let partner: Record<string, unknown> | null = null;
+  let partnerError: DebugContactLookupError = null;
+
+  if (partnerId) {
+    let lastErr: DebugContactLookupError = null;
+    for (const select of PARTNER_DRIVER_SELECT_CANDIDATES) {
       const r = await admin
-        .from("guest_driver_quotes")
+        .from("partner_drivers")
         .select(select)
-        .eq("id", id)
-        .limit(1);
-      return {
-        data: Array.isArray(r.data) ? (r.data as unknown as Record<string, unknown>[]) : [],
-        error: r.error,
-      };
-    },
-    [GUEST_QUOTE_SELECT_FULL, GUEST_QUOTE_SELECT_BASE],
-  );
-  return rows[0] ?? null;
-}
-
-async function fetchDriverQuotesByIds(
-  admin: SupabaseClient,
-  ids: string[],
-): Promise<Map<string, Record<string, unknown>>> {
-  const map = new Map<string, Record<string, unknown>>();
-  if (ids.length === 0) return map;
-
-  const rows = await selectWithColumnFallback<Record<string, unknown>>(
-    async (select) => {
-      const r = await admin.from("driver_quotes").select(select).in("id", ids);
-      return {
-        data: Array.isArray(r.data) ? (r.data as unknown as Record<string, unknown>[]) : [],
-        error: r.error,
-      };
-    },
-    [DRIVER_QUOTE_SELECT_FULL, DRIVER_QUOTE_SELECT_BASE],
-  );
-  for (const row of rows) {
-    const id = safeText(row.id);
-    if (id) map.set(id, row);
+        .eq("id", partnerId)
+        .maybeSingle();
+      if (!r.error && r.data) {
+        partner = r.data as unknown as Record<string, unknown>;
+        partnerError = null;
+        break;
+      }
+      lastErr = formatLookupError(r.error);
+      if (!isMissingColumnError(r.error)) break;
+    }
+    if (!partner) partnerError = lastErr;
   }
 
-  for (const id of ids) {
-    if (!map.has(id)) {
-      const one = await fetchDriverQuoteById(admin, id);
-      if (one) map.set(id, one);
+  if (!partner && authUserId) {
+    let lastErr: DebugContactLookupError = null;
+    for (const select of PARTNER_DRIVER_SELECT_CANDIDATES) {
+      const r = await admin
+        .from("partner_drivers")
+        .select(select)
+        .eq("auth_user_id", authUserId)
+        .limit(1)
+        .maybeSingle();
+      if (!r.error && r.data) {
+        partner = r.data as unknown as Record<string, unknown>;
+        partnerError = null;
+        break;
+      }
+      lastErr = formatLookupError(r.error);
+      if (!isMissingColumnError(r.error)) break;
+    }
+    if (!partner && !partnerError) partnerError = lastErr;
+  }
+
+  let profile: Record<string, unknown> | null = null;
+  let profileError: DebugContactLookupError = null;
+  if (authUserId) {
+    const r = await admin
+      .from("profiles")
+      .select(PROFILE_SELECT)
+      .eq("user_id", authUserId)
+      .maybeSingle();
+    if (r.error) {
+      profileError = formatLookupError(r.error);
+    } else if (r.data) {
+      profile = r.data as unknown as Record<string, unknown>;
     }
   }
-  return map;
-}
 
-async function fetchGuestQuotesByIds(
-  admin: SupabaseClient,
-  ids: string[],
-): Promise<Map<string, Record<string, unknown>>> {
-  const map = new Map<string, Record<string, unknown>>();
-  if (ids.length === 0) return map;
-
-  const rows = await selectWithColumnFallback<Record<string, unknown>>(
-    async (select) => {
-      const r = await admin.from("guest_driver_quotes").select(select).in("id", ids);
-      return {
-        data: Array.isArray(r.data) ? (r.data as unknown as Record<string, unknown>[]) : [],
-        error: r.error,
-      };
+  return {
+    partner,
+    profile,
+    lookup: {
+      tried_partner_driver_id: partnerId || null,
+      tried_auth_user_id: authUserId || null,
+      fetched_partner_driver: partner,
+      partner_driver_error: partner ? null : partnerError,
+      fetched_profile: profile
+        ? {
+            name: safeText(profile.name),
+            phone: safeText(profile.phone),
+            company_name: safeText(profile.company_name),
+            role: safeText(profile.role),
+            user_id: safeText(profile.user_id),
+          }
+        : null,
+      profile_error: profileError,
     },
-    [GUEST_QUOTE_SELECT_FULL, GUEST_QUOTE_SELECT_BASE],
-  );
-  for (const row of rows) {
-    const id = safeText(row.id);
-    if (id) map.set(id, row);
-  }
-
-  for (const id of ids) {
-    if (!map.has(id)) {
-      const one = await fetchGuestQuoteById(admin, id);
-      if (one) map.set(id, one);
-    }
-  }
-  return map;
+  };
 }
 
 export function buildApplicationDebugFields(
   application: Record<string, unknown>,
+  applicationId: string,
+  sponsorPreapprovalId: string,
 ): Record<string, unknown> {
   const finalId = safeText(application.final_selected_quote_id);
   const guestQuoteId = safeText(application.final_selected_guest_quote_id);
@@ -211,28 +439,31 @@ export function buildApplicationDebugFields(
 
   return {
     id: safeText(application.id),
+    application_id: applicationId,
+    sponsor_preapproval_id: sponsorPreapprovalId,
     receipt_number: safeText(application.receipt_number),
     customer_name:
       safeText(application.customer_name) ||
-      safeText(application.applicant_name) ||
-      safeText(application.name),
+      safeText(application.name) ||
+      safeText(application.applicant_name),
     customer_phone: pickText([application], [
       "customer_phone",
       "phone",
       "contact_phone",
       "user_phone",
       "applicant_phone",
-      "customer_tel",
       "mobile",
     ]),
     phone: safeText(application.phone),
+    customer_phone_raw: safeText(application.customer_phone),
     contact_phone: safeText(application.contact_phone),
+    user_phone: safeText(application.user_phone),
     applicant_phone: safeText(application.applicant_phone),
+    mobile: safeText(application.mobile),
     applicant_name: safeText(application.applicant_name),
     name: safeText(application.name),
-    group_name:
-      safeText(application.group_name) ||
-      safeText(application.organization_name),
+    organization_name: safeText(application.organization_name),
+    group_name: safeText(application.group_name),
     driver_name: safeText(application.driver_name),
     driver_phone: safeText(application.driver_phone),
     driver_company_name: safeText(application.driver_company_name),
@@ -292,8 +523,8 @@ export function resolveSponsorCustomerInfoPopup(params: {
       "customer_name",
       "name",
       "applicant_name",
-      "group_name",
       "organization_name",
+      "group_name",
     ]) || "고객명 미등록";
 
   const customerPhone =
@@ -303,7 +534,6 @@ export function resolveSponsorCustomerInfoPopup(params: {
       "contact_phone",
       "user_phone",
       "applicant_phone",
-      "customer_tel",
       "mobile",
     ]) || "전화번호 미등록";
 
@@ -353,165 +583,105 @@ export function resolveSponsorCustomerInfoPopup(params: {
   };
 }
 
-function resolveMatchedQuotePair(
+async function resolveGuestQuoteIfNeeded(
+  admin: SupabaseClient,
   finalQuoteId: string,
-  explicitGuestQuoteId: string,
-  driverQuoteById: Map<string, Record<string, unknown>>,
-  guestQuoteById: Map<string, Record<string, unknown>>,
-): {
-  driverQuote: Record<string, unknown> | null;
-  guestQuote: Record<string, unknown> | null;
-  isGuestQuote: boolean;
-} {
-  const driverQuote = driverQuoteById.get(finalQuoteId) ?? null;
+  driverQuote: Record<string, unknown> | null,
+  explicitGuestId: string,
+  source: string,
+): Promise<{ guestQuote: Record<string, unknown> | null; isGuestQuote: boolean }> {
   if (driverQuote) {
-    return { driverQuote, guestQuote: null, isGuestQuote: false };
+    return { guestQuote: null, isGuestQuote: false };
   }
+  const guestId = explicitGuestId || (source === "guest" ? finalQuoteId : "");
+  if (!guestId) return { guestQuote: null, isGuestQuote: false };
 
-  const guestId = explicitGuestQuoteId || finalQuoteId;
-  const guestQuote = guestQuoteById.get(guestId) ?? null;
-  return {
-    driverQuote: null,
-    guestQuote,
-    isGuestQuote: Boolean(guestQuote),
-  };
+  const r = await admin
+    .from("guest_driver_quotes")
+    .select(
+      "id, application_id, guest_phone, guest_driver_name, guest_company_name, price, status",
+    )
+    .eq("id", guestId)
+    .maybeSingle();
+  const guestQuote = r.data ? (r.data as Record<string, unknown>) : null;
+  return { guestQuote, isGuestQuote: Boolean(guestQuote) };
 }
 
-/** 매칭완료 application — final_selected_quote_id 기준 driver_quotes 우선 조회 */
-export async function loadMatchedContactsByApplication(
+/** 스폰서 콜별 연락처 조회 — debug_contact_lookup에 실제 DB 오류 포함 */
+export async function loadMatchedContactsForSponsorCalls(
   admin: SupabaseClient,
-  applicationRows: Record<string, unknown>[],
+  inputs: SponsorContactLookupInput[],
 ): Promise<Map<string, SponsorMatchedContactBundle>> {
   const out = new Map<string, SponsorMatchedContactBundle>();
 
-  const matched = applicationRows.filter((app) =>
-    safeText(app.final_selected_quote_id),
-  );
-  if (matched.length === 0) return out;
+  for (const input of inputs) {
+    const finalQuoteId = safeText(input.finalSelectedQuoteId);
+    if (!finalQuoteId) continue;
 
-  const allFinalIds = [
-    ...new Set(
-      matched
-        .map((app) => safeText(app.final_selected_quote_id))
-        .filter(Boolean),
-    ),
-  ];
+    const app = input.applicationRow;
+    const applicationId = safeText(input.applicationId);
+    const mapKey = safeText(input.mapKey) || applicationId;
+    const sponsorPreapprovalId = safeText(input.sponsorPreapprovalId);
 
-  const driverQuoteById = await fetchDriverQuotesByIds(admin, allFinalIds);
+    const byId = await lookupDriverQuoteById(admin, finalQuoteId);
 
-  const guestOnlyIds = allFinalIds.filter((id) => !driverQuoteById.has(id));
-  const explicitGuestIds = matched
-    .map((app) => safeText(app.final_selected_guest_quote_id))
-    .filter(Boolean);
-  const guestIds = [...new Set([...guestOnlyIds, ...explicitGuestIds])];
-  const guestQuoteById = await fetchGuestQuotesByIds(admin, guestIds);
+    let driverQuote = byId.quote;
+    let resolvedSource = driverQuote ? "driver_quotes.by_id" : null;
 
-  const partnerIds = new Set<string>();
-  const authUserIds = new Set<string>();
-  for (const q of driverQuoteById.values()) {
-    const pid = safeText(q.partner_driver_id);
-    const aid = safeText(q.auth_user_id);
-    if (pid) partnerIds.add(pid);
-    if (aid) authUserIds.add(aid);
-  }
+    const appIdCandidates = uniqueCandidates([
+      { label: "preapproval.application_id", value: applicationId },
+      { label: "application.id", value: safeText(app.id) },
+      { label: "sponsor_preapproval.id", value: sponsorPreapprovalId },
+    ]);
 
-  const partnerById = new Map<string, Record<string, unknown>>();
-  const partnerByAuthId = new Map<string, Record<string, unknown>>();
-
-  if (partnerIds.size > 0) {
-    const rows = await selectWithColumnFallback<Record<string, unknown>>(
-      async (select) => {
-        const r = await admin
-          .from("partner_drivers")
-          .select(select)
-          .in("id", [...partnerIds]);
-        return {
-          data: Array.isArray(r.data) ? (r.data as unknown as Record<string, unknown>[]) : [],
-          error: r.error,
-        };
-      },
-      [PARTNER_DRIVER_SELECT_FULL, PARTNER_DRIVER_SELECT_BASE],
-    );
-    for (const row of rows) {
-      partnerById.set(safeText(row.id), row);
-      const aid = safeText(row.auth_user_id);
-      if (aid) partnerByAuthId.set(aid, row);
+    const byApp = await lookupDriverQuoteByApplicationIds(admin, appIdCandidates);
+    if (!driverQuote && byApp.quote) {
+      driverQuote = byApp.quote;
+      resolvedSource = `driver_quotes.by_application_id:${byApp.lookup.driver_quote_by_application_id_matched_via}`;
     }
-  }
 
-  const profileByAuthId = new Map<string, Record<string, unknown>>();
-  if (authUserIds.size > 0) {
-    const [{ data: profileRows, error: profileErr }, partnerByAuthRows] =
-      await Promise.all([
-        admin
-          .from("profiles")
-          .select(PROFILE_SELECT)
-          .in("user_id", [...authUserIds]),
-        selectWithColumnFallback<Record<string, unknown>>(
-          async (select) => {
-            const r = await admin
-              .from("partner_drivers")
-              .select(select)
-              .in("auth_user_id", [...authUserIds]);
-            return {
-              data: Array.isArray(r.data) ? (r.data as unknown as Record<string, unknown>[]) : [],
-              error: r.error,
-            };
-          },
-          [PARTNER_DRIVER_SELECT_FULL, PARTNER_DRIVER_SELECT_BASE],
-        ),
-      ]);
-    if (!profileErr) {
-      for (const raw of Array.isArray(profileRows) ? profileRows : []) {
-        const row = raw as Record<string, unknown>;
-        profileByAuthId.set(safeText(row.user_id), row);
-        const linkedPid = safeText(row.partner_driver_id);
-        if (linkedPid && partnerById.has(linkedPid)) {
-          partnerByAuthId.set(safeText(row.user_id), partnerById.get(linkedPid)!);
-        }
-      }
-    }
-    for (const row of partnerByAuthRows) {
-      const id = safeText(row.id);
-      if (id) partnerById.set(id, row);
-      const aid = safeText(row.auth_user_id);
-      if (aid) partnerByAuthId.set(aid, row);
-    }
-  }
-
-  for (const app of matched) {
-    const applicationId = safeText(app.id);
-    const finalQuoteId = safeText(app.final_selected_quote_id);
+    const source = safeText(app.final_selected_quote_source);
     const explicitGuestId = safeText(app.final_selected_guest_quote_id);
-
-    const { driverQuote, guestQuote, isGuestQuote } = resolveMatchedQuotePair(
+    const { guestQuote, isGuestQuote } = await resolveGuestQuoteIfNeeded(
+      admin,
       finalQuoteId,
+      driverQuote,
       explicitGuestId,
-      driverQuoteById,
-      guestQuoteById,
+      source,
     );
 
-    let partnerRow: Record<string, unknown> | null = null;
-    let profileRow: Record<string, unknown> | null = null;
-    if (driverQuote && !isGuestQuote) {
-      const pid = safeText(driverQuote.partner_driver_id);
-      const aid = safeText(driverQuote.auth_user_id);
-      partnerRow =
-        (pid ? partnerById.get(pid) : null) ??
-        (aid ? partnerByAuthId.get(aid) : null) ??
-        null;
-      profileRow = aid ? profileByAuthId.get(aid) ?? null : null;
-    }
+    const effectiveQuote = isGuestQuote ? guestQuote : driverQuote;
 
-    const applicationDebug = buildApplicationDebugFields(app);
-    const matchedDriver = buildMatchedDriverRecord(partnerRow, profileRow);
+    const { partner, profile, lookup: partnerLookup } = await lookupPartnerDriver(
+      admin,
+      isGuestQuote ? null : driverQuote,
+    );
+
+    const debugContactLookup: DebugContactLookup = {
+      final_selected_quote_id: finalQuoteId,
+      sponsor_preapproval_id: sponsorPreapprovalId,
+      lookup_map_key: mapKey,
+      application_id_from_preapproval: applicationId,
+      application_row_id: safeText(app.id),
+      ...byId.lookup,
+      ...byApp.lookup,
+      resolved_driver_quote_source: resolvedSource,
+      ...partnerLookup,
+    };
+
+    const matchedDriver = buildMatchedDriverRecord(partner, profile);
+    const applicationDebug = buildApplicationDebugFields(
+      app,
+      applicationId,
+      sponsorPreapprovalId,
+    );
 
     const popup = resolveSponsorCustomerInfoPopup({
-      application: app,
-      driverQuote,
+      application: { ...app, ...applicationDebug },
+      driverQuote: isGuestQuote ? null : driverQuote,
       guestQuote,
       matchedDriver,
-      profile: profileRow,
+      profile,
       isGuestQuote,
     });
 
@@ -525,32 +695,17 @@ export async function loadMatchedContactsByApplication(
     };
 
     const debug: SponsorMatchedContactDebug = {
+      debug_contact_lookup: debugContactLookup,
       final_selected_quote_id: finalQuoteId,
       fetched_driver_quote: driverQuote,
-      fetched_partner_driver: partnerRow,
-      fetched_profile: profileRow
-        ? {
-            name: safeText(profileRow.name),
-            phone: safeText(profileRow.phone),
-            company_name: safeText(profileRow.company_name),
-            role: safeText(profileRow.role),
-            user_id: safeText(profileRow.user_id),
-          }
-        : null,
+      fetched_partner_driver: partner,
+      fetched_profile: partnerLookup.fetched_profile,
       fetched_guest_quote: guestQuote,
       application: enrichedApplication,
-      driver_quote: driverQuote,
+      driver_quote: isGuestQuote ? null : driverQuote,
       guest_driver_quote: guestQuote,
-      partner_driver: partnerRow,
-      profile: profileRow
-        ? {
-            name: safeText(profileRow.name),
-            phone: safeText(profileRow.phone),
-            company_name: safeText(profileRow.company_name),
-            user_id: safeText(profileRow.user_id),
-            role: safeText(profileRow.role),
-          }
-        : null,
+      partner_driver: partner,
+      profile: partnerLookup.fetched_profile,
       popup_customer_name: popup.customer_name,
       popup_customer_phone: popup.customer_phone,
       popup_driver_company: popup.driver_company,
@@ -559,13 +714,34 @@ export async function loadMatchedContactsByApplication(
       data_source: popup.data_source,
     };
 
-    out.set(applicationId, {
+    out.set(mapKey, {
       debug,
       popup,
-      quote: isGuestQuote ? guestQuote : driverQuote,
+      quote: effectiveQuote,
       matched_driver: matchedDriver,
+      debug_contact_lookup: debugContactLookup,
     });
   }
 
   return out;
+}
+
+/** @deprecated loadMatchedContactsForSponsorCalls 사용 */
+export async function loadMatchedContactsByApplication(
+  admin: SupabaseClient,
+  applicationRows: Record<string, unknown>[],
+): Promise<Map<string, SponsorMatchedContactBundle>> {
+  const inputs: SponsorContactLookupInput[] = applicationRows
+    .filter((app) => safeText(app.final_selected_quote_id))
+    .map((app) => {
+      const applicationId = safeText(app.id);
+      return {
+        mapKey: applicationId,
+        applicationRow: app,
+        applicationId,
+        sponsorPreapprovalId: "",
+        finalSelectedQuoteId: safeText(app.final_selected_quote_id),
+      };
+    });
+  return loadMatchedContactsForSponsorCalls(admin, inputs);
 }

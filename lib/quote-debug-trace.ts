@@ -825,6 +825,7 @@ export function buildQuoteDebugReport(ctx: QuoteDebugContext): QuoteDebugReport 
       sponsor_rule: ctx.sponsorRule ?? null,
       ...(ctx.role === "sponsor"
         ? {
+            debug_contact_lookup: ctx.debug_contact_lookup ?? null,
             final_selected_quote_id: String(app.final_selected_quote_id ?? "").trim() || null,
             fetched_driver_quote: ctx.quote ?? null,
             fetched_partner_driver: ctx.matched_driver ?? null,
@@ -899,8 +900,19 @@ export function sponsorCallDebugContext(
       popup_driver_name: call.popup_driver_name,
       popup_driver_phone: call.popup_driver_phone,
     },
-    quote: call.quote ?? debug?.fetched_driver_quote ?? debug?.driver_quote ?? null,
-    matched_driver: call.matched_driver ?? debug?.fetched_partner_driver ?? null,
+    quote:
+      call.quote ??
+      call.debug_contact_lookup?.fetched_driver_quote ??
+      call.debug_contact_lookup?.fetched_driver_quote_by_application_id ??
+      debug?.fetched_driver_quote ??
+      debug?.driver_quote ??
+      null,
+    matched_driver:
+      call.matched_driver ??
+      call.debug_contact_lookup?.fetched_partner_driver ??
+      debug?.fetched_partner_driver ??
+      null,
+    debug_contact_lookup: call.debug_contact_lookup ?? debug?.debug_contact_lookup ?? null,
     sponsorPreapproval: {
       id: call.id,
       application_id: call.application_id,

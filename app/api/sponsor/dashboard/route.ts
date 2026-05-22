@@ -9,7 +9,7 @@ import {
   parseDashboardSettings,
 } from "@/lib/sponsor-catalog";
 import { mapSponsorApplicationTripFields } from "@/lib/sponsor-application-map";
-import { loadMatchedContactsByApplication } from "@/lib/sponsor-matched-contact";
+import { loadMatchedContactsForSponsorCalls } from "@/lib/sponsor-matched-contact";
 import { DEFAULT_SPONSOR_RULE_TITLE } from "@/lib/sponsor-rule-helpers";
 import { sponsorRuleIsInUse } from "@/lib/sponsor-rule-usage";
 import {
@@ -19,11 +19,59 @@ import {
   safeText,
 } from "@/lib/sponsor";
 
+const APPLICATION_TRIP_SELECT_PHONE =
+  "id, created_at, receipt_number, application_type, organization_type, organization_name, applicant_name, name, phone, customer_phone, contact_phone, user_phone, applicant_phone, mobile, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, final_selected_quote_source, contact_revealed_at, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
+
 const APPLICATION_TRIP_SELECT_FULL =
   "id, created_at, receipt_number, application_type, organization_type, organization_name, applicant_name, phone, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, final_selected_quote_source, contact_revealed_at, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
 
 const APPLICATION_TRIP_SELECT_BASE =
   "id, created_at, receipt_number, application_type, organization_type, organization_name, applicant_name, phone, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, final_selected_quote_source, contact_revealed_at";
+
+async function fetchApplicationsByIds(
+  admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>,
+  applicationIds: string[],
+): Promise<{ rows: Record<string, unknown>[]; error: string | null }> {
+  if (applicationIds.length === 0) return { rows: [], error: null };
+
+  const withPhone = await admin
+    .from("applications")
+    .select(APPLICATION_TRIP_SELECT_PHONE)
+    .in("id", applicationIds);
+  if (!withPhone.error) {
+    return {
+      rows: Array.isArray(withPhone.data) ? (withPhone.data as Record<string, unknown>[]) : [],
+      error: null,
+    };
+  }
+  if (!isMissingColumnError(withPhone.error)) {
+    return { rows: [], error: withPhone.error.message };
+  }
+
+  const full = await admin
+    .from("applications")
+    .select(APPLICATION_TRIP_SELECT_FULL)
+    .in("id", applicationIds);
+  if (!full.error) {
+    return {
+      rows: Array.isArray(full.data) ? (full.data as Record<string, unknown>[]) : [],
+      error: null,
+    };
+  }
+  if (!isMissingColumnError(full.error)) {
+    return { rows: [], error: full.error.message };
+  }
+
+  const base = await admin
+    .from("applications")
+    .select(APPLICATION_TRIP_SELECT_BASE)
+    .in("id", applicationIds);
+  if (base.error) return { rows: [], error: base.error.message };
+  return {
+    rows: Array.isArray(base.data) ? (base.data as Record<string, unknown>[]) : [],
+    error: null,
+  };
+}
 
 function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
   return (
@@ -124,32 +172,26 @@ export async function GET() {
   const ruleIds = [
     ...new Set(preapprovals.map((raw) => safeText((raw as Record<string, unknown>).sponsor_rule_id)).filter(Boolean)),
   ];
-  let applicationRows: unknown[] = [];
-  if (applicationIds.length > 0) {
-    const applicationResultFull = await admin
-      .from("applications")
-      .select(APPLICATION_TRIP_SELECT_FULL)
-      .in("id", applicationIds);
-    const applicationResult =
-      isMissingColumnError(applicationResultFull.error)
-        ? await admin
-            .from("applications")
-            .select(APPLICATION_TRIP_SELECT_BASE)
-            .in("id", applicationIds)
-        : applicationResultFull;
-    if (applicationResult.error) {
-      return NextResponse.json({ error: applicationResult.error.message }, { status: 502 });
-    }
-    applicationRows = Array.isArray(applicationResult.data) ? applicationResult.data : [];
+  const { rows: applicationRecords, error: applicationFetchError } =
+    await fetchApplicationsByIds(admin, applicationIds);
+  if (applicationFetchError) {
+    return NextResponse.json({ error: applicationFetchError }, { status: 502 });
   }
 
-  const applicationRecords = (Array.isArray(applicationRows)
-    ? applicationRows
-    : []) as Record<string, unknown>[];
-
-  const matchedContactByAppId = await loadMatchedContactsByApplication(
+  const matchedContactByAppId = await loadMatchedContactsForSponsorCalls(
     admin,
-    applicationRecords,
+    preapprovals.map((raw) => {
+      const preapproval = raw as Record<string, unknown>;
+      const applicationId = safeText(preapproval.application_id);
+      const application = applicationRecords.find((row) => safeText(row.id) === applicationId) ?? {};
+      return {
+        mapKey: applicationId,
+        applicationRow: application,
+        applicationId,
+        sponsorPreapprovalId: safeText(preapproval.id),
+        finalSelectedQuoteId: safeText(application.final_selected_quote_id),
+      };
+    }),
   );
 
   const [{ data: matchedRuleRows }, { data: quoteRows }] = await Promise.all([
@@ -168,10 +210,7 @@ export async function GET() {
   ]);
 
   const applicationById = new Map(
-    (Array.isArray(applicationRows) ? applicationRows : []).map((row) => [
-      safeText((row as Record<string, unknown>).id),
-      row as Record<string, unknown>,
-    ]),
+    applicationRecords.map((row) => [safeText(row.id), row]),
   );
   const ruleTitleById = new Map(
     (Array.isArray(matchedRuleRows) ? matchedRuleRows : []).map((row) => [
@@ -282,6 +321,7 @@ export async function GET() {
       popup_driver_name: popup?.driver_name,
       popup_driver_phone: popup?.driver_phone,
       contact_data_source: popup?.data_source,
+      debug_contact_lookup: contactBundle?.debug_contact_lookup ?? null,
       matched_contact_debug: contactBundle?.debug ?? null,
     };
     return row;
