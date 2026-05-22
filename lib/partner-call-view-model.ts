@@ -172,11 +172,11 @@ export function partnerSupportSummaryForCard(call: PartnerCallLike): {
 }
 
 export function sponsorStageLabel(status?: string): string {
-  if (status === "approved") return "지원금 확정";
+  if (status === "approved") return "지원확정";
   if (status === "preapproved" || status === "mixed" || status === "pending") {
-    return "예상 지원금";
+    return "지원검토";
   }
-  return "예상 지원금";
+  return "지원검토";
 }
 
 export function sponsorStageConfirmed(status?: string): boolean {

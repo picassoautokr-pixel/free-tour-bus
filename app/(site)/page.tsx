@@ -80,6 +80,7 @@ type ApplicationInsertPayload = {
   quote_limit_count?: number | null;
   target_normal_price?: number | null;
   target_member_price?: number | null;
+  preferred_quote_types?: string[];
   quote_status?: string;
   extension_round?: number;
   support_client_reward_ratio?: number;
@@ -213,6 +214,8 @@ type FormData = {
   quoteLimitCustomCount: string;
   targetNormalPrice: string;
   targetMemberPrice: string;
+  preferredNormalQuote: boolean;
+  preferredDiscountQuote: boolean;
 };
 
 const INITIAL_FORM_DATA: FormData = {
@@ -242,6 +245,8 @@ const INITIAL_FORM_DATA: FormData = {
   quoteLimitCustomCount: "",
   targetNormalPrice: "",
   targetMemberPrice: "",
+  preferredNormalQuote: true,
+  preferredDiscountQuote: true,
 };
 
 export default function Home() {
@@ -328,6 +333,12 @@ export default function Home() {
     setPassengerCountError(!headcountOk);
 
     if (!phoneOk || !headcountOk || lookupPasswordErr) return;
+
+    if (!formData.preferredNormalQuote && !formData.preferredDiscountQuote) {
+      setSubmitErrorMessage("희망견적유형을 최소 한 가지 이상 선택해 주세요.");
+      setSubmitError(true);
+      return;
+    }
 
     const depTrim = formData.departure.trim();
     const destTrim = formData.destination.trim();
@@ -453,6 +464,10 @@ export default function Home() {
         quote_limit_count: quoteLimitCount,
         target_normal_price: parsePositiveIntegerText(formData.targetNormalPrice),
         target_member_price: parsePositiveIntegerText(formData.targetMemberPrice),
+        preferred_quote_types: [
+          ...(formData.preferredNormalQuote ? ["normal"] : []),
+          ...(formData.preferredDiscountQuote ? ["support"] : []),
+        ],
         quote_status: "collecting",
         extension_round: 0,
         support_client_reward_ratio: 0,
@@ -467,11 +482,25 @@ export default function Home() {
         JSON.stringify(insertPayload),
       );
 
-      const { data: insertedApplication, error } = await supabase
+      let insertPayloadFinal: ApplicationInsertPayload = insertPayload;
+      let { data: insertedApplication, error } = await supabase
         .from("applications")
-        .insert(insertPayload)
+        .insert(insertPayloadFinal)
         .select("id")
         .single();
+      if (
+        error &&
+        /preferred_quote_types/i.test(error.message) &&
+        "preferred_quote_types" in insertPayloadFinal
+      ) {
+        const { preferred_quote_types: _removed, ...withoutPreferred } = insertPayloadFinal;
+        insertPayloadFinal = withoutPreferred;
+        ({ data: insertedApplication, error } = await supabase
+          .from("applications")
+          .insert(insertPayloadFinal)
+          .select("id")
+          .single());
+      }
       if (error) {
         console.error("[applications insert] Supabase error:", {
           message: error.message,
@@ -1099,6 +1128,44 @@ export default function Home() {
                       className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
                     />
                   </label>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xs font-bold tracking-[-0.02em] text-slate-500">
+                    희망견적유형
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={formData.preferredNormalQuote}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            preferredNormalQuote: event.target.checked,
+                          }))
+                        }
+                        className="size-4 rounded border-slate-300"
+                      />
+                      일반견적
+                    </label>
+                    <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={formData.preferredDiscountQuote}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            preferredDiscountQuote: event.target.checked,
+                          }))
+                        }
+                        className="size-4 rounded border-slate-300"
+                      />
+                      할인견적
+                    </label>
+                  </div>
+                  <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                    둘 다 선택 가능합니다. 최소 한 가지는 선택해 주세요.
+                  </p>
                 </div>
               </div>
             </div>

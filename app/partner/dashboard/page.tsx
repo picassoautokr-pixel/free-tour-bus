@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PartnerCallCard } from "@/components/partner/PartnerCallCard";
-import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
 import {
+  LABEL,
   MATCHED_RUN_FILTERS,
   PARTNER_DASHBOARD_TABS,
   PARTNER_DASHBOARD_TITLE,
@@ -15,7 +15,6 @@ import {
 } from "@/lib/partner-dashboard-labels";
 import { matchedRunStatus } from "@/lib/partner-call-view-model";
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
-import { buildQuoteSupportBreakdown } from "@/lib/support-calculation";
 import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
@@ -302,16 +301,6 @@ function supportStatusLabel(status?: string): string {
   return "일반/지원 없음";
 }
 
-function quoteSupportBreakdown(quote: PartnerMyQuote): QuoteSupportBreakdown {
-  return (
-    quote.support_breakdown ??
-    buildQuoteSupportBreakdown({
-      ...quote,
-      sponsor_quote_enabled: quote.sponsor_quote_enabled,
-    })
-  );
-}
-
 function formatSubmittedAt(iso: string): string {
   const t = iso.trim();
   if (t === "" || t === "—") return "—";
@@ -472,7 +461,7 @@ export default function PartnerDashboardPage() {
   const [driverInfo, setDriverInfo] = useState<PartnerDriverInfo | null>(null);
   const [activeTab, setActiveTab] = useState<PartnerDashboardTab>("new");
   const [matchedSubTab, setMatchedSubTab] = useState<MatchedRunFilter>("in_progress");
-  const [expandedCallIds, setExpandedCallIds] = useState<Set<string>>(() => new Set());
+  const [detailExpandedCallId, setDetailExpandedCallId] = useState<string | null>(null);
   const [editingQuote, setEditingQuote] = useState(false);
   const [callsLoading, setCallsLoading] = useState(false);
   const [callsError, setCallsError] = useState<string | null>(null);
@@ -480,9 +469,6 @@ export default function PartnerDashboardPage() {
   const [quoteForm, setQuoteForm] = useState<QuoteForm>(emptyQuoteForm);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
-  const [quoteDetailCall, setQuoteDetailCall] = useState<PartnerCall | null>(
-    null,
-  );
   const [customerDetailCall, setCustomerDetailCall] = useState<PartnerCall | null>(
     null,
   );
@@ -881,15 +867,6 @@ export default function PartnerDashboardPage() {
     matched: matchedCalls.length,
   };
 
-  const toggleCallExpanded = (callId: string) => {
-    setExpandedCallIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(callId)) next.delete(callId);
-      else next.add(callId);
-      return next;
-    });
-  };
-
   const saveServiceRegions = async () => {
     setServiceRegionBusy(true);
     setServiceRegionMessage(null);
@@ -926,7 +903,7 @@ export default function PartnerDashboardPage() {
     setEditingQuote(edit);
     setActiveQuoteCallId(call.id);
     setActiveReferralCallId(null);
-    setExpandedCallIds((prev) => new Set(prev).add(call.id));
+    setDetailExpandedCallId(null);
     const defaultCustomerSupport =
       call.sponsor_estimated_support_amount ?? call.estimated_support_amount ?? 0;
     if (edit && call.my_quote?.source === "member") {
@@ -974,6 +951,7 @@ export default function PartnerDashboardPage() {
     if (isQuoteClosed(call)) return;
     setActiveReferralCallId(call.id);
     setActiveQuoteCallId(null);
+    setDetailExpandedCallId(null);
     setReferralForm(emptyReferralForm);
     setReferralMessage(null);
     setReferralResults([]);
@@ -1293,143 +1271,6 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
-          {quoteDetailCall?.my_quote ? (
-            <div
-              className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="partner-quote-detail-title"
-            >
-              <button
-                type="button"
-                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
-                aria-label="닫기"
-                onClick={() => setQuoteDetailCall(null)}
-              />
-              <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
-                <h2
-                  id="partner-quote-detail-title"
-                  className="text-lg font-black tracking-[-0.04em] text-slate-950"
-                >
-                  내 견적 상세
-                </h2>
-                <p className="mt-1 text-xs font-bold text-slate-500">
-                  {formatRouteWithStopovers(
-                    quoteDetailCall.departure,
-                    quoteDetailCall.stopovers,
-                    quoteDetailCall.destination,
-                  )}
-                </p>
-                <dl className="mt-4 space-y-3 text-sm">
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      제출 방식
-                    </dt>
-                    <dd className="mt-1 font-black text-slate-900">
-                      {quoteDetailCall.my_quote.source === "guest"
-                        ? "일반기사 시 제출한 견적"
-                        : "제휴기사 견적"}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      {quoteDetailCall.my_quote.source === "guest"
-                        ? "일반기사 제출가"
-                        : "일반견적가"}
-                    </dt>
-                    <dd className="mt-1 font-black text-blue-900">
-                      {formatPrice(quoteDetailCall.my_quote.price)}
-                    </dd>
-                  </div>
-                  {quoteDetailCall.my_quote.source === "member" &&
-                  quoteDetailCall.my_quote.sponsor_quote_enabled ? (
-                    <div className="sm:col-span-2">
-                      <SupportQuoteBreakdown
-                        breakdown={quoteSupportBreakdown(quoteDetailCall.my_quote)}
-                      />
-                      <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100">
-                        후원업체 확정 지원금 변경 시 아래 금액이 자동 재계산됩니다.
-                      </p>
-                    </div>
-                  ) : null}
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      차량유형
-                    </dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {quoteDetailCall.my_quote.vehicle_type}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      가능 출발시간
-                    </dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {quoteDetailCall.my_quote.available_time}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">메모</dt>
-                    <dd className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">
-                      {quoteDetailCall.my_quote.message.trim() === ""
-                        ? "—"
-                        : quoteDetailCall.my_quote.message}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      제출일시
-                    </dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {formatSubmittedAt(quoteDetailCall.my_quote.created_at)}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      견적 상태
-                    </dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {quoteDetailCall.my_quote.status}
-                      {quoteDetailCall.my_quote.source === "guest" &&
-                      quoteDetailCall.my_quote.match_result ? (
-                        <span className="ml-2 text-xs font-bold text-slate-500">
-                          (매칭: {quoteDetailCall.my_quote.match_result})
-                        </span>
-                      ) : null}
-                    </dd>
-                  </div>
-                  <div
-                    className={`rounded-xl p-3 ring-1 ${
-                      quoteDetailCall.my_quote.source === "guest"
-                        ? "bg-amber-50 ring-amber-100"
-                        : "bg-blue-50 ring-blue-100"
-                    }`}
-                  >
-                    <p
-                      className={`text-xs font-semibold leading-5 ${
-                        quoteDetailCall.my_quote.source === "guest"
-                          ? "text-amber-900"
-                          : "text-blue-900"
-                      }`}
-                    >
-                      {quoteDetailCall.my_quote.source === "guest"
-                        ? "일반기사 견적은 지원금 미적용가입니다. 제휴기사 전환 후 지원금 적용 견적을 다시 제출할 수 있습니다."
-                        : "지원금 적용가는 후원사 심사 결과에 따라 변동 또는 거절될 수 있습니다."}
-                    </p>
-                  </div>
-                </dl>
-                <button
-                  type="button"
-                  className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-black text-white shadow-sm"
-                  style={tapStyle}
-                  onClick={() => setQuoteDetailCall(null)}
-                >
-                  닫기
-                </button>
-              </div>
-            </div>
-          ) : null}
-
           {customerDetailCall ? (
             <div
               className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
@@ -1448,15 +1289,22 @@ export default function PartnerDashboardPage() {
                   id="partner-customer-detail-title"
                   className="text-lg font-black tracking-[-0.04em] text-slate-950"
                 >
-                  고객정보 확인
+                  {LABEL.customerInfo}
                 </h2>
-                <p className="mt-1 text-xs font-bold text-slate-500">
-                  {customerDetailCall.receipt_number || "신청번호 미정"}
-                </p>
                 <dl className="mt-4 space-y-3 text-sm">
+                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                    <dt className="text-[11px] font-bold text-slate-400">
+                      {LABEL.contractNumber}
+                    </dt>
+                    <dd className="mt-1 font-black text-slate-900">
+                      {customerDetailCall.contract_number?.trim() ||
+                        customerDetailCall.receipt_number ||
+                        "—"}
+                    </dd>
+                  </div>
                   <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
                     <dt className="text-[11px] font-bold text-emerald-600">
-                      고객명
+                      {LABEL.customerName}
                     </dt>
                     <dd className="mt-1 font-black text-emerald-950">
                       {customerDetailCall.customer_name || "—"}
@@ -1464,7 +1312,7 @@ export default function PartnerDashboardPage() {
                   </div>
                   <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
                     <dt className="text-[11px] font-bold text-emerald-600">
-                      고객 전화번호
+                      {LABEL.customerPhone}
                     </dt>
                     <dd className="mt-2">
                       {customerDetailCall.customer_phone ? (
@@ -1475,110 +1323,23 @@ export default function PartnerDashboardPage() {
                           <div className="flex gap-2">
                             <a
                               href={`tel:${customerDetailCall.customer_phone}`}
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-600 px-3 text-sm font-black text-white"
+                              className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-emerald-600 px-3 text-sm font-black text-white"
                               style={tapStyle}
                             >
-                              전화하기
+                              {LABEL.callCustomer}
                             </a>
                             <a
                               href={`sms:${customerDetailCall.customer_phone}`}
-                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-white px-3 text-sm font-black text-emerald-900"
+                              className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border border-emerald-200 bg-white px-3 text-sm font-black text-emerald-900"
                               style={tapStyle}
                             >
-                              문자보내기
+                              {LABEL.smsCustomer}
                             </a>
                           </div>
                         </div>
                       ) : (
                         <span className="font-semibold text-slate-400">—</span>
                       )}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">출발지</dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {customerDetailCall.departure}
-                    </dd>
-                  </div>
-                  {formatStopovers(customerDetailCall.stopovers) ? (
-                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                      <dt className="text-[11px] font-bold text-slate-400">
-                        경유지
-                      </dt>
-                      <dd className="mt-1 font-semibold text-slate-800">
-                        {formatStopovers(customerDetailCall.stopovers)}
-                      </dd>
-                    </div>
-                  ) : null}
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">도착지</dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {customerDetailCall.destination}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      출발일시
-                    </dt>
-                    <dd className="mt-1 font-semibold text-slate-800">
-                      {formatDeparture(customerDetailCall)}
-                    </dd>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                      <dt className="text-[11px] font-bold text-slate-400">
-                        인원수
-                      </dt>
-                      <dd className="mt-1 font-semibold text-slate-800">
-                        {customerDetailCall.passenger_count ?? "—"}
-                      </dd>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                      <dt className="text-[11px] font-bold text-slate-400">
-                        운행
-                      </dt>
-                      <dd className="mt-1 font-semibold text-slate-800">
-                        {customerDetailCall.trip_type}
-                      </dd>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                      <dt className="text-[11px] font-bold text-slate-400">
-                        차량등급
-                      </dt>
-                      <dd className="mt-1 font-semibold text-slate-800">
-                        {customerDetailCall.bus_grade}
-                      </dd>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                      <dt className="text-[11px] font-bold text-slate-400">
-                        지원금 상태
-                      </dt>
-                      <dd className="mt-1 font-semibold text-slate-800">
-                        {customerDetailCall.sponsor_support_status === "approved"
-                          ? "확정 지원금"
-                          : customerDetailCall.sponsor_support_status === "rejected"
-                            ? "지원금 미승인 또는 조건 불일치"
-                            : customerDetailCall.sponsor_support_status === "preapproved"
-                              ? "예상 지원금"
-                              : customerDetailCall.final_selected_quote_id.trim() !== ""
-                                ? "매칭 성공"
-                                : "예상 지원금 검토"}
-                        {customerDetailCall.sponsor_approved_support_amount != null ? (
-                          <span className="ml-2 text-xs font-black text-blue-700">
-                            {formatPrice(customerDetailCall.sponsor_approved_support_amount)}
-                          </span>
-                        ) : null}
-                      </dd>
-                    </div>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      요청사항
-                    </dt>
-                    <dd className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">
-                      {customerDetailCall.request_message?.trim()
-                        ? customerDetailCall.request_message
-                        : "—"}
                     </dd>
                   </div>
                 </dl>
@@ -1607,6 +1368,7 @@ export default function PartnerDashboardPage() {
                         setActiveTab(tab.id);
                         setActiveQuoteCallId(null);
                         setActiveReferralCallId(null);
+                        setDetailExpandedCallId(null);
                       }}
                       className={`min-h-11 shrink-0 rounded-2xl border px-4 text-sm font-black transition ${
                         selected
@@ -1668,11 +1430,10 @@ export default function PartnerDashboardPage() {
                   key={call.id}
                   call={call}
                   stage={activeTab}
-                  expanded={expandedCallIds.has(call.id)}
-                  onToggleExpand={() => toggleCallExpanded(call.id)}
                   highlighted={highlightedNewCallIds.has(call.id)}
                   quoteClosed={isQuoteClosed(call)}
                   formOpen={activeQuoteCallId === call.id}
+                  detailOpen={detailExpandedCallId === call.id}
                   referralOpen={activeReferralCallId === call.id}
                   quoteForm={quoteForm}
                   setQuoteForm={setQuoteForm}
@@ -1683,6 +1444,12 @@ export default function PartnerDashboardPage() {
                     )
                   }
                   onCloseQuoteForm={closeQuoteForm}
+                  onOpenDetail={() => {
+                    setDetailExpandedCallId(call.id);
+                    setActiveQuoteCallId(null);
+                    setActiveReferralCallId(null);
+                  }}
+                  onCloseDetail={() => setDetailExpandedCallId(null)}
                   onOpenReferral={() => openReferralForm(call)}
                   onCloseReferral={closeReferralForm}
                   onSubmitQuote={() => void submitQuote(call)}
@@ -1691,11 +1458,14 @@ export default function PartnerDashboardPage() {
                   referralBusy={referralBusy}
                   referralForm={referralForm}
                   setReferralForm={setReferralForm}
-                  referralResults={referralResults}
                   referralPreview={buildReferralPreview(call)}
-                  onOpenQuoteDetail={() => setQuoteDetailCall(call)}
                   onOpenCustomerDetail={() => setCustomerDetailCall(call)}
                   customerInfoVisible={canRevealCustomerInfo(call)}
+                  customerContractNumber={
+                    call.contract_number?.trim() || call.receipt_number
+                  }
+                  customerName={call.customer_name}
+                  customerPhone={call.customer_phone}
                   isEditMode={editingQuote && activeQuoteCallId === call.id}
                 />
               ))
