@@ -34,6 +34,24 @@ export function SponsorMatchedContactDebugButton({
 
   if (!isQuoteDebugEnabled() || !debug) return null;
 
+  const popupSummary = popup
+    ? {
+        popup_customer_name: popup.customer_name,
+        popup_customer_phone: popup.customer_phone,
+        popup_driver_company: popup.driver_company,
+        popup_driver_name: popup.driver_name,
+        popup_driver_phone: popup.driver_phone,
+        data_source: popup.data_source,
+      }
+    : {
+        popup_customer_name: debug.popup_customer_name,
+        popup_customer_phone: debug.popup_customer_phone,
+        popup_driver_company: debug.popup_driver_company,
+        popup_driver_name: debug.popup_driver_name,
+        popup_driver_phone: debug.popup_driver_phone,
+        data_source: debug.data_source,
+      };
+
   return (
     <div
       className={`relative ${className}`}
@@ -52,26 +70,17 @@ export function SponsorMatchedContactDebugButton({
         <div className="absolute left-0 top-full z-[130] mt-1 w-[min(calc(100vw-2rem),28rem)] max-h-[70vh] overflow-y-auto rounded-xl border border-violet-200 bg-white p-3 shadow-xl ring-1 ring-violet-100">
           <p className="text-xs font-black text-violet-900">매칭완료 연락처 RAW</p>
           <div className="mt-2 space-y-2">
+            <JsonBlock title="final_selected_quote_id" data={debug.final_selected_quote_id} />
+            <JsonBlock title="fetched_driver_quote" data={debug.fetched_driver_quote} />
+            <JsonBlock title="fetched_partner_driver" data={debug.fetched_partner_driver} />
+            <JsonBlock title="fetched_profile" data={debug.fetched_profile} />
+            <JsonBlock title="fetched_guest_quote" data={debug.fetched_guest_quote} />
             <JsonBlock title="application" data={debug.application} />
             <JsonBlock title="driver_quote (member)" data={debug.driver_quote} />
             <JsonBlock title="partner_driver" data={debug.partner_driver} />
             <JsonBlock title="profiles" data={debug.profile} />
             <JsonBlock title="guest_driver_quote" data={debug.guest_driver_quote} />
-            <JsonBlock
-              title="고객정보 팝업 최종 표시값"
-              data={
-                popup
-                  ? {
-                      popup_customer_name: popup.customer_name,
-                      popup_customer_phone: popup.customer_phone,
-                      popup_driver_company: popup.driver_company,
-                      popup_driver_name: popup.driver_name,
-                      popup_driver_phone: popup.driver_phone,
-                      data_source: popup.data_source,
-                    }
-                  : null
-              }
-            />
+            <JsonBlock title="고객정보 팝업 최종 표시값" data={popupSummary} />
           </div>
         </div>
       ) : null}

@@ -819,9 +819,26 @@ export function buildQuoteDebugReport(ctx: QuoteDebugContext): QuoteDebugReport 
     raw: {
       application: app,
       quote,
+      matched_driver: ctx.matched_driver ?? null,
       sponsor_support: ctx.sponsorPreapproval ?? null,
       support_breakdown: breakdownRecord,
       sponsor_rule: ctx.sponsorRule ?? null,
+      ...(ctx.role === "sponsor"
+        ? {
+            final_selected_quote_id: String(app.final_selected_quote_id ?? "").trim() || null,
+            fetched_driver_quote: ctx.quote ?? null,
+            fetched_partner_driver: ctx.matched_driver ?? null,
+            fetched_profile:
+              (app.fetched_profile as Record<string, unknown> | null | undefined) ?? null,
+            popup_customer_name: String(app.popup_customer_name ?? app.customer_name ?? "").trim() || null,
+            popup_customer_phone:
+              String(app.popup_customer_phone ?? app.customer_phone ?? "").trim() || null,
+            popup_driver_company:
+              String(app.popup_driver_company ?? app.driver_company_name ?? "").trim() || null,
+            popup_driver_name: String(app.popup_driver_name ?? app.driver_name ?? "").trim() || null,
+            popup_driver_phone: String(app.popup_driver_phone ?? app.driver_phone ?? "").trim() || null,
+          }
+        : {}),
     },
   };
 }
@@ -862,10 +879,28 @@ export function sponsorCallDebugContext(
   call: SponsorCallRow,
   sponsorRule?: Record<string, unknown> | null,
 ): QuoteDebugContext {
+  const debug = call.matched_contact_debug;
   return {
     role: "sponsor",
-    application: toRecord(call),
-    quote: null,
+    application: {
+      ...toRecord(call),
+      final_selected_quote_id:
+        call.final_selected_quote_id ?? debug?.final_selected_quote_id,
+      customer_name: call.popup_customer_name ?? call.customer_name,
+      customer_phone: call.popup_customer_phone ?? call.customer_phone,
+      driver_name: call.popup_driver_name ?? call.driver_name,
+      driver_phone: call.popup_driver_phone ?? call.driver_phone,
+      driver_company_name:
+        call.popup_driver_company ?? call.driver_company ?? call.driver_company_name,
+      fetched_profile: debug?.fetched_profile ?? null,
+      popup_customer_name: call.popup_customer_name,
+      popup_customer_phone: call.popup_customer_phone,
+      popup_driver_company: call.popup_driver_company,
+      popup_driver_name: call.popup_driver_name,
+      popup_driver_phone: call.popup_driver_phone,
+    },
+    quote: call.quote ?? debug?.fetched_driver_quote ?? debug?.driver_quote ?? null,
+    matched_driver: call.matched_driver ?? debug?.fetched_partner_driver ?? null,
     sponsorPreapproval: {
       id: call.id,
       application_id: call.application_id,

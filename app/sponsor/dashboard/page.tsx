@@ -740,10 +740,12 @@ export default function SponsorDashboardPage() {
                 <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
                   <dt className="text-[11px] font-bold text-blue-700">{LABEL.driverInfo}</dt>
                   {customerDetailCall.popup_driver_company ||
-                  customerDetailCall.driver_company ? (
+                  customerDetailCall.driver_company ||
+                  customerDetailCall.driver_company_name ? (
                     <dd className="mt-1 text-xs font-bold text-blue-800">
                       {customerDetailCall.popup_driver_company ||
-                        customerDetailCall.driver_company}
+                        customerDetailCall.driver_company ||
+                        customerDetailCall.driver_company_name}
                     </dd>
                   ) : null}
                   <dd className="mt-1 font-black">

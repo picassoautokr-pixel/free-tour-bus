@@ -61,6 +61,9 @@ export type SponsorCallRow = {
   driver_name?: string;
   driver_phone?: string;
   driver_company?: string;
+  driver_company_name?: string;
+  quote?: Record<string, unknown> | null;
+  matched_driver?: Record<string, unknown> | null;
   popup_customer_name?: string;
   popup_customer_phone?: string;
   popup_driver_company?: string;
