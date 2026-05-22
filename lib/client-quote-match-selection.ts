@@ -95,20 +95,27 @@ export function quoteSponsorSupportReviewing(
   return confirmedTotal == null || confirmedTotal <= 0;
 }
 
-export function selectedPriceTypeToLegacyKind(
-  type: SelectedPriceType,
-): "normal_price_selected" | "support_price_selected" | "support_planned_selected" {
-  if (type === "normal") return "normal_price_selected";
+export type ClientPriceSelectionKind =
+  | "normal_selected"
+  | "support_planned_selected"
+  | "support_confirmed_selected"
+  | "normal_price_selected"
+  | "support_price_selected";
+
+export function selectedPriceTypeToLegacyKind(type: SelectedPriceType): ClientPriceSelectionKind {
+  if (type === "normal") return "normal_selected";
   if (type === "support_planned") return "support_planned_selected";
-  return "support_price_selected";
+  return "support_confirmed_selected";
 }
 
 export function legacyKindToSelectedPriceType(
   kind?: string | null,
 ): SelectedPriceType | null {
-  if (kind === "normal_price_selected") return "normal";
+  if (kind === "normal_selected" || kind === "normal_price_selected") return "normal";
   if (kind === "support_planned_selected") return "support_planned";
-  if (kind === "support_price_selected") return "support_confirmed";
+  if (kind === "support_confirmed_selected" || kind === "support_price_selected") {
+    return "support_confirmed";
+  }
   return null;
 }
 

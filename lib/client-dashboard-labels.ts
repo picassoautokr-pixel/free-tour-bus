@@ -67,6 +67,7 @@ export const LABEL = {
   /** @deprecated 매칭완료 섹션 제목 — matchedDetailTitle 사용 */
   selectedPriceKind: "매칭견적가",
   matchedPriceKind: "매칭견적가",
+  selectedQuoteLine: "선택 견적",
   matchedDetailTitle: "매칭 세부내역",
   matchedAmount: "매칭금액",
   finalPaymentPrice: "최종 결제가격",

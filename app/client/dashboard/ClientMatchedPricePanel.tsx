@@ -1,19 +1,17 @@
 "use client";
 
-import { CLIENT_UI, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
-import {
-  resolveQuoteNormalPrice,
-  resolveQuoteSupportAppliedPrice,
-  resolveQuoteSupportPlannedPrice,
-} from "@/app/client/dashboard/page-quote-screen";
 import { LABEL } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import {
+  resolveQuoteSupportAppliedPrice,
+  resolveQuoteSupportPlannedPrice,
+} from "@/app/client/dashboard/page-quote-screen";
 import { clientQuoteDebugContext } from "@/lib/quote-debug-trace";
 import {
-  isNormalPriceSelection,
   resolveApplicationMatchedPriceDisplay,
   type MatchedPriceCompare,
+  type QuoteMatchedPriceFallback,
 } from "@/lib/selected-price-display";
 
 function formatWon(value: number | null | undefined): string {
@@ -21,7 +19,18 @@ function formatWon(value: number | null | undefined): string {
   return `${value.toLocaleString("ko-KR")}${LABEL.wonSuffix}`;
 }
 
-/** 매칭완료 탭 — 매칭 세부내역 본문 */
+function quoteFallbackFromClientQuote(quote: ClientQuote): QuoteMatchedPriceFallback {
+  return {
+    price: quote.price,
+    support_discount_planned_price: quote.support_discount_planned_price,
+    support_discount_applied_price: quote.support_discount_applied_price,
+    final_discount_applied_price: quote.final_discount_applied_price,
+    confirmed_discount_price: quote.confirmed_discount_price,
+    support_breakdown: quote.support_breakdown ?? null,
+  };
+}
+
+/** 매칭완료 탭 — 선택 견적 한 줄 */
 export function ClientMatchedPricePanel({
   application,
   selectedQuote,
@@ -29,29 +38,19 @@ export function ClientMatchedPricePanel({
   application: ClientApplication;
   selectedQuote: ClientQuote;
 }) {
-  const quoteNormalPrice = resolveQuoteNormalPrice(selectedQuote);
   const priceCompare: MatchedPriceCompare = {
-    quoteNormalPrice,
+    quoteNormalPrice: selectedQuote.price,
     quoteSupportPlannedPrice: resolveQuoteSupportPlannedPrice(selectedQuote),
     quoteSupportAppliedPrice: resolveQuoteSupportAppliedPrice(selectedQuote),
   };
 
-  const { label: matchedLabel, amount: matchedAmount } =
-    resolveApplicationMatchedPriceDisplay(application, priceCompare);
+  const { label, amount } = resolveApplicationMatchedPriceDisplay(
+    application,
+    priceCompare,
+    quoteFallbackFromClientQuote(selectedQuote),
+  );
 
-  const hideSupport = isNormalPriceSelection(application, {
-    normalPrice: quoteNormalPrice,
-    supportPlannedPrice: priceCompare.quoteSupportPlannedPrice ?? null,
-    supportAppliedPrice: priceCompare.quoteSupportAppliedPrice ?? null,
-  });
-
-  const normalLineAmount =
-    selectedQuote.price != null && Number.isFinite(selectedQuote.price)
-      ? Math.trunc(selectedQuote.price)
-      : quoteNormalPrice;
-
-  const matchedQuoteText = [matchedLabel, formatWon(matchedAmount)].filter(Boolean).join(" ");
-  const supportBadge = !hideSupport ? quoteSupportBadgeLabel(selectedQuote, application) : null;
+  const selectedQuoteText = [label, formatWon(amount)].filter(Boolean).join(" ");
 
   return (
     <div className="mt-2 space-y-2 text-xs font-bold text-emerald-900">
@@ -59,21 +58,8 @@ export function ClientMatchedPricePanel({
         <QuoteDebugButton context={clientQuoteDebugContext(application, selectedQuote)} />
       </div>
       <p className="text-sm font-black text-emerald-950">
-        {LABEL.matchedPriceKind}: {matchedQuoteText || LABEL.unconfirmed}
+        {LABEL.selectedQuoteLine}: {selectedQuoteText || LABEL.unconfirmed}
       </p>
-      {!hideSupport ? (
-        <div className="space-y-1.5">
-          {normalLineAmount != null ? (
-            <p>
-              {CLIENT_UI.normalPrice}: {normalLineAmount.toLocaleString("ko-KR")}
-              {LABEL.wonSuffix}
-            </p>
-          ) : null}
-          {supportBadge ? (
-            <p className="text-[10px] font-bold text-slate-600">{supportBadge}</p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

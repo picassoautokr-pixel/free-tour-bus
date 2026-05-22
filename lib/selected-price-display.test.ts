@@ -51,6 +51,28 @@ describe("resolveApplicationMatchedPriceDisplay", () => {
     assert.equal(line.amount, 200_000);
   });
 
+  it("falls back to support confirmed from quote when application selected_price is null", () => {
+    const line = resolveApplicationMatchedPriceDisplay(
+      {
+        final_selected_quote_id: "quote-1",
+        selected_price_type: null,
+        selected_price_label: null,
+        selected_price: null,
+      },
+      { quoteNormalPrice: 500_000, quoteSupportAppliedPrice: 300_000 },
+      {
+        price: 500_000,
+        support_breakdown: {
+          isConfirmed: true,
+          supportDiscountAppliedPrice: 300_000,
+          finalDiscountAppliedPrice: 300_000,
+        },
+      },
+    );
+    assert.equal(line.label, "지원금 할인 적용가");
+    assert.equal(line.amount, 300_000);
+  });
+
   it("corrects normal label when amount matches planned discount not normal", () => {
     const line = resolveApplicationMatchedPriceDisplay(
       {

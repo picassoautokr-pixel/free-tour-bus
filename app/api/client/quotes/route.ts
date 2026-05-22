@@ -643,8 +643,8 @@ export async function POST(request: Request) {
     const legacyKind = selectedPriceTypeToLegacyKind(
       selectedPriceType as "normal" | "support_planned" | "support_confirmed",
     );
-    const priceSelection = safeText(body.price_selection_kind) || legacyKind;
-    const finalPatch: Record<string, unknown> = {
+
+    const corePatch: Record<string, unknown> = {
       final_selected_quote_id: selectedId,
       final_selected_quote_source: selectedSource,
       final_selected_at: now,
@@ -653,36 +653,41 @@ export async function POST(request: Request) {
       contract_status: contractStatus,
       contract_started_at: contractStartedAt,
       contract_number: contractNumber,
+    };
+    const selectedPricePatch: Record<string, unknown> = {
       selected_price_type: selectedPriceType,
       selected_price_label: selectedPriceLabel,
       selected_price: selectedPrice,
-      client_price_selection_kind: priceSelection,
     };
-    let finalUpdate = await admin.from("applications").update(finalPatch).eq("id", applicationId);
-    if (finalUpdate.error && isMissingColumnError(finalUpdate.error)) {
-      const legacy = { ...finalPatch };
-      delete legacy.selected_price_type;
-      delete legacy.selected_price_label;
-      delete legacy.selected_price;
-      delete legacy.client_price_selection_kind;
-      finalUpdate = await admin.from("applications").update(legacy).eq("id", applicationId);
-    } else if (
-      finalUpdate.error &&
-      /client_price_selection_kind|selected_price/i.test(finalUpdate.error.message)
-    ) {
-      const legacy = { ...finalPatch };
-      delete legacy.client_price_selection_kind;
-      finalUpdate = await admin.from("applications").update(legacy).eq("id", applicationId);
-      if (finalUpdate.error && isMissingColumnError(finalUpdate.error)) {
-        const minimal = { ...legacy };
-        delete minimal.selected_price_type;
-        delete minimal.selected_price_label;
-        delete minimal.selected_price;
-        finalUpdate = await admin.from("applications").update(minimal).eq("id", applicationId);
-      }
+
+    let coreUpdate = await admin.from("applications").update(corePatch).eq("id", applicationId);
+    if (coreUpdate.error) {
+      return NextResponse.json({ error: coreUpdate.error.message }, { status: 502 });
     }
-    if (finalUpdate.error) {
-      return NextResponse.json({ error: finalUpdate.error.message }, { status: 502 });
+
+    let priceUpdate = await admin
+      .from("applications")
+      .update(selectedPricePatch)
+      .eq("id", applicationId);
+    if (priceUpdate.error) {
+      if (isMissingColumnError(priceUpdate.error)) {
+        return NextResponse.json(
+          {
+            error:
+              "선택 견적 저장 컬럼이 없습니다. sql/application_selected_price.sql 을 Supabase에 적용한 뒤 다시 매칭해 주세요.",
+          },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json({ error: priceUpdate.error.message }, { status: 502 });
+    }
+
+    const kindUpdate = await admin
+      .from("applications")
+      .update({ client_price_selection_kind: legacyKind })
+      .eq("id", applicationId);
+    if (kindUpdate.error && !isMissingColumnError(kindUpdate.error)) {
+      return NextResponse.json({ error: kindUpdate.error.message }, { status: 502 });
     }
     if (selectedPriceType === "normal") {
       await admin

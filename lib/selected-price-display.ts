@@ -37,8 +37,10 @@ function resolveLegacySelectedPriceType(
 ): SelectedPriceType | null {
   const legacy = source?.client_price_selection_kind ?? source?.final_price_selection_kind;
   if (legacy === "support_planned_selected") return "support_planned";
-  if (legacy === "support_price_selected") return "support_confirmed";
-  if (legacy === "normal_price_selected") return "normal";
+  if (legacy === "support_confirmed_selected" || legacy === "support_price_selected") {
+    return "support_confirmed";
+  }
+  if (legacy === "normal_selected" || legacy === "normal_price_selected") return "normal";
   return null;
 }
 
@@ -169,9 +171,11 @@ export function resolveSelectedPriceType(
     return raw;
   }
   const legacy = source.client_price_selection_kind ?? source.final_price_selection_kind;
-  if (legacy === "normal_price_selected") return "normal";
+  if (legacy === "normal_selected" || legacy === "normal_price_selected") return "normal";
   if (legacy === "support_planned_selected") return "support_planned";
-  if (legacy === "support_price_selected") return "support_confirmed";
+  if (legacy === "support_confirmed_selected" || legacy === "support_price_selected") {
+    return "support_confirmed";
+  }
   return null;
 }
 
@@ -267,49 +271,161 @@ export type MatchedPriceCompare = {
   quoteSupportAppliedPrice?: number | null;
 };
 
-/**
- * 매칭견적가 표시 — application.selected_* 만 사용 (견적 일반가와 분리)
- */
+export type QuoteMatchedPriceFallback = {
+  price?: number | null;
+  support_discount_planned_price?: number | null;
+  support_discount_applied_price?: number | null;
+  final_discount_applied_price?: number | null;
+  confirmed_discount_price?: number | null;
+  support_breakdown?: {
+    isConfirmed?: boolean;
+    is_confirmed?: boolean;
+    supportDiscountPlannedPrice?: number | null;
+    supportDiscountAppliedPrice?: number | null;
+    finalDiscountAppliedPrice?: number | null;
+  } | null;
+};
+
+function parseStoredAmount(source?: SelectedPriceSource | null): number | null {
+  if (
+    source?.selected_price != null &&
+    Number.isFinite(source.selected_price) &&
+    source.selected_price >= 0
+  ) {
+    return Math.trunc(source.selected_price);
+  }
+  return null;
+}
+
+function resolveAppliedPriceFromQuoteFallback(
+  quote?: QuoteMatchedPriceFallback | null,
+): number | null {
+  if (!quote) return null;
+  const breakdown = quote.support_breakdown;
+  const fromBreakdown =
+    breakdown?.finalDiscountAppliedPrice ??
+    breakdown?.supportDiscountAppliedPrice ??
+    null;
+  if (fromBreakdown != null && Number.isFinite(fromBreakdown)) {
+    return Math.trunc(fromBreakdown);
+  }
+  const raw =
+    quote.final_discount_applied_price ??
+    quote.support_discount_applied_price ??
+    quote.confirmed_discount_price;
+  if (raw != null && Number.isFinite(raw)) return Math.trunc(raw);
+  return null;
+}
+
+function resolvePlannedPriceFromQuoteFallback(
+  quote?: QuoteMatchedPriceFallback | null,
+): number | null {
+  if (!quote) return null;
+  const breakdown = quote.support_breakdown;
+  const fromBreakdown = breakdown?.supportDiscountPlannedPrice;
+  if (fromBreakdown != null && Number.isFinite(fromBreakdown)) {
+    return Math.trunc(fromBreakdown);
+  }
+  const raw = quote.support_discount_planned_price;
+  if (raw != null && Number.isFinite(raw)) return Math.trunc(raw);
+  return null;
+}
+
+function isQuoteSupportConfirmedFallback(quote?: QuoteMatchedPriceFallback | null): boolean {
+  if (!quote?.support_breakdown) return false;
+  const b = quote.support_breakdown;
+  return b.isConfirmed === true || b.is_confirmed === true;
+}
+
+/** 매칭완료 선택 견적 — application.selected_* 우선, 없으면 quote/breakdown fallback */
 export function resolveApplicationMatchedPriceDisplay(
   application: SelectedPriceSource | null | undefined,
   compare?: MatchedPriceCompare,
+  quoteFallback?: QuoteMatchedPriceFallback | null,
 ): { label: string; amount: number | null } {
-  const amount =
-    application?.selected_price != null && Number.isFinite(application.selected_price)
-      ? Math.trunc(application.selected_price)
-      : null;
-
-  let label = (application?.selected_price_label ?? "").trim();
-  const storedType = resolveSelectedPriceType(application);
   const normal = compare?.quoteNormalPrice ?? null;
   const planned = compare?.quoteSupportPlannedPrice ?? null;
   const applied = compare?.quoteSupportAppliedPrice ?? null;
 
-  if (
-    amount != null &&
-    normal != null &&
-    amount !== normal &&
-    (storedType === "normal" || label === LABEL_BY_TYPE.normal)
-  ) {
-    if (planned != null && amount === planned) {
-      label = LABEL_BY_TYPE.support_planned;
-    } else if (applied != null && amount === applied) {
-      label = LABEL_BY_TYPE.support_confirmed;
-    } else if (amount < normal) {
-      label = LABEL_BY_TYPE.support_planned;
+  const storedAmount = parseStoredAmount(application);
+  const storedLabel = (application?.selected_price_label ?? "").trim();
+
+  if (storedAmount != null) {
+    let label = storedLabel;
+    const storedType = resolveSelectedPriceType(application);
+    if (
+      normal != null &&
+      storedAmount !== normal &&
+      (storedType === "normal" || label === LABEL_BY_TYPE.normal)
+    ) {
+      if (planned != null && storedAmount === planned) {
+        label = LABEL_BY_TYPE.support_planned;
+      } else if (applied != null && storedAmount === applied) {
+        label = LABEL_BY_TYPE.support_confirmed;
+      } else if (storedAmount < normal) {
+        label = LABEL_BY_TYPE.support_planned;
+      }
+    }
+    if (!label) {
+      const effective = resolveEffectiveSelectedPriceType(application, {
+        normalPrice: normal,
+        supportPlannedPrice: planned ?? null,
+        supportAppliedPrice: applied ?? null,
+      });
+      if (effective) label = labelForSelectedPriceType(effective);
+    }
+    return { label: label || LABEL_BY_TYPE.normal, amount: storedAmount };
+  }
+
+  const matchedQuoteId = (
+    application as SelectedPriceSource & { final_selected_quote_id?: string | null }
+  )?.final_selected_quote_id;
+  const isMatched = (matchedQuoteId ?? "").trim() !== "";
+
+  if (isMatched && quoteFallback) {
+    if (isQuoteSupportConfirmedFallback(quoteFallback)) {
+      const appliedAmount =
+        applied ?? resolveAppliedPriceFromQuoteFallback(quoteFallback);
+      if (appliedAmount != null) {
+        return { label: LABEL_BY_TYPE.support_confirmed, amount: appliedAmount };
+      }
+    }
+    const plannedAmount =
+      planned ?? resolvePlannedPriceFromQuoteFallback(quoteFallback);
+    if (plannedAmount != null) {
+      return { label: LABEL_BY_TYPE.support_planned, amount: plannedAmount };
+    }
+    const normalAmount =
+      normal ??
+      (quoteFallback.price != null && Number.isFinite(quoteFallback.price)
+        ? Math.trunc(quoteFallback.price)
+        : null);
+    if (normalAmount != null) {
+      return { label: LABEL_BY_TYPE.normal, amount: normalAmount };
     }
   }
 
-  if (!label) {
-    const effective = resolveEffectiveSelectedPriceType(application, {
-      normalPrice: normal,
-      supportPlannedPrice: planned ?? null,
-      supportAppliedPrice: applied ?? null,
-    });
-    if (effective) label = labelForSelectedPriceType(effective);
+  if (storedLabel) {
+    return { label: storedLabel, amount: storedAmount };
   }
 
-  return { label, amount };
+  const effective = resolveEffectiveSelectedPriceType(application, {
+    normalPrice: normal,
+    supportPlannedPrice: planned ?? null,
+    supportAppliedPrice: applied ?? null,
+  });
+  if (effective) {
+    const label = labelForSelectedPriceType(effective);
+    const amount =
+      effective === "normal"
+        ? normal
+        : effective === "support_planned"
+          ? planned
+          : applied;
+    return { label, amount: amount ?? storedAmount };
+  }
+
+  return { label: "", amount: null };
 }
 
 /** 매칭 완료 후 일반견적가 선택 → 후원/지원 UI 숨김 */

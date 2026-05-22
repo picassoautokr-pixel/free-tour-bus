@@ -3,4 +3,4 @@ alter table public.applications
   add column if not exists client_price_selection_kind text;
 
 comment on column public.applications.client_price_selection_kind is
-  '고객 매칭 견적가 선택: normal_price_selected | support_price_selected';
+  '고객 매칭 견적가 선택: normal_selected | support_planned_selected | support_confirmed_selected (구: normal_price_selected | support_price_selected)';
