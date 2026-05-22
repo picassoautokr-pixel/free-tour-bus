@@ -635,6 +635,9 @@ export default function SponsorDashboardPage() {
                 <SponsorRejectedCallCard
                   key={call.id}
                   call={call}
+                  sponsorRule={
+                    rules.find((r) => r.id === call.sponsor_rule_id) ?? null
+                  }
                   expanded={expandedDetailId === call.id}
                   onToggleExpand={() =>
                     setExpandedDetailId((prev) => (prev === call.id ? null : call.id))
@@ -646,6 +649,9 @@ export default function SponsorDashboardPage() {
                 <SponsorCallCard
                   key={call.id}
                   call={call}
+                  sponsorRule={
+                    rules.find((r) => r.id === call.sponsor_rule_id) ?? null
+                  }
                   listMode={mainTab === "review" ? "review" : "confirmed"}
                   detailExpanded={expandedDetailId === call.id}
                   onToggleDetail={() =>

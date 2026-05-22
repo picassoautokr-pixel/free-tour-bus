@@ -4,7 +4,9 @@ import { QuoteMatchButtonGroup } from "@/app/client/dashboard/QuoteMatchButtonGr
 import { CLIENT_UI, quoteSupportBadgeLabel } from "@/app/client/dashboard/client-display";
 import { LABEL, type ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
 import type { QuoteMatchPriceSelection } from "@/lib/client-quote-match-selection";
+import { clientQuoteDebugContext } from "@/lib/quote-debug-trace";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -30,9 +32,12 @@ export function ClientQuoteDetailModal({
   return (
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-900/50 px-0 py-0 sm:items-center sm:px-4 sm:py-8">
       <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl">
-        <h2 className="text-lg font-black text-slate-950">
-          {quote.source === "member" ? CLIENT_UI.memberQuote : CLIENT_UI.guestQuote}
-        </h2>
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-lg font-black text-slate-950">
+            {quote.source === "member" ? CLIENT_UI.memberQuote : CLIENT_UI.guestQuote}
+          </h2>
+          <QuoteDebugButton context={clientQuoteDebugContext(application, quote)} />
+        </div>
         {supportBadge ? (
           <p className="mt-1 text-xs font-semibold text-slate-500">{supportBadge}</p>
         ) : null}

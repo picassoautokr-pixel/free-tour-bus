@@ -47,7 +47,11 @@ NEXT_PUBLIC_SITE_URL=https://www.free-bus.co.kr
 NEXT_PUBLIC_PARTNER_URL=https://partner.free-bus.co.kr
 NEXT_PUBLIC_SPONSOR_URL=https://sponsor.free-bus.co.kr
 NEXT_PUBLIC_ADMIN_URL=https://admin.free-bus.co.kr
+# 견적 계산 디버그 패널 (개발용, 클라이언트/기사/후원 대시보드)
+NEXT_PUBLIC_ENABLE_QUOTE_DEBUG=true
 ```
+
+브라우저 콘솔에서 `window.DEBUG_QUOTE = true` 후 새로고침해도 디버그 버튼이 표시됩니다.
 
 Supabase Auth Redirect URLs에 아래 패턴을 등록해야 합니다.
 

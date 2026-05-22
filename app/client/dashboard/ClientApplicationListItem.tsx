@@ -27,6 +27,8 @@ import {
   resolveQuoteSupportAppliedPrice,
   resolveQuoteSupportPlannedPrice,
 } from "@/app/client/dashboard/page-quote-screen";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import { clientQuoteDebugContext } from "@/lib/quote-debug-trace";
 import { isNormalPriceSelection } from "@/lib/selected-price-display";
 import type { ClientMainTab } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
@@ -245,7 +247,7 @@ export function ClientApplicationListItem({
                       }}
                       className="cursor-pointer rounded-xl border border-slate-100 bg-slate-50/80 p-3"
                     >
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
                             quote.source === "member"
@@ -255,6 +257,9 @@ export function ClientApplicationListItem({
                         >
                           {quote.source === "member" ? CLIENT_UI.memberQuote : CLIENT_UI.guestQuote}
                         </span>
+                        <QuoteDebugButton
+                          context={clientQuoteDebugContext(application, quote)}
+                        />
                         {supportBadge ? (
                           <span className="text-[10px] font-bold text-slate-500">{supportBadge}</span>
                         ) : null}

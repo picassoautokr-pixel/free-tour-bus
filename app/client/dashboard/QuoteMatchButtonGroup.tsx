@@ -10,7 +10,9 @@ import {
   quoteSubmitPriceLines,
 } from "@/app/client/dashboard/page-quote-screen";
 import { CLIENT_UI } from "@/app/client/dashboard/client-display";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
+import { clientQuoteDebugContext } from "@/lib/quote-debug-trace";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -31,6 +33,9 @@ export function QuoteMatchButtonGroup({
 
   return (
     <div className="mt-2 space-y-2">
+      <div className="flex justify-end">
+        <QuoteDebugButton context={clientQuoteDebugContext(application, quote)} />
+      </div>
       <div className="grid gap-1 text-xs font-bold text-slate-800">
         <span>
           {CLIENT_UI.normalPrice}: {formatQuotePriceForScreen(lines.normalPrice)}

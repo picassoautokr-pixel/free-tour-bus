@@ -8,6 +8,8 @@ import {
 } from "@/app/client/dashboard/page-quote-screen";
 import { LABEL } from "@/lib/client-dashboard-labels";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import { clientQuoteDebugContext } from "@/lib/quote-debug-trace";
 import {
   isNormalPriceSelection,
   resolveApplicationMatchedPriceDisplay,
@@ -53,6 +55,9 @@ export function ClientMatchedPricePanel({
 
   return (
     <div className="mt-2 space-y-2 text-xs font-bold text-emerald-900">
+      <div className="flex justify-end">
+        <QuoteDebugButton context={clientQuoteDebugContext(application, selectedQuote)} />
+      </div>
       <p className="text-sm font-black text-emerald-950">
         {LABEL.matchedPriceKind}: {matchedQuoteText || LABEL.unconfirmed}
       </p>

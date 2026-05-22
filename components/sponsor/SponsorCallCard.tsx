@@ -22,6 +22,8 @@ import {
   payoutStatusLabel,
   type SponsorCallRow,
 } from "@/lib/sponsor-call-view-model";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import { sponsorCallDebugContext } from "@/lib/quote-debug-trace";
 import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -65,6 +67,7 @@ export function SponsorCallCard({
   onSubmitChange,
   onSubmitRevert,
   onSubmitPayoutComplete,
+  sponsorRule = null,
 }: {
   call: SponsorCallRow;
   listMode: "review" | "confirmed";
@@ -90,6 +93,7 @@ export function SponsorCallCard({
   onSubmitChange: () => void;
   onSubmitRevert: () => void;
   onSubmitPayoutComplete: () => void;
+  sponsorRule?: Record<string, unknown> | null;
 }) {
   const matched = isMatchCompleted(call);
   const route = formatRouteWithStopovers(call.departure, call.stopovers, call.destination);
@@ -120,13 +124,18 @@ export function SponsorCallCard({
               {LABEL.passengers}
             </p>
           </div>
-          <span
-            className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ring-1 ${
-              matched ? SUPPORT_UI.confirmed : SUPPORT_UI.muted
-            }`}
-          >
-            {matchStageLabel(call)}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span
+              className={`rounded-full px-2 py-1 text-[10px] font-black ring-1 ${
+                matched ? SUPPORT_UI.confirmed : SUPPORT_UI.muted
+              }`}
+            >
+              {matchStageLabel(call)}
+            </span>
+            <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              <QuoteDebugButton context={sponsorCallDebugContext(call, sponsorRule)} />
+            </div>
+          </div>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">

@@ -26,6 +26,8 @@ import {
   sponsorStageLabel,
   type PartnerCallLike,
 } from "@/lib/partner-call-view-model";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import { partnerQuoteDebugContext } from "@/lib/quote-debug-trace";
 import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -226,6 +228,10 @@ export function PartnerCallCard({
               {runLabel}
             </span>
           ) : null}
+        </div>
+
+        <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
+          <QuoteDebugButton context={partnerQuoteDebugContext(call)} />
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>

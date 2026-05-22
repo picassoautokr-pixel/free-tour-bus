@@ -6,6 +6,8 @@ import {
   NORMAL_MATCH_SPONSOR_REASON,
   resolveSelectedPriceLabel,
 } from "@/lib/selected-price-display";
+import { QuoteDebugButton } from "@/components/quote/QuoteDebugButton";
+import { sponsorCallDebugContext } from "@/lib/quote-debug-trace";
 import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -14,10 +16,12 @@ export function SponsorRejectedCallCard({
   call,
   expanded,
   onToggleExpand,
+  sponsorRule = null,
 }: {
   call: SponsorCallRow;
   expanded: boolean;
   onToggleExpand: () => void;
+  sponsorRule?: Record<string, unknown> | null;
 }) {
   const route = formatRouteWithStopovers(call.departure, call.stopovers, call.destination);
   const rejectReason =
@@ -33,7 +37,10 @@ export function SponsorRejectedCallCard({
         className="w-full px-3 py-3 text-left"
         style={tapStyle}
       >
-        <p className="text-sm font-black text-slate-950">{route}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 text-sm font-black text-slate-950">{route}</p>
+          <QuoteDebugButton context={sponsorCallDebugContext(call, sponsorRule)} />
+        </div>
         <p className="mt-1 text-[11px] font-semibold text-red-700">
           {LABEL.rejectReason}: {rejectReason}
         </p>
