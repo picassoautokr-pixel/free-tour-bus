@@ -33,19 +33,24 @@ async function fetchSection<T>(
   });
   const json = (await res.json()) as Record<string, unknown> & {
     error?: string;
+    error_detail?: string;
     debug_error?: string;
   };
   if (!res.ok) {
     const raw =
-      typeof json.debug_error === "string"
-        ? json.debug_error
-        : typeof json.error === "string"
-          ? json.error
-          : "상세 조회에 실패했습니다.";
+      typeof json.error_detail === "string"
+        ? json.error_detail
+        : typeof json.debug_error === "string"
+          ? json.debug_error
+          : typeof json.error === "string"
+            ? json.error
+            : "상세 조회에 실패했습니다.";
     throw new Error(sanitizeOperationalError(raw, "견적 데이터를 불러오는 중 문제가 발생했습니다."));
   }
   return parse(json);
 }
+
+const QUOTES_LOAD_MESSAGE = "견적 데이터를 불러오는 중 문제가 발생했습니다.";
 
 export async function loadAdminDetailBasic(
   applicationId: string,
@@ -78,6 +83,12 @@ export async function loadAdminDetailQuotes(
     (json) => {
       const payload = json.quotes as AdminApplicationDetailQuotesPayload | undefined;
       if (!payload) throw new Error("quotes 응답이 없습니다.");
+      const warnings = Array.isArray(payload.warnings)
+        ? payload.warnings.filter((w): w is string => typeof w === "string" && w.trim() !== "")
+        : [];
+      if (warnings.length > 0) {
+        return { ...payload, warnings: [QUOTES_LOAD_MESSAGE] };
+      }
       return payload;
     },
     extraQuery,

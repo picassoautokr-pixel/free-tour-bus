@@ -144,7 +144,25 @@ export type AdminApplicationDetailQuotesPayload = {
   member_quotes: AdminMemberQuoteCard[];
   guest_quotes: AdminGuestQuoteCard[];
   quote_summary: AdminQuoteSummary;
+  warnings?: string[];
 };
+
+export function emptyAdminQuoteSummary(
+  application?: Record<string, unknown>,
+): AdminQuoteSummary {
+  const parseInteger = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+    return null;
+  };
+  return {
+    member_quote_count: 0,
+    guest_quote_count: 0,
+    avg_normal_price: null,
+    avg_estimated_support: null,
+    avg_approved_support: null,
+    extension_round: parseInteger(application?.extension_round) ?? 0,
+  };
+}
 
 export function stripMemberQuoteForClient(
   card: AdminMemberQuoteCard,

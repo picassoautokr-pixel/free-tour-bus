@@ -24,21 +24,9 @@ function parseInteger(value: unknown): number | null {
   return null;
 }
 
-export function breakdownRecord(
-  quote: Record<string, unknown>,
-): Record<string, unknown> | null {
-  const raw = quote.support_breakdown;
-  return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-}
+import { breakdownField, breakdownRecord } from "@/lib/admin-quote-breakdown-helpers";
 
-export function breakdownField(
-  breakdown: Record<string, unknown> | null,
-  snake: string,
-  camel: string,
-): number | null {
-  if (!breakdown) return null;
-  return parseInteger(breakdown[snake] ?? breakdown[camel]);
-}
+export { breakdownField, breakdownRecord };
 
 export type AdminMemberQuoteSupportContext = {
   quote: Record<string, unknown>;

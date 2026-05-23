@@ -11,6 +11,7 @@ import {
   buildMatchedDriver,
   pickPrimarySponsor,
   stripMemberQuoteForClient,
+  emptyAdminQuoteSummary,
   type AdminApplicationDetailBasicPayload,
   type AdminApplicationDetailQuotesPayload,
   type AdminSmsLog,
@@ -25,10 +26,7 @@ import {
   resolveApplicationApprovedSupportTotal,
   resolveApplicationEstimatedSupportTotal,
 } from "@/lib/application-approved-support";
-import {
-  DRIVER_QUOTE_MINIMAL_SELECT,
-  DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
-} from "@/lib/driver-quote-select";
+import { queryDriverQuotesForApplication, isMissingColumnError } from "@/lib/admin-driver-quotes-query";
 import { resolveSettlementType } from "@/lib/support-calculation";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { safeText } from "@/lib/sponsor";
@@ -42,17 +40,15 @@ function parseInteger(value: unknown): number | null {
   return null;
 }
 
-function isMissingColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    /does not exist|column .* does not exist|could not find .* column|schema cache/i.test(
-      error?.message ?? "",
-    )
-  );
-}
+const APPLICATION_LIFECYCLE_CORE =
+  "id, quote_status, quote_deadline_at, target_normal_price, target_member_price, final_selected_quote_id, final_selected_quote_source, extension_round";
 
-const APPLICATION_BASIC_SELECT = `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, is_hidden, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, target_normal_price, target_member_price, quote_deadline_at, extension_round, support_breakdown_snapshot`;
+const APPLICATION_SELECT_CANDIDATES = [
+  `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, is_hidden, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, support_breakdown_snapshot`,
+  `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+  `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, admin_memo, status`,
+  "id, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, admin_memo, status, final_selected_quote_id, final_selected_quote_source, quote_status, extension_round",
+] as const;
 
 const GUEST_QUOTE_SELECT =
   "id, created_at, application_id, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status";
@@ -60,54 +56,22 @@ const GUEST_QUOTE_SELECT =
 const PREAPPROVAL_SELECT =
   "id, status, sponsor_company_id, sponsor_rule_id, estimated_support_amount, approved_support_amount, approved_at, support_kind, support_condition, support_type, assigned_staff_id";
 
-async function loadMemberQuotesRows(
-  admin: SupabaseClient,
-  applicationId: string,
-): Promise<Record<string, unknown>[]> {
-  const primary = await admin
-    .from("driver_quotes")
-    .select(DRIVER_QUOTE_MINIMAL_SELECT)
-    .eq("application_id", applicationId)
-    .order("created_at", { ascending: false });
-
-  if (
-    primary.error &&
-    isMissingColumnError(primary.error) &&
-    /support_breakdown/i.test(primary.error.message)
-  ) {
-    const fallback = await admin
-      .from("driver_quotes")
-      .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
-      .eq("application_id", applicationId)
-      .order("created_at", { ascending: false });
-    if (fallback.error) throw new Error(fallback.error.message);
-    return Array.isArray(fallback.data) ? (fallback.data as Record<string, unknown>[]) : [];
-  }
-
-  if (primary.error) throw new Error(primary.error.message);
-  return Array.isArray(primary.data) ? (primary.data as Record<string, unknown>[]) : [];
-}
-
 async function loadApplicationRow(
   admin: SupabaseClient,
   applicationId: string,
 ): Promise<Record<string, unknown> | null> {
-  const res = await admin
-    .from("applications")
-    .select(APPLICATION_BASIC_SELECT)
-    .eq("id", applicationId)
-    .maybeSingle();
-  if (res.error && isMissingColumnError(res.error)) {
-    const fallback = await admin
-      .from("applications")
-      .select(`${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price`)
-      .eq("id", applicationId)
-      .maybeSingle();
-    if (fallback.error) throw new Error(fallback.error.message);
-    return fallback.data as Record<string, unknown> | null;
+  let lastMessage = "신청을 찾을 수 없습니다.";
+  for (const select of APPLICATION_SELECT_CANDIDATES) {
+    const res = await admin.from("applications").select(select).eq("id", applicationId).maybeSingle();
+    if (!res.error) {
+      return res.data as Record<string, unknown> | null;
+    }
+    lastMessage = res.error.message;
+    if (!isMissingColumnError(res.error)) {
+      throw new Error(lastMessage);
+    }
   }
-  if (res.error) throw new Error(res.error.message);
-  return res.data as Record<string, unknown> | null;
+  throw new Error(lastMessage);
 }
 
 async function loadMatchedDriverOnly(
@@ -132,24 +96,14 @@ async function loadMatchedDriverOnly(
     return buildMatchedDriver(finalId, source, [], [card], application);
   }
 
-  let quoteRes = await admin
-    .from("driver_quotes")
-    .select(DRIVER_QUOTE_MINIMAL_SELECT)
-    .eq("id", finalId)
-    .maybeSingle();
-  if (
-    quoteRes.error &&
-    isMissingColumnError(quoteRes.error) &&
-    /support_breakdown/i.test(quoteRes.error.message)
-  ) {
-    quoteRes = await admin
-      .from("driver_quotes")
-      .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
-      .eq("id", finalId)
-      .maybeSingle();
+  let quoteRaw: Record<string, unknown> | null = null;
+  try {
+    const rows = await queryDriverQuotesForApplication(admin, applicationId);
+    quoteRaw = rows.find((r) => safeText(r.id) === finalId) ?? null;
+  } catch {
+    return null;
   }
-  if (quoteRes.error || !quoteRes.data) return null;
-  const quoteRaw = quoteRes.data;
+  if (!quoteRaw) return null;
 
   const quote = quoteRaw as Record<string, unknown>;
   const partnerId = safeText(quote.partner_driver_id);
@@ -186,8 +140,13 @@ async function loadMatchedDriverOnly(
     ...supportFields,
     price: supportFields.price,
   };
-  const card = buildMemberQuoteCard(row, finalId, sponsorConfirmed, application, sponsor);
-  return buildMatchedDriver(finalId, "member", [card], [], application, sponsorConfirmed);
+  try {
+    const card = buildMemberQuoteCard(row, finalId, sponsorConfirmed, application, sponsor);
+    return buildMatchedDriver(finalId, "member", [card], [], application, sponsorConfirmed);
+  } catch (cardErr) {
+    console.error("[application-detail] matched member card", cardErr);
+    return null;
+  }
 }
 
 export async function fetchAdminDetailBasic(
@@ -195,13 +154,16 @@ export async function fetchAdminDetailBasic(
   applicationId: string,
   listRow?: Record<string, unknown>,
 ): Promise<AdminApplicationDetailBasicPayload> {
-  const [, application] = await Promise.all([
-    processApplicationQuoteLifecycle(admin, applicationId),
-    loadApplicationRow(admin, applicationId),
-  ]);
+  const application = await loadApplicationRow(admin, applicationId);
 
   if (!application) {
     throw new Error("신청을 찾을 수 없습니다.");
+  }
+
+  try {
+    await processApplicationQuoteLifecycle(admin, applicationId);
+  } catch (lifecycleErr) {
+    console.error("[application-detail] lifecycle", lifecycleErr);
   }
 
   const sponsorStatus = safeText(application.sponsor_support_status, "none");
@@ -232,16 +194,21 @@ export async function fetchAdminDetailBasic(
     estimated_support_amount: resolveApplicationEstimatedSupportTotal(application),
   };
 
-  const sponsorQuick = await fetchAdminDetailSponsor(admin, applicationId);
-  const sponsorConfirmedResolved =
-    sponsorConfirmed || (sponsorQuick?.sponsor_confirmed ?? false);
-  const matched_driver = await loadMatchedDriverOnly(
-    admin,
-    applicationId,
-    application,
-    sponsorConfirmedResolved,
-    sponsorQuick,
-  );
+  let matched_driver: ReturnType<typeof buildMatchedDriver> = null;
+  try {
+    const sponsorQuick = await fetchAdminDetailSponsor(admin, applicationId);
+    const sponsorConfirmedResolved =
+      sponsorConfirmed || (sponsorQuick?.sponsor_confirmed ?? false);
+    matched_driver = await loadMatchedDriverOnly(
+      admin,
+      applicationId,
+      application,
+      sponsorConfirmedResolved,
+      sponsorQuick,
+    );
+  } catch (matchedErr) {
+    console.error("[application-detail] matched_driver", matchedErr);
+  }
 
   return {
     application: applicationOut,
@@ -269,7 +236,7 @@ async function loadMemberAndGuestQuotes(
   guestRows: Record<string, unknown>[];
 }> {
   const [memberRaw, guestRes] = await Promise.all([
-    loadMemberQuotesRows(admin, applicationId),
+    queryDriverQuotesForApplication(admin, applicationId),
     admin
       .from("guest_driver_quotes")
       .select(GUEST_QUOTE_SELECT)
@@ -361,6 +328,7 @@ async function enrichPreapprovals(
 ): Promise<Record<string, unknown>[]> {
   if (preapprovals.length === 0) return [];
 
+  try {
   const companyIds = [
     ...new Set(preapprovals.map((r) => safeText(r.sponsor_company_id)).filter(Boolean)),
   ];
@@ -409,6 +377,10 @@ async function enrichPreapprovals(
       assigned_staff_phone: safeText(staff.phone),
     };
   });
+  } catch (enrichErr) {
+    console.error("[application-detail] enrichPreapprovals", enrichErr);
+    return preapprovals;
+  }
 }
 
 export async function fetchAdminDetailQuotes(
@@ -417,8 +389,13 @@ export async function fetchAdminDetailQuotes(
   listRow: Record<string, unknown> | undefined,
   includeDebug: boolean,
 ): Promise<AdminApplicationDetailQuotesPayload> {
-  const [, application, preRes] = await Promise.all([
-    processApplicationQuoteLifecycle(admin, applicationId),
+  try {
+    await processApplicationQuoteLifecycle(admin, applicationId);
+  } catch (lifecycleErr) {
+    console.error("[application-detail] quotes lifecycle", lifecycleErr);
+  }
+
+  const [application, preRes] = await Promise.all([
     loadApplicationRow(admin, applicationId),
     admin
       .from("sponsor_preapprovals")
@@ -445,33 +422,72 @@ export async function fetchAdminDetailQuotes(
   const finalQuoteId = safeText(application.final_selected_quote_id);
   const finalSource = safeText(application.final_selected_quote_source) === "guest" ? "guest" : "member";
 
-  const member_quotes = memberRows.map((q) => {
-    const card = buildMemberQuoteCard(
-      q,
-      finalQuoteId,
-      sponsorConfirmed,
-      application,
-      sponsor,
-    );
-    return stripMemberQuoteForClient(card, includeDebug);
-  });
+  const member_quotes: AdminApplicationDetailQuotesPayload["member_quotes"] = [];
+  for (const q of memberRows) {
+    try {
+      const card = buildMemberQuoteCard(
+        q,
+        finalQuoteId,
+        sponsorConfirmed,
+        application,
+        sponsor,
+      );
+      member_quotes.push(stripMemberQuoteForClient(card, includeDebug));
+    } catch (cardErr) {
+      console.error("[application-detail] member quote card", cardErr);
+    }
+  }
   const guest_quotes = guestRows.map((q) => buildGuestQuoteCard(q, finalQuoteId, finalSource));
 
-  const detail = buildAdminApplicationDetailPayload({
-    applicationRow: application,
-    applicationLifecycle: application,
-    memberQuoteRows: memberRows,
-    guestQuoteRows: guestRows,
-    preapprovalRows: enrichedPre,
-    notificationRows: [],
-    listRow,
-  });
+  let quote_summary = emptyAdminQuoteSummary(application);
+  try {
+    const detail = buildAdminApplicationDetailPayload({
+      applicationRow: application,
+      applicationLifecycle: application,
+      memberQuoteRows: memberRows,
+      guestQuoteRows: guestRows,
+      preapprovalRows: enrichedPre,
+      notificationRows: [],
+      listRow,
+    });
+    quote_summary = detail.quote_summary;
+  } catch (summaryErr) {
+    console.error("[application-detail] quote_summary", summaryErr);
+  }
 
   return {
     member_quotes,
     guest_quotes,
-    quote_summary: detail.quote_summary,
+    quote_summary,
+    warnings: [],
   };
+}
+
+/** 견적종합 — 실패 시 warnings와 빈 목록 반환 (throw 하지 않음) */
+export async function fetchAdminDetailQuotesResilient(
+  admin: SupabaseClient,
+  applicationId: string,
+  listRow: Record<string, unknown> | undefined,
+  includeDebug: boolean,
+): Promise<AdminApplicationDetailQuotesPayload> {
+  try {
+    return await fetchAdminDetailQuotes(admin, applicationId, listRow, includeDebug);
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : "견적종합 조회에 실패했습니다.";
+    console.error("[application-detail] quotes failed:", raw, e);
+    let application: Record<string, unknown> | null = null;
+    try {
+      application = await loadApplicationRow(admin, applicationId);
+    } catch {
+      application = null;
+    }
+    return {
+      member_quotes: [],
+      guest_quotes: [],
+      quote_summary: emptyAdminQuoteSummary(application ?? undefined),
+      warnings: [`견적종합 조회 실패: ${raw}`],
+    };
+  }
 }
 
 export async function fetchAdminDetailSponsor(
@@ -527,7 +543,7 @@ export async function fetchAdminDetailDebug(
 ): Promise<unknown> {
   const [basic, quotes, sponsor, sms] = await Promise.all([
     fetchAdminDetailBasic(admin, applicationId, listRow),
-    fetchAdminDetailQuotes(admin, applicationId, listRow, true),
+    fetchAdminDetailQuotesResilient(admin, applicationId, listRow, true),
     fetchAdminDetailSponsor(admin, applicationId),
     fetchAdminDetailSms(admin, applicationId),
   ]);

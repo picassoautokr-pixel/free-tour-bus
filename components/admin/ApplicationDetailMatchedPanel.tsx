@@ -374,6 +374,7 @@ export function ApplicationDetailMatchedPanel({
   const [loadingSponsor, setLoadingSponsor] = useState(false);
   const [loadingSms, setLoadingSms] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quoteWarning, setQuoteWarning] = useState<string | null>(null);
 
   const reportError = useCallback((e: unknown, fallback: string) => {
     const raw = e instanceof Error ? e.message : fallback;
@@ -416,10 +417,13 @@ export function ApplicationDetailMatchedPanel({
     async (force = false) => {
       if (!row.id) return;
       setLoadingQuotes(true);
-      setError(null);
+      setQuoteWarning(null);
       try {
         const quotes = await loadAdminDetailQuotes(row.id, { force });
         setQuotesPayload(quotes);
+        if (quotes.warnings && quotes.warnings.length > 0) {
+          setQuoteWarning(quotes.warnings[0] ?? "견적 데이터를 불러오는 중 문제가 발생했습니다.");
+        }
         if (isQuoteDebugEnabled()) {
           const debug = await loadAdminDetailDebug(row.id, { force });
           setDebugRaw(debug);
@@ -436,6 +440,7 @@ export function ApplicationDetailMatchedPanel({
   const refreshAll = useCallback(() => {
     refreshAdminDetailCache(row.id);
     setQuotesPayload(null);
+    setQuoteWarning(null);
     setSponsorDetail(undefined);
     setSmsLogs(null);
     setDebugRaw(null);
@@ -820,6 +825,11 @@ export function ApplicationDetailMatchedPanel({
             <QuotesSectionSkeleton />
           ) : (
           <div className="mt-4 space-y-4">
+            {quoteWarning ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                {quoteWarning}
+              </p>
+            ) : null}
             {quoteSummary ? (
             <InfoGrid
               items={[

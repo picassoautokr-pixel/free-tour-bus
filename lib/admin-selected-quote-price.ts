@@ -6,7 +6,7 @@
  */
 
 import type { AdminMemberQuoteCard } from "@/lib/admin-application-detail-build";
-import { breakdownField, breakdownRecord } from "@/lib/admin-member-quote-support-display";
+import { breakdownField, breakdownRecord } from "@/lib/admin-quote-breakdown-helpers";
 import { safeText } from "@/lib/sponsor";
 
 function parseInteger(value: unknown): number | null {
