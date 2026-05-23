@@ -645,6 +645,7 @@ export async function PATCH(request: Request) {
     quote_id?: unknown;
     quote_kind?: unknown;
     quote_patch?: unknown;
+    hide_application?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -679,6 +680,56 @@ export async function PATCH(request: Request) {
     const { error: updateError } = await admin.from(table).update(patch).eq("id", quoteId);
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 502 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  const hideApplication = body.hide_application === true;
+  const hideApplicationId = safeText(body.application_id);
+  if (hideApplication) {
+    if (hideApplicationId === "") {
+      return NextResponse.json({ error: "application_id가 필요합니다." }, { status: 400 });
+    }
+    const admin = createServiceRoleSupabase();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
+        { status: 503 },
+      );
+    }
+    const { data: appRow, error: loadError } = await admin
+      .from("applications")
+      .select("id, final_selected_quote_id, quote_status")
+      .eq("id", hideApplicationId)
+      .maybeSingle();
+    if (loadError) {
+      return NextResponse.json({ error: loadError.message }, { status: 502 });
+    }
+    if (!appRow) {
+      return NextResponse.json({ error: "신청을 찾을 수 없습니다." }, { status: 404 });
+    }
+    const appRecord = appRow as Record<string, unknown>;
+    if (safeText(appRecord.final_selected_quote_id) !== "") {
+      return NextResponse.json(
+        { error: "매칭완료 단계에서는 견적을 숨길 수 없습니다." },
+        { status: 400 },
+      );
+    }
+    const { error: hideError } = await admin
+      .from("applications")
+      .update({ is_hidden: true, hidden_at: new Date().toISOString() })
+      .eq("id", hideApplicationId);
+    if (hideError) {
+      if (/is_hidden|hidden_at|does not exist|42703/i.test(hideError.message)) {
+        return NextResponse.json(
+          {
+            error:
+              "DB 컬럼이 없습니다. sql/application_is_hidden.sql 을 적용한 뒤 다시 시도해 주세요.",
+          },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json({ error: hideError.message }, { status: 502 });
     }
     return NextResponse.json({ ok: true });
   }

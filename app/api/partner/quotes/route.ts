@@ -18,6 +18,7 @@ import type { SponsorRuleRecord } from "@/lib/sponsor-rule-helpers";
 import { getApprovedSponsorSupport, supportPlannedLimitForQuote } from "@/lib/sponsor-support";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { isApplicationHidden } from "@/lib/application-visibility";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -215,6 +216,12 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "견적 제출 대상 신청이 아닙니다." },
       { status: 400 },
+    );
+  }
+  if (isApplicationHidden(application as unknown as Record<string, unknown>)) {
+    return NextResponse.json(
+      { error: "견적 제출 대상 신청이 아닙니다." },
+      { status: 404 },
     );
   }
   await processApplicationQuoteLifecycle(admin, applicationId);

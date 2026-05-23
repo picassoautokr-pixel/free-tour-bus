@@ -30,6 +30,7 @@ import { roleLoginPath } from "@/lib/role-hosts";
 import { ApplicationDetailMatchedPanel } from "@/components/admin/ApplicationDetailMatchedPanel";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
 import { isApplicationMatchCompleted } from "@/lib/admin-application-detail-build";
+import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 import { SponsorCompaniesAdmin } from "@/components/admin/SponsorCompaniesAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createAdminBrowserClient } from "@/lib/supabase";
@@ -517,7 +518,9 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
   if (data == null) return [];
   if (!Array.isArray(data)) return [];
 
-  return data.map((raw, index) => {
+  return filterVisibleApplicationRows(
+    data as Record<string, unknown>[],
+  ).map((raw, index) => {
     const r = raw as Record<string, unknown>;
     const idRaw = r.id;
     const id =
@@ -2044,6 +2047,7 @@ function DetailSlidePanel({
   onClose,
   onStatusSaved,
   onOpenSms,
+  onApplicationHidden,
 }: {
   row: ApplicationDetail | null;
   open: boolean;
@@ -2054,6 +2058,7 @@ function DetailSlidePanel({
     nextMemo: string,
   ) => void;
   onOpenSms: (row: ApplicationDetail) => void;
+  onApplicationHidden?: () => void;
 }) {
   const [useMatchedLayout, setUseMatchedLayout] = useState<boolean | null>(null);
 
@@ -2195,18 +2200,7 @@ function DetailSlidePanel({
               row={row}
               onOpenSms={onOpenSms}
               onStatusSaved={onStatusSaved}
-              statusSection={
-                <StatusChangeSection
-                  key={`matched-status-${row.id}`}
-                  rowId={row.id}
-                  statusFromServer={row.status}
-                  memoFromServer={row.admin_memo}
-                  onSaved={(nextStatus, nextMemo) =>
-                    onStatusSaved(row.id, nextStatus, nextMemo)
-                  }
-                  compact
-                />
-              }
+              onApplicationHidden={onApplicationHidden}
               lifecycleTools={
                 <details className="rounded-xl border border-slate-200 bg-slate-50 p-2">
                   <summary className="cursor-pointer text-xs font-black text-slate-700">
@@ -3854,6 +3848,10 @@ export default function AdminApplicationsPage() {
         onClose={closeDetail}
         onStatusSaved={handleStatusSaved}
         onOpenSms={openSms}
+        onApplicationHidden={() => {
+          closeDetail();
+          void load();
+        }}
       />
 
       {smsRow ? (

@@ -7,6 +7,7 @@ import {
 } from "@/lib/quote-auction";
 import { SERVICE_REGIONS, normalizeRegion } from "@/lib/regions";
 import { parseStopovers } from "@/lib/stopovers";
+import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -83,8 +84,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 502 });
   }
 
-  const ids = (Array.isArray(data) ? data : [])
-    .map((raw) => safeText((raw as { id?: unknown }).id))
+  const visibleRows = filterVisibleApplicationRows(
+    (Array.isArray(data) ? data : []) as Record<string, unknown>[],
+  );
+  const ids = visibleRows
+    .map((raw) => safeText(raw.id))
     .filter(Boolean);
   const quoteCountByApplication = new Map<string, number>();
   if (ids.length > 0) {
@@ -102,7 +106,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const quotes = (Array.isArray(data) ? data : []).map((raw) => {
+  const quotes = visibleRows.map((raw) => {
     const row = raw as Record<string, unknown>;
     if (!isApplicationQuoteAccepting(row)) return null;
     return {

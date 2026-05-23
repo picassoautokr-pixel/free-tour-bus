@@ -10,6 +10,7 @@ import { USER_ROLES } from "@/lib/roles";
 import { parseStopovers } from "@/lib/stopovers";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -196,7 +197,9 @@ export async function GET() {
     );
   }
 
-  const rawRows = Array.isArray(applications) ? applications : [];
+  const rawRows = filterVisibleApplicationRows(
+    (Array.isArray(applications) ? applications : []) as Record<string, unknown>[],
+  );
   const rows =
     driver.serviceRegions.length === 0
       ? rawRows

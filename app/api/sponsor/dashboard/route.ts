@@ -15,6 +15,7 @@ import {
 } from "@/lib/sponsor-matched-contact";
 import { DEFAULT_SPONSOR_RULE_TITLE } from "@/lib/sponsor-rule-helpers";
 import { sponsorRuleIsInUse } from "@/lib/sponsor-rule-usage";
+import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 import {
   normalizeStringArray,
   parseInteger,
@@ -43,7 +44,9 @@ async function fetchApplicationsByIds(
     .in("id", applicationIds);
   if (!withPhone.error) {
     return {
-      rows: Array.isArray(withPhone.data) ? (withPhone.data as Record<string, unknown>[]) : [],
+      rows: filterVisibleApplicationRows(
+        Array.isArray(withPhone.data) ? (withPhone.data as Record<string, unknown>[]) : [],
+      ),
       error: null,
     };
   }
@@ -57,7 +60,9 @@ async function fetchApplicationsByIds(
     .in("id", applicationIds);
   if (!full.error) {
     return {
-      rows: Array.isArray(full.data) ? (full.data as Record<string, unknown>[]) : [],
+      rows: filterVisibleApplicationRows(
+        Array.isArray(full.data) ? (full.data as Record<string, unknown>[]) : [],
+      ),
       error: null,
     };
   }
@@ -71,7 +76,9 @@ async function fetchApplicationsByIds(
     .in("id", applicationIds);
   if (base.error) return { rows: [], error: base.error.message };
   return {
-    rows: Array.isArray(base.data) ? (base.data as Record<string, unknown>[]) : [],
+    rows: filterVisibleApplicationRows(
+      Array.isArray(base.data) ? (base.data as Record<string, unknown>[]) : [],
+    ),
     error: null,
   };
 }

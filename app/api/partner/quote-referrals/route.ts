@@ -7,6 +7,7 @@ import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
 import { USER_ROLES } from "@/lib/roles";
 import { formatStopovers } from "@/lib/stopovers";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { isApplicationHidden } from "@/lib/application-visibility";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -253,6 +254,12 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "전달 가능한 견적요청이 아닙니다." },
       { status: 400 },
+    );
+  }
+  if (isApplicationHidden(app)) {
+    return NextResponse.json(
+      { error: "전달 가능한 견적요청이 아닙니다." },
+      { status: 404 },
     );
   }
 

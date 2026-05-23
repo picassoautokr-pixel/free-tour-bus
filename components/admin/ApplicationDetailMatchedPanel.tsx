@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { SupportQuoteBreakdown } from "@/components/SupportQuoteBreakdown";
 import {
   displayAdminApplicationType,
   formatAdminCreatedAt,
@@ -12,15 +11,19 @@ import {
   phoneDialHref,
   phoneSmsHref,
 } from "@/components/admin/admin-detail-format";
+import {
+  isCustomerStageMatched,
+  resolveCustomerStageBadge,
+} from "@/lib/admin-progress-stage";
 import { isQuoteDebugEnabled } from "@/lib/quote-debug-enable";
 import { createAdminBrowserClient } from "@/lib/supabase";
 import type {
   AdminApplicationDetailPayload,
   AdminGuestQuoteCard,
   AdminMemberQuoteCard,
+  AdminMemberQuoteDebug,
 } from "@/lib/admin-application-detail-build";
 import { isApplicationMatchCompleted } from "@/lib/admin-application-detail-build";
-import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
 
 type ListRow = {
   id: string;
@@ -124,19 +127,34 @@ function ModalShell({
   );
 }
 
+function QuoteSupportDebugBlock({ debug }: { debug: AdminMemberQuoteDebug }) {
+  return (
+    <div className="mt-2 rounded-lg border border-dashed border-amber-200 bg-amber-50/80 p-2 text-[10px] text-amber-950">
+      <p className="font-black">계산 상태 (DEBUG)</p>
+      <ul className="mt-1 space-y-0.5 font-mono">
+        <li>support_breakdown: {debug.has_support_breakdown ? "있음" : "없음"}</li>
+        <li>planned_total_support: {debug.planned_total_support ?? "—"}</li>
+        <li>confirmed_total_support: {debug.confirmed_total_support ?? "—"}</li>
+        <li>calculation_status: {debug.calculation_status}</li>
+        <li>fallback_used: {JSON.stringify(debug.fallback_used)}</li>
+        <li>missing_fields: {JSON.stringify(debug.missing_fields)}</li>
+      </ul>
+    </div>
+  );
+}
+
 function QuoteCardMember({
   quote,
-  sponsorConfirmed,
   onEdit,
   onSms,
   onSponsorInfo,
 }: {
   quote: AdminMemberQuoteCard;
-  sponsorConfirmed: boolean;
   onEdit: () => void;
   onSms: () => void;
   onSponsorInfo: () => void;
 }) {
+  const debugOn = isQuoteDebugEnabled();
   return (
     <article
       className={`rounded-xl border p-3 ${
@@ -167,33 +185,19 @@ function QuoteCardMember({
           <dt className="text-slate-500">일반견적가</dt>
           <dd className="font-bold">{formatAdminWon(quote.price)}</dd>
         </div>
+        {quote.sponsor_quote_enabled
+          ? quote.support_rows.map((row) => (
+              <div key={row.label} className="flex justify-between gap-2">
+                <dt className="text-slate-500">{row.label}</dt>
+                <dd className="font-bold text-slate-900">{formatAdminWon(row.value)}</dd>
+              </div>
+            ))
+          : null}
         {quote.sponsor_quote_enabled ? (
-          <>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">예정 지원금</dt>
-              <dd className="font-bold">{formatAdminWon(quote.total_support_display)}</dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">고객 {sponsorConfirmed ? "확정" : "예정"} 지원금</dt>
-              <dd className="font-bold">{formatAdminWon(quote.customer_support_display)}</dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">예상 연장 지원금</dt>
-              <dd className="font-bold">{formatAdminWon(quote.extension_support_display)}</dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">
-                {sponsorConfirmed ? "지원금 할인 적용가" : "지원금 할인 예상가"}
-              </dt>
-              <dd className="font-bold text-emerald-800">
-                {formatAdminWon(quote.discount_price_display)}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">정산모드</dt>
-              <dd className="font-bold">{quote.support_settlement_label}</dd>
-            </div>
-          </>
+          <div className="flex justify-between gap-2">
+            <dt className="text-slate-500">정산모드</dt>
+            <dd className="font-bold">{quote.support_settlement_label}</dd>
+          </div>
         ) : null}
         <div className="flex justify-between gap-2">
           <dt className="text-slate-500">제출시간</dt>
@@ -205,13 +209,8 @@ function QuoteCardMember({
           {quote.message}
         </p>
       ) : null}
-      {quote.support_breakdown ? (
-        <div className="mt-2">
-          <SupportQuoteBreakdown
-            breakdown={quote.support_breakdown as unknown as QuoteSupportBreakdown}
-            mode="full"
-          />
-        </div>
+      {debugOn && quote.support_debug ? (
+        <QuoteSupportDebugBlock debug={quote.support_debug} />
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {quote.sponsor_quote_enabled ? (
@@ -304,7 +303,7 @@ export function ApplicationDetailMatchedPanel({
   row,
   onOpenSms,
   onStatusSaved,
-  statusSection,
+  onApplicationHidden,
   lifecycleTools,
 }: {
   row: ListRow;
@@ -314,7 +313,7 @@ export function ApplicationDetailMatchedPanel({
     nextStatus: ApplicationStatusValue,
     nextMemo: string,
   ) => void;
-  statusSection: React.ReactNode;
+  onApplicationHidden?: () => void;
   lifecycleTools?: React.ReactNode;
 }) {
   const [detail, setDetail] = useState<AdminApplicationDetailPayload | null>(null);
@@ -330,6 +329,7 @@ export function ApplicationDetailMatchedPanel({
   const [editBusy, setEditBusy] = useState(false);
   const [adminMemo, setAdminMemo] = useState(row.admin_memo);
   const [memoBusy, setMemoBusy] = useState(false);
+  const [hideBusy, setHideBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!row.id) return;
@@ -371,9 +371,15 @@ export function ApplicationDetailMatchedPanel({
 
   const app = detail?.application ?? {};
   const lifecycle = detail?.application ?? {};
-  const sponsorConfirmed = Boolean(
-    detail?.sponsor?.sponsor_confirmed || detail?.sponsor?.support_status === "approved",
-  );
+  const customerStageBadge = resolveCustomerStageBadge({
+    quoteStatus: String(app.quote_status ?? ""),
+    finalSelectedQuoteId: String(lifecycle.final_selected_quote_id ?? ""),
+  });
+  const customerMatched = isCustomerStageMatched({
+    quoteStatus: String(app.quote_status ?? ""),
+    finalSelectedQuoteId: String(lifecycle.final_selected_quote_id ?? ""),
+  });
+  const sponsorStageBadge = detail?.sponsor?.support_stage_badge ?? "없음";
 
   const deadlineLine = useMemo(() => {
     const deadline = String(app.quote_deadline_at ?? "").trim();
@@ -406,6 +412,33 @@ export function ApplicationDetailMatchedPanel({
       setError("관리자 메모 저장에 실패했습니다.");
     } finally {
       setMemoBusy(false);
+    }
+  };
+
+  const hideApplication = async () => {
+    if (customerMatched) return;
+    setHideBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/driver-quotes", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_id: row.id,
+          hide_application: true,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(json.error ?? "견적 숨김 처리에 실패했습니다.");
+        return;
+      }
+      onApplicationHidden?.();
+    } catch {
+      setError("견적 숨김 처리에 실패했습니다.");
+    } finally {
+      setHideBusy(false);
     }
   };
 
@@ -566,32 +599,39 @@ export function ApplicationDetailMatchedPanel({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
             <p className="text-xs font-black text-blue-900">고객단계</p>
-            <ul className="mt-2 space-y-1 text-xs font-semibold text-blue-950">
-              <li>견적요청</li>
-              <li>자동마감</li>
-              <li>매칭완료</li>
-            </ul>
-            <p className="mt-2 inline-flex rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">
-              {String(app.quote_status ?? "—")}
+            <p className="mt-2">
+              <span className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">
+                {customerStageBadge}
+              </span>
             </p>
-            <div className="mt-2">{statusSection}</div>
+            <button
+              type="button"
+              disabled={customerMatched || hideBusy}
+              onClick={() => void hideApplication()}
+              title={
+                customerMatched
+                  ? "매칭완료 단계에서는 숨김할 수 없습니다."
+                  : "모든 대시보드에서 이 견적요청을 숨깁니다."
+              }
+              className="mt-3 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-[11px] font-black text-blue-900 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {hideBusy ? "처리 중…" : "견적 숨김"}
+            </button>
           </div>
           <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3">
             <p className="text-xs font-black text-violet-900">스폰서단계</p>
-            <ul className="mt-2 space-y-1 text-xs font-semibold text-violet-950">
-              <li>지원검토</li>
-              <li>지원확정</li>
-            </ul>
-            <p className="mt-2 inline-flex rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-black text-white">
-              {detail.sponsor?.support_status ?? "없음"}
+            <p className="mt-2">
+              <span className="inline-flex rounded-full bg-violet-600 px-3 py-1 text-xs font-black text-white">
+                {sponsorStageBadge}
+              </span>
             </p>
             {detail.sponsor ? (
               <button
                 type="button"
                 onClick={() => setSponsorInfoOpen(true)}
-                className="mt-2 rounded-lg border border-violet-300 bg-white px-2.5 py-1.5 text-[11px] font-black text-violet-900"
+                className="mt-3 rounded-lg border border-violet-300 bg-white px-2.5 py-1.5 text-[11px] font-black text-violet-900"
               >
-                관리자수정
+                후원업체 정보
               </button>
             ) : null}
           </div>
@@ -699,7 +739,6 @@ export function ApplicationDetailMatchedPanel({
                   <QuoteCardMember
                     key={q.id}
                     quote={q}
-                    sponsorConfirmed={sponsorConfirmed}
                     onEdit={() => {
                       setEditQuoteKind("member");
                       setEditQuote(q);
@@ -765,7 +804,7 @@ export function ApplicationDetailMatchedPanel({
           <InfoGrid
             items={[
               { label: "업체명", value: detail.sponsor.sponsor_company_name },
-              { label: "지원단계", value: detail.sponsor.support_status },
+              { label: "지원단계", value: detail.sponsor.support_stage_badge },
               { label: "지원종류", value: detail.sponsor.support_kind || "—" },
               { label: "지원조건", value: detail.sponsor.support_condition || "—" },
               { label: "지원유형", value: detail.sponsor.support_type || "—" },
@@ -778,7 +817,7 @@ export function ApplicationDetailMatchedPanel({
                 value: formatAdminWon(detail.sponsor.approved_support_amount),
               },
               {
-                label: "확정 결정일시",
+                label: "확정 지원금 결정일시",
                 value: formatAdminCreatedAt(detail.sponsor.approved_at || null),
               },
               { label: "담당자", value: detail.sponsor.assigned_staff_name || "—" },

@@ -1,3 +1,4 @@
+import { isSponsorStageConfirmed, resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
 import { SETTLEMENT_TYPE_LABELS } from "@/lib/support-calculation";
 import { safeText } from "@/lib/sponsor";
 
@@ -12,6 +13,20 @@ export type AdminMatchedDriver = {
   badge: "제휴기사" | "일반기사";
 };
 
+export type AdminMemberQuoteSupportRow = {
+  label: string;
+  value: number | null;
+};
+
+export type AdminMemberQuoteDebug = {
+  has_support_breakdown: boolean;
+  planned_total_support: number | null;
+  confirmed_total_support: number | null;
+  calculation_status: string;
+  fallback_used: unknown;
+  missing_fields: unknown;
+};
+
 export type AdminMemberQuoteCard = {
   id: string;
   partner_driver_id: string;
@@ -21,11 +36,8 @@ export type AdminMemberQuoteCard = {
   price: number | null;
   support_settlement_type: string;
   support_settlement_label: string;
-  total_support_display: number | null;
-  customer_support_display: number | null;
-  extension_support_display: number | null;
-  discount_price_display: number | null;
-  sponsor_confirmed: boolean;
+  support_rows: AdminMemberQuoteSupportRow[];
+  sponsor_stage_badge: "지원검토" | "지원확정";
   created_at: string;
   message: string;
   status: string;
@@ -34,6 +46,7 @@ export type AdminMemberQuoteCard = {
   is_matched: boolean;
   sponsor_quote_enabled: boolean;
   support_breakdown: Record<string, unknown> | null;
+  support_debug: AdminMemberQuoteDebug | null;
 };
 
 export type AdminGuestQuoteCard = {
@@ -54,6 +67,7 @@ export type AdminGuestQuoteCard = {
 export type AdminSponsorDetail = {
   sponsor_company_name: string;
   support_status: string;
+  support_stage_badge: "지원검토" | "지원확정" | "없음";
   support_kind: string;
   support_condition: string;
   support_type: string;
@@ -109,13 +123,122 @@ function average(nums: number[]): number | null {
   return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
 }
 
-function sponsorStageConfirmed(sponsor: AdminSponsorDetail | null): boolean {
-  if (!sponsor) return false;
-  return (
-    sponsor.sponsor_confirmed ||
-    sponsor.support_status === "approved" ||
-    Boolean(sponsor.approved_at)
-  );
+function breakdownField(
+  breakdown: Record<string, unknown> | null,
+  snake: string,
+  camel: string,
+): number | null {
+  if (!breakdown) return null;
+  return parseInteger(breakdown[snake] ?? breakdown[camel]);
+}
+
+function buildMemberQuoteSupportRows(
+  quote: Record<string, unknown>,
+  sponsorConfirmed: boolean,
+): AdminMemberQuoteSupportRow[] {
+  const breakdown =
+    quote.support_breakdown && typeof quote.support_breakdown === "object"
+      ? (quote.support_breakdown as Record<string, unknown>)
+      : null;
+
+  if (sponsorConfirmed) {
+    const discountApplied =
+      parseInteger(quote.confirmed_discount_price) ??
+      parseInteger(quote.final_discount_applied_price) ??
+      parseInteger(quote.support_discount_applied_price) ??
+      parseInteger(quote.final_member_price) ??
+      parseInteger(quote.sponsor_discounted_price) ??
+      breakdownField(breakdown, "final_discount_price", "finalDiscountAppliedPrice") ??
+      breakdownField(breakdown, "confirmed_discount_price", "supportDiscountAppliedPrice");
+
+    return [
+      {
+        label: "확정 지원금",
+        value:
+          parseInteger(quote.confirmed_total_support) ??
+          parseInteger(quote.total_confirmed_support) ??
+          parseInteger(quote.approved_support_amount) ??
+          breakdownField(breakdown, "confirmed_total_support", "totalConfirmedSupport"),
+      },
+      {
+        label: "고객 확정 지원금",
+        value:
+          parseInteger(quote.confirmed_customer_support) ??
+          parseInteger(quote.customer_confirmed_support) ??
+          parseInteger(quote.final_customer_support_amount) ??
+          breakdownField(breakdown, "confirmed_customer_support", "customerConfirmedSupport"),
+      },
+      {
+        label: "확정 연장 지원금",
+        value:
+          parseInteger(quote.confirmed_extension_support) ??
+          breakdownField(breakdown, "confirmed_extension_support", "extensionSupport"),
+      },
+      {
+        label: "지원금 할인 적용가",
+        value: discountApplied,
+      },
+    ];
+  }
+
+  return [
+    {
+      label: "예상 지원금",
+      value:
+        parseInteger(quote.planned_total_support) ??
+        parseInteger(quote.total_planned_support) ??
+        parseInteger(quote.estimated_support_amount) ??
+        breakdownField(breakdown, "planned_total_support", "totalPlannedSupport"),
+    },
+    {
+      label: "고객 예상 지원금",
+      value:
+        parseInteger(quote.planned_customer_support) ??
+        parseInteger(quote.customer_planned_support) ??
+        parseInteger(quote.customer_support_amount) ??
+        breakdownField(breakdown, "planned_customer_support", "customerPlannedSupport"),
+    },
+    {
+      label: "예상 연장 지원금",
+      value:
+        parseInteger(quote.planned_extension_support) ??
+        breakdownField(breakdown, "planned_extension_support", "extensionSupport") ??
+        parseInteger(quote.extension_support_amount),
+    },
+    {
+      label: "지원금 할인 예상가",
+      value:
+        parseInteger(quote.planned_discount_price) ??
+        parseInteger(quote.support_discount_planned_price) ??
+        parseInteger(quote.member_price) ??
+        breakdownField(breakdown, "planned_discount_price", "supportDiscountPlannedPrice"),
+    },
+  ];
+}
+
+function buildMemberQuoteDebug(
+  quote: Record<string, unknown>,
+  breakdown: Record<string, unknown> | null,
+): AdminMemberQuoteDebug {
+  const calcStatus =
+    safeText(breakdown?.calculation_status) ||
+    safeText(breakdown?.calculationStatus) ||
+    "—";
+
+  return {
+    has_support_breakdown: breakdown != null,
+    planned_total_support:
+      parseInteger(quote.planned_total_support) ??
+      parseInteger(quote.total_planned_support) ??
+      breakdownField(breakdown, "planned_total_support", "totalPlannedSupport"),
+    confirmed_total_support:
+      parseInteger(quote.confirmed_total_support) ??
+      parseInteger(quote.total_confirmed_support) ??
+      breakdownField(breakdown, "confirmed_total_support", "totalConfirmedSupport"),
+    calculation_status: calcStatus,
+    fallback_used: breakdown?.fallback_used ?? breakdown?.fallbackUsed ?? null,
+    missing_fields: breakdown?.missing_fields ?? breakdown?.missingFields ?? null,
+  };
 }
 
 function buildMemberQuoteCard(
@@ -124,15 +247,10 @@ function buildMemberQuoteCard(
   sponsorConfirmed: boolean,
 ): AdminMemberQuoteCard {
   const settlement = safeText(quote.support_settlement_type, "client_priority");
-  const totalPlanned = parseInteger(quote.total_planned_support ?? quote.estimated_support_amount);
-  const totalConfirmed = parseInteger(quote.total_confirmed_support ?? quote.approved_support_amount);
-  const customerPlanned = parseInteger(quote.customer_planned_support ?? quote.customer_support_amount);
-  const customerConfirmed = parseInteger(quote.customer_confirmed_support ?? quote.final_customer_support_amount);
-  const extension = parseInteger(quote.extension_support_amount);
-  const discountPlanned = parseInteger(quote.support_discount_planned_price ?? quote.member_price);
-  const discountApplied = parseInteger(
-    quote.support_discount_applied_price ?? quote.final_member_price ?? quote.sponsor_discounted_price,
-  );
+  const breakdown =
+    quote.support_breakdown && typeof quote.support_breakdown === "object"
+      ? (quote.support_breakdown as Record<string, unknown>)
+      : null;
 
   return {
     id: safeText(quote.id),
@@ -143,11 +261,8 @@ function buildMemberQuoteCard(
     price: parseInteger(quote.price),
     support_settlement_type: settlement,
     support_settlement_label: SETTLEMENT_TYPE_LABELS[settlement as keyof typeof SETTLEMENT_TYPE_LABELS] ?? settlement,
-    total_support_display: sponsorConfirmed ? totalConfirmed : totalPlanned,
-    customer_support_display: sponsorConfirmed ? customerConfirmed : customerPlanned,
-    extension_support_display: extension,
-    discount_price_display: sponsorConfirmed ? discountApplied : discountPlanned,
-    sponsor_confirmed: sponsorConfirmed,
+    support_rows: buildMemberQuoteSupportRows(quote, sponsorConfirmed),
+    sponsor_stage_badge: sponsorConfirmed ? "지원확정" : "지원검토",
     created_at: safeText(quote.created_at),
     message: safeText(quote.message),
     status: safeText(quote.status, "submitted"),
@@ -155,10 +270,8 @@ function buildMemberQuoteCard(
     available_time: safeText(quote.available_time, "—"),
     is_matched: safeText(quote.id) === finalQuoteId,
     sponsor_quote_enabled: quote.sponsor_quote_enabled === true,
-    support_breakdown:
-      quote.support_breakdown && typeof quote.support_breakdown === "object"
-        ? (quote.support_breakdown as Record<string, unknown>)
-        : null,
+    support_breakdown: breakdown,
+    support_debug: buildMemberQuoteDebug(quote, breakdown),
   };
 }
 
@@ -193,10 +306,12 @@ function pickPrimarySponsor(
     preapprovals.find((p) => safeText(p.status) === "preapproved") ??
     preapprovals[0];
   const row = approved;
+  const supportStatus = safeText(row.status);
   return {
     preapproval_id: safeText(row.id),
     sponsor_company_name: safeText(row.sponsor_company_name, "—"),
-    support_status: safeText(row.status),
+    support_status: supportStatus,
+    support_stage_badge: resolveSponsorStageBadge(supportStatus),
     support_kind: safeText(row.support_kind),
     support_condition: safeText(row.support_condition_label) || safeText(row.support_condition),
     support_type: safeText(row.support_type),
@@ -205,7 +320,7 @@ function pickPrimarySponsor(
     approved_at: safeText(row.approved_at),
     assigned_staff_name: safeText(row.assigned_staff_name),
     assigned_staff_phone: safeText(row.assigned_staff_phone),
-    sponsor_confirmed: safeText(row.status) === "approved",
+    sponsor_confirmed: isSponsorStageConfirmed(supportStatus),
   };
 }
 
@@ -241,7 +356,10 @@ function buildMatchedDriver(
     driver_name: mq.driver_name,
     phone: mq.phone,
     quote_id: mq.id,
-    selected_price: parseInteger(application.selected_price) ?? mq.discount_price_display ?? mq.price,
+    selected_price:
+      parseInteger(application.selected_price) ??
+      mq.support_rows.find((r) => r.label.includes("할인"))?.value ??
+      mq.price,
     selected_price_label: safeText(application.selected_price_label, "지원금 할인 적용가"),
     badge: "제휴기사",
   };
@@ -294,6 +412,7 @@ export function buildAdminApplicationDetailPayload(params: {
     passenger_count: list.passenger_count ?? appRaw.passenger_count ?? null,
     admin_memo: safeText(list.admin_memo) || safeText(appRaw.admin_memo),
     status: safeText(list.status) || safeText(appRaw.status),
+    is_hidden: appRaw.is_hidden === true || lifecycle.is_hidden === true,
     selected_price_type: safeText(appRaw.selected_price_type),
     selected_price_label: safeText(appRaw.selected_price_label),
     selected_price: parseInteger(appRaw.selected_price),
@@ -308,7 +427,7 @@ export function buildAdminApplicationDetailPayload(params: {
   const finalSource = safeText(lifecycle.final_selected_quote_source) === "guest" ? "guest" : "member";
 
   const sponsor = pickPrimarySponsor(params.preapprovalRows);
-  const sponsorConfirmed = sponsorStageConfirmed(sponsor);
+  const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
 
   const member_quotes = params.memberQuoteRows.map((q) =>
     buildMemberQuoteCard(q, finalQuoteId, sponsorConfirmed),
@@ -319,7 +438,7 @@ export function buildAdminApplicationDetailPayload(params: {
 
   const memberPrices = member_quotes.map((q) => q.price).filter((v): v is number => v != null);
   const supports = member_quotes
-    .map((q) => q.total_support_display)
+    .map((q) => q.support_rows[0]?.value)
     .filter((v): v is number => v != null);
 
   const sms_logs: AdminSmsLog[] = params.notificationRows.map((row) => ({

@@ -11,6 +11,11 @@ import { sendNotificationSms } from "@/lib/notification-service";
 import { selectedPriceTypeToLegacyKind } from "@/lib/client-quote-match-selection";
 import { NORMAL_MATCH_SPONSOR_REASON } from "@/lib/selected-price-display";
 import { buildClientMemberQuoteSupport } from "@/lib/client-member-quote-payload";
+import {
+  assertApplicationVisible,
+  filterVisibleApplicationRows,
+  isApplicationHidden,
+} from "@/lib/application-visibility";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -87,6 +92,10 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
   if (!app || digits(app.phone) !== phoneDigits) {
     return { error: "견적요청을 찾을 수 없습니다.", status: 404 } as const;
   }
+  const visible = assertApplicationVisible(app);
+  if (!visible.ok) {
+    return { error: visible.message, status: 404 } as const;
+  }
   return { app } as const;
 }
 
@@ -118,9 +127,9 @@ async function resolveApplicationsByLookupPassword(
     } as const;
   }
   if (result.error) return { error: result.error.message, status: 502 } as const;
-  const rows = (Array.isArray(result.data) ? result.data : []).filter(
-    (row) => digits((row as Record<string, unknown>).phone) === phoneDigits,
-  );
+  const rows = filterVisibleApplicationRows(
+    (Array.isArray(result.data) ? result.data : []) as Record<string, unknown>[],
+  ).filter((row) => digits(row.phone) === phoneDigits);
   if (rows.length === 0) {
     return { error: "일치하는 견적요청을 찾을 수 없습니다.", status: 404 } as const;
   }
@@ -128,6 +137,9 @@ async function resolveApplicationsByLookupPassword(
 }
 
 async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>, app: Record<string, unknown>) {
+  if (isApplicationHidden(app)) {
+    throw new Error("HIDDEN_APPLICATION");
+  }
   const applicationId = safeText(app.id);
   await processApplicationQuoteLifecycle(admin, applicationId);
   let latestResult: {
@@ -193,6 +205,9 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
   const memberRows = memberResult.error ? [] : memberResult.data;
   const guestRows = guestResult.error ? [] : guestResult.data;
   const current = (latest as Record<string, unknown> | null) ?? app;
+  if (isApplicationHidden(current)) {
+    throw new Error("HIDDEN_APPLICATION");
+  }
   const contractNumber =
     safeText(current.final_selected_quote_id) !== ""
       ? await ensureContractNumber(admin, current)
@@ -470,9 +485,18 @@ export async function GET(request: Request) {
     if ("error" in resolvedList) {
       return NextResponse.json({ error: resolvedList.error }, { status: resolvedList.status });
     }
-    const payloads = await Promise.all(
-      resolvedList.rows.map((row) => loadPayload(admin, row)),
-    );
+    const payloads = (
+      await Promise.all(
+        resolvedList.rows.map(async (row) => {
+          try {
+            return await loadPayload(admin, row);
+          } catch (e) {
+            if (e instanceof Error && e.message === "HIDDEN_APPLICATION") return null;
+            throw e;
+          }
+        }),
+      )
+    ).filter((p): p is NonNullable<typeof p> => p != null);
     return NextResponse.json({
       ok: true,
       applications: payloads.map((payload) => ({
