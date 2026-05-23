@@ -26,7 +26,11 @@ import {
   resolveApplicationApprovedSupportTotal,
   resolveApplicationEstimatedSupportTotal,
 } from "@/lib/application-approved-support";
-import { queryDriverQuotesForApplication, isMissingColumnError } from "@/lib/admin-driver-quotes-query";
+import {
+  queryDriverQuoteById,
+  queryDriverQuotesForApplication,
+  isMissingColumnError,
+} from "@/lib/admin-driver-quotes-query";
 import { resolveSettlementType } from "@/lib/support-calculation";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { safeText } from "@/lib/sponsor";
@@ -100,8 +104,16 @@ async function loadMatchedDriverOnly(
   try {
     const rows = await queryDriverQuotesForApplication(admin, applicationId);
     quoteRaw = rows.find((r) => safeText(r.id) === finalId) ?? null;
-  } catch {
-    return null;
+    if (!quoteRaw) {
+      quoteRaw = await queryDriverQuoteById(admin, finalId);
+    }
+  } catch (quoteLoadErr) {
+    console.error("[application-detail] matched quote load", quoteLoadErr);
+    try {
+      quoteRaw = await queryDriverQuoteById(admin, finalId);
+    } catch {
+      return null;
+    }
   }
   if (!quoteRaw) return null;
 
@@ -194,31 +206,56 @@ export async function fetchAdminDetailBasic(
     estimated_support_amount: resolveApplicationEstimatedSupportTotal(application),
   };
 
+  const warnings: string[] = [];
+  let sponsorQuick: AdminSponsorDetail | null = null;
   let matched_driver: ReturnType<typeof buildMatchedDriver> = null;
+
   try {
-    const sponsorQuick = await fetchAdminDetailSponsor(admin, applicationId);
-    const sponsorConfirmedResolved =
-      sponsorConfirmed || (sponsorQuick?.sponsor_confirmed ?? false);
-    matched_driver = await loadMatchedDriverOnly(
-      admin,
-      applicationId,
-      application,
-      sponsorConfirmedResolved,
-      sponsorQuick,
-    );
-  } catch (matchedErr) {
-    console.error("[application-detail] matched_driver", matchedErr);
+    sponsorQuick = await fetchAdminDetailSponsor(admin, applicationId);
+  } catch (sponsorErr) {
+    const msg = sponsorErr instanceof Error ? sponsorErr.message : "후원 정보 조회 실패";
+    console.error("[application-detail] sponsor", sponsorErr);
+    warnings.push(`후원 정보 조회 실패: ${msg}`);
   }
+
+  const sponsorConfirmedResolved =
+    sponsorConfirmed || (sponsorQuick?.sponsor_confirmed ?? false);
+
+  if (safeText(application.final_selected_quote_id)) {
+    try {
+      matched_driver = await loadMatchedDriverOnly(
+        admin,
+        applicationId,
+        application,
+        sponsorConfirmedResolved,
+        sponsorQuick,
+      );
+      if (!matched_driver) {
+        warnings.push("매칭기사 견적을 찾지 못했습니다.");
+      }
+    } catch (matchedErr) {
+      const msg = matchedErr instanceof Error ? matchedErr.message : "매칭기사 조회 실패";
+      console.error("[application-detail] matched_driver", matchedErr);
+      warnings.push(`매칭기사 조회 실패: ${msg}`);
+    }
+  }
+
+  const hasSponsorFromPre =
+    sponsorQuick != null ||
+    (sponsorStatus !== "none" && sponsorStatus !== "") ||
+    preCount > 0 ||
+    appCount > 0;
 
   return {
     application: applicationOut,
     matched_driver,
+    sponsor: sponsorQuick,
     sponsor_stage: {
       support_stage_badge: resolveSponsorStageBadge(sponsorStatus),
-      sponsor_confirmed: sponsorConfirmed,
-      has_sponsor:
-        (sponsorStatus !== "none" && sponsorStatus !== "") || preCount > 0 || appCount > 0,
+      sponsor_confirmed: sponsorConfirmedResolved,
+      has_sponsor: hasSponsorFromPre,
     },
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
 
@@ -409,7 +446,9 @@ export async function fetchAdminDetailQuotes(
   const preRows = Array.isArray(preRes.data) ? (preRes.data as Record<string, unknown>[]) : [];
   const enrichedPre = await enrichPreapprovals(admin, preRows);
   const sponsor = pickPrimarySponsor(enrichedPre);
-  const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
+  const sponsorConfirmed =
+    (sponsor ? sponsor.sponsor_confirmed : false) ||
+    isSponsorStageConfirmed(safeText(application.sponsor_support_status));
   const appApproved = resolveApplicationApprovedSupportTotal(application, sponsor);
   const appEstimated = resolveApplicationEstimatedSupportTotal(application, sponsor);
   const { memberRows, guestRows } = await loadMemberAndGuestQuotes(admin, applicationId, {
@@ -459,6 +498,7 @@ export async function fetchAdminDetailQuotes(
     member_quotes,
     guest_quotes,
     quote_summary,
+    sponsor,
     warnings: [],
   };
 }
@@ -485,6 +525,7 @@ export async function fetchAdminDetailQuotesResilient(
       member_quotes: [],
       guest_quotes: [],
       quote_summary: emptyAdminQuoteSummary(application ?? undefined),
+      sponsor: null,
       warnings: [`견적종합 조회 실패: ${raw}`],
     };
   }

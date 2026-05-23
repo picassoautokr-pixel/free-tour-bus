@@ -35,6 +35,9 @@ async function fetchSection<T>(
     error?: string;
     error_detail?: string;
     debug_error?: string;
+    auth_debug?: Record<string, unknown>;
+    denied_reason?: string;
+    which_check_failed?: string;
   };
   if (!res.ok) {
     const raw =
@@ -45,7 +48,18 @@ async function fetchSection<T>(
           : typeof json.error === "string"
             ? json.error
             : "상세 조회에 실패했습니다.";
-    throw new Error(sanitizeOperationalError(raw, "견적 데이터를 불러오는 중 문제가 발생했습니다."));
+    const debugBits: string[] = [];
+    if (isQuoteDebugEnabled() && json.auth_debug) {
+      debugBits.push(JSON.stringify(json.auth_debug, null, 2));
+    }
+    if (isQuoteDebugEnabled() && typeof json.denied_reason === "string") {
+      debugBits.push(`denied_reason: ${json.denied_reason}`);
+    }
+    if (isQuoteDebugEnabled() && typeof json.which_check_failed === "string") {
+      debugBits.push(`which_check_failed: ${json.which_check_failed}`);
+    }
+    const base = sanitizeOperationalError(raw, "견적 데이터를 불러오는 중 문제가 발생했습니다.");
+    throw new Error(debugBits.length > 0 ? `${base}\n${debugBits.join("\n")}` : base);
   }
   return parse(json);
 }
@@ -62,6 +76,15 @@ export async function loadAdminDetailBasic(
   const basic = await fetchSection(applicationId, "basic", (json) => {
     const payload = json.basic as AdminApplicationDetailBasicPayload | undefined;
     if (!payload) throw new Error("basic 응답이 없습니다.");
+    if (isQuoteDebugEnabled() && json.auth_debug) {
+      return {
+        ...payload,
+        warnings: [
+          ...(payload.warnings ?? []),
+          `auth_debug: ${JSON.stringify(json.auth_debug)}`,
+        ],
+      };
+    }
     return payload;
   });
   patchAdminDetailCache(applicationId, { basic });
@@ -133,9 +156,18 @@ export async function loadAdminDetailDebug(
   const cached = getAdminDetailCache(applicationId)?.debug;
   if (cached !== undefined && !options?.force) return cached;
 
-  const debug = await fetchSection(applicationId, "debug", (json) => json.debug ?? null);
-  patchAdminDetailCache(applicationId, { debug });
-  return debug;
+  try {
+    const debug = await fetchSection(applicationId, "debug", (json) => ({
+      debug: json.debug ?? null,
+      warnings: json.warnings,
+      debug_denied: json.debug_denied,
+      auth_debug: json.auth_debug,
+    }));
+    patchAdminDetailCache(applicationId, { debug });
+    return debug;
+  } catch {
+    return null;
+  }
 }
 
 export function refreshAdminDetailCache(applicationId: string): void {

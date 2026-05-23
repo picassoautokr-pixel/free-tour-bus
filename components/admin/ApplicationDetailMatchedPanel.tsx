@@ -200,9 +200,11 @@ function QuoteCardMember({
   const debugOn = isQuoteDebugEnabled();
   const showSupportPricing =
     showSupportDetails &&
-    (quote.sponsor_stage_badge === "지원검토" ||
+    (quote.sponsor_quote_enabled ||
+      quote.sponsor_stage_badge === "지원검토" ||
       quote.sponsor_stage_badge === "지원확정" ||
-      quote.support_rows.length > 0);
+      quote.support_rows.length > 0 ||
+      quote.price != null);
   return (
     <article
       className={`rounded-xl border p-3 ${
@@ -375,6 +377,7 @@ export function ApplicationDetailMatchedPanel({
   const [loadingSms, setLoadingSms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quoteWarning, setQuoteWarning] = useState<string | null>(null);
+  const [basicWarnings, setBasicWarnings] = useState<string[]>([]);
 
   const reportError = useCallback((e: unknown, fallback: string) => {
     const raw = e instanceof Error ? e.message : fallback;
@@ -399,10 +402,14 @@ export function ApplicationDetailMatchedPanel({
       setError(null);
       try {
         const payload = await loadAdminDetailBasic(row.id, { force });
+        setBasicWarnings(payload.warnings ?? []);
         setBasic({
           ...payload,
           application: { ...payload.application, admin_memo: row.admin_memo },
         });
+        if (payload.sponsor !== undefined) {
+          setSponsorDetail(payload.sponsor ?? null);
+        }
       } catch (e) {
         reportError(e, "상세 정보를 불러오지 못했습니다.");
         setBasic(null);
@@ -424,10 +431,6 @@ export function ApplicationDetailMatchedPanel({
         if (quotes.warnings && quotes.warnings.length > 0) {
           setQuoteWarning(quotes.warnings[0] ?? "견적 데이터를 불러오는 중 문제가 발생했습니다.");
         }
-        if (isQuoteDebugEnabled()) {
-          const debug = await loadAdminDetailDebug(row.id, { force });
-          setDebugRaw(debug);
-        }
       } catch (e) {
         reportError(e, "견적 데이터를 불러오는 중 문제가 발생했습니다.");
       } finally {
@@ -437,10 +440,16 @@ export function ApplicationDetailMatchedPanel({
     [row.id, reportError],
   );
 
+  useEffect(() => {
+    if (!isQuoteDebugEnabled() || !row.id) return;
+    void loadAdminDetailDebug(row.id).then(setDebugRaw).catch(() => setDebugRaw(null));
+  }, [row.id]);
+
   const refreshAll = useCallback(() => {
     refreshAdminDetailCache(row.id);
     setQuotesPayload(null);
     setQuoteWarning(null);
+    setBasicWarnings([]);
     setSponsorDetail(undefined);
     setSmsLogs(null);
     setDebugRaw(null);
@@ -626,6 +635,13 @@ export function ApplicationDetailMatchedPanel({
       {error ? (
         <p className="whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
           {error}
+        </p>
+      ) : null}
+      {basicWarnings.length > 0 ? (
+        <p className="whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          {isQuoteDebugEnabled()
+            ? basicWarnings.join("\n")
+            : "일부 상세 정보를 불러오지 못했습니다."}
         </p>
       ) : null}
 
@@ -867,7 +883,7 @@ export function ApplicationDetailMatchedPanel({
                   <QuoteCardMember
                     key={q.id}
                     quote={q}
-                    showSupportDetails={hasSponsor}
+                    showSupportDetails
                     onEdit={() => {
                       setEditQuoteKind("member");
                       setEditQuote(q);

@@ -49,3 +49,30 @@ export async function queryDriverQuotesForApplication(
 
   throw new Error(lastMessage);
 }
+
+/** 단일 견적 — 목록 조회 실패·누락 시 매칭기사용 fallback */
+export async function queryDriverQuoteById(
+  admin: SupabaseClient,
+  quoteId: string,
+): Promise<Record<string, unknown> | null> {
+  let lastMessage = "driver_quotes 조회에 실패했습니다.";
+
+  for (const select of DRIVER_QUOTE_SELECT_CANDIDATES) {
+    const res = await admin
+      .from("driver_quotes")
+      .select(select as string)
+      .eq("id", quoteId)
+      .maybeSingle();
+
+    if (!res.error) {
+      return res.data ? (res.data as unknown as Record<string, unknown>) : null;
+    }
+
+    lastMessage = res.error.message;
+    if (!isMissingColumnError(res.error)) {
+      throw new Error(lastMessage);
+    }
+  }
+
+  throw new Error(lastMessage);
+}

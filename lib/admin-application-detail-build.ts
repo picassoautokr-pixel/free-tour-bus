@@ -138,12 +138,15 @@ export type AdminApplicationDetailBasicPayload = {
     sponsor_confirmed: boolean;
     has_sponsor: boolean;
   };
+  sponsor?: AdminSponsorDetail | null;
+  warnings?: string[];
 };
 
 export type AdminApplicationDetailQuotesPayload = {
   member_quotes: AdminMemberQuoteCard[];
   guest_quotes: AdminGuestQuoteCard[];
   quote_summary: AdminQuoteSummary;
+  sponsor?: AdminSponsorDetail | null;
   warnings?: string[];
 };
 
