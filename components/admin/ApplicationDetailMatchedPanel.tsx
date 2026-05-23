@@ -133,12 +133,26 @@ function QuoteSupportDebugBlock({ debug }: { debug: AdminMemberQuoteDebug }) {
       <p className="font-black">계산 상태 (DEBUG)</p>
       <ul className="mt-1 space-y-0.5 font-mono">
         <li>support_breakdown: {debug.has_support_breakdown ? "있음" : "없음"}</li>
-        <li>planned_total_support: {debug.planned_total_support ?? "—"}</li>
-        <li>confirmed_total_support: {debug.confirmed_total_support ?? "—"}</li>
+        <li>planned_total_support (resolved): {debug.planned_total_support ?? "—"}</li>
+        <li>confirmed_total_support (resolved): {debug.confirmed_total_support ?? "—"}</li>
+        <li>resolved_discount_price: {debug.resolved_discount_price ?? "—"}</li>
         <li>calculation_status: {debug.calculation_status}</li>
+        <li>failed_reason: {debug.failed_reason ?? "—"}</li>
+        <li>calculation_error: {debug.calculation_error ?? "—"}</li>
+        <li>missing_required_fields: {JSON.stringify(debug.missing_required_fields)}</li>
+        <li>missing_snapshot_fields: {JSON.stringify(debug.missing_snapshot_fields)}</li>
+        <li>selected_price: {debug.selected_price ?? "—"}</li>
+        <li>approved_support_amount: {debug.approved_support_amount ?? "—"}</li>
+        <li>estimated_support_amount: {debug.estimated_support_amount ?? "—"}</li>
+        <li>UI fallbacks_used: {JSON.stringify(debug.fallbacks_used)}</li>
         <li>fallback_used: {JSON.stringify(debug.fallback_used)}</li>
         <li>missing_fields: {JSON.stringify(debug.missing_fields)}</li>
       </ul>
+      {debug.support_breakdown_raw ? (
+        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-white/80 p-2 text-[9px] leading-relaxed ring-1 ring-amber-100">
+          {JSON.stringify(debug.support_breakdown_raw, null, 2)}
+        </pre>
+      ) : null}
     </div>
   );
 }

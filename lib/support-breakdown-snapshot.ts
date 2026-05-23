@@ -21,6 +21,7 @@ import {
   type SupportSettlementType,
 } from "@/lib/support-calculation";
 import { getApprovedSponsorSupport } from "@/lib/sponsor-support";
+import { logSupportSnapshotDebug } from "@/lib/support-snapshot-debug-log";
 
 export type SupportBreakdownCapturePhase =
   | "preapproved"
@@ -383,6 +384,13 @@ export async function refreshApplicationSupportBreakdownSnapshot(
     extensionRound,
   });
 
+  logSupportSnapshotDebug("refreshApplicationSupportBreakdownSnapshot", {
+    application_id: id,
+    input: { normalPrice, targetMember, totalPlanned, customerPlanned, driverPlanned, extensionRound },
+    calculated_planned: planned,
+    saved_snapshot: snapshot,
+  });
+
   const { error } = await admin
     .from("applications")
     .update({ support_breakdown_snapshot: snapshot })
@@ -433,6 +441,11 @@ export async function freezeQuotePlannedSupportBreakdown(
     planned: params.planned,
     supportMode: params.supportMode,
     extensionRound: params.extensionRound,
+  });
+  logSupportSnapshotDebug("freezeQuotePlannedSupportBreakdown", {
+    quote_id: quoteId,
+    input: params,
+    saved_snapshot: snapshot,
   });
   await persistQuoteSupportBreakdownSnapshot(admin, quoteId, snapshot);
   return snapshot;
@@ -509,6 +522,12 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
   const confirmedTotal = summary.approved_support_amount_total;
   if (confirmedTotal <= 0) return;
 
+  logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.start", {
+    application_id: applicationId,
+    confirmed_total: confirmedTotal,
+    summary,
+  });
+
   const { data: quotes } = await admin
     .from("driver_quotes")
     .select(
@@ -542,14 +561,55 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
         });
       })();
 
-    if (!snapshot) continue;
+    if (!snapshot) {
+      const price = parseInteger(row.price);
+      if (price == null) {
+        logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.skip", {
+          quote_id: quoteId,
+          reason: "no_snapshot_and_no_price",
+          row,
+        });
+        continue;
+      }
+      const customerPlanned = Math.min(confirmedTotal, price);
+      snapshot = buildPlannedSupportBreakdownSnapshot({
+        phase: "sponsor_confirm",
+        rule: null,
+        normalPrice: price,
+        planned: {
+          total: confirmedTotal,
+          customer: customerPlanned,
+          driver: Math.max(confirmedTotal - customerPlanned, 0),
+          discountPrice: Math.max(price - customerPlanned, 0),
+          finalPrice: Math.max(price - customerPlanned, 0),
+        },
+        supportMode: resolveSettlementType(row.support_settlement_type),
+      });
+      logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.synthetic_planned", {
+        quote_id: quoteId,
+        confirmed_total: confirmedTotal,
+        saved_snapshot: snapshot,
+      });
+    }
 
     const rowFlags = row as QuoteSupportRow & { extension_applied?: unknown };
     const updated = buildConfirmedSnapshotFromPlanned(snapshot, confirmedTotal, {
       extensionApplied: rowFlags.extension_applied === true,
       extensionSupportAmount: parseInteger(row.extension_support_amount),
     });
-    if (!updated) continue;
+    if (!updated) {
+      logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.merge_failed", {
+        quote_id: quoteId,
+        input_snapshot: snapshot,
+        confirmed_total: confirmedTotal,
+      });
+      continue;
+    }
+
+    logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.saved", {
+      quote_id: quoteId,
+      saved_snapshot: updated,
+    });
 
     await persistQuoteSupportBreakdownSnapshot(admin, quoteId, updated);
 
