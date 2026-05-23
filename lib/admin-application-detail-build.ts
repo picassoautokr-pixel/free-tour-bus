@@ -204,7 +204,12 @@ export function buildMemberQuoteCard(
     vehicle_type: safeText(quote.vehicle_type, "—"),
     available_time: safeText(quote.available_time, "—"),
     is_matched: safeText(quote.id) === finalQuoteId,
-    sponsor_quote_enabled: quote.sponsor_quote_enabled === true,
+    sponsor_quote_enabled:
+      quote.sponsor_quote_enabled === true ||
+      sponsor != null ||
+      sponsorConfirmed ||
+      breakdown != null ||
+      supportDisplay.rows.some((r) => r.value != null),
     support_breakdown: breakdown,
     support_debug: {
       ...supportDisplay.debug,

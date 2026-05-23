@@ -196,6 +196,11 @@ function QuoteCardMember({
   onSponsorInfo: () => void;
 }) {
   const debugOn = isQuoteDebugEnabled();
+  const showSupportPricing =
+    quote.sponsor_quote_enabled ||
+    quote.sponsor_stage_badge === "지원검토" ||
+    quote.sponsor_stage_badge === "지원확정" ||
+    quote.support_rows.length > 0;
   return (
     <article
       className={`rounded-xl border p-3 ${
@@ -226,7 +231,7 @@ function QuoteCardMember({
           <dt className="text-slate-500">일반견적가</dt>
           <dd className="font-bold">{formatAdminWon(quote.price)}</dd>
         </div>
-        {quote.sponsor_quote_enabled
+        {showSupportPricing
           ? quote.support_rows.map((row) => (
               <div key={row.label} className="flex justify-between gap-2">
                 <dt className="text-slate-500">{row.label}</dt>
@@ -234,7 +239,7 @@ function QuoteCardMember({
               </div>
             ))
           : null}
-        {quote.sponsor_quote_enabled ? (
+        {showSupportPricing ? (
           <div className="flex justify-between gap-2">
             <dt className="text-slate-500">정산모드</dt>
             <dd className="font-bold">{quote.support_settlement_label}</dd>
@@ -254,7 +259,7 @@ function QuoteCardMember({
         <QuoteSupportDebugBlock debug={quote.support_debug} />
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        {quote.sponsor_quote_enabled ? (
+        {showSupportPricing ? (
           <button
             type="button"
             onClick={onSponsorInfo}

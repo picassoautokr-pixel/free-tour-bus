@@ -169,8 +169,12 @@ async function loadMatchedDriverOnly(
   }
 
   const appApproved = resolveApplicationApprovedSupportTotal(application);
+  const appEstimated = resolveApplicationEstimatedSupportTotal(application);
   const supportFields = mapQuoteWithSupport(quote, {
     applicationApprovedSupportTotal: appApproved,
+    applicationTotalPlannedSupport: appEstimated,
+    sponsorApprovedSupportAmount: appApproved,
+    sponsorEstimatedSupportAmount: appEstimated,
   });
   const row = {
     ...quote,
@@ -243,7 +247,12 @@ export async function fetchAdminDetailBasic(
 async function loadMemberAndGuestQuotes(
   admin: SupabaseClient,
   applicationId: string,
-  appApprovedTotal: number | null,
+  supportCtx: {
+    application: Record<string, unknown>;
+    appApprovedTotal: number | null;
+    appEstimatedTotal: number | null;
+    sponsor: AdminSponsorDetail | null;
+  },
 ): Promise<{
   memberRows: Record<string, unknown>[];
   guestRows: Record<string, unknown>[];
@@ -288,9 +297,18 @@ async function loadMemberAndGuestQuotes(
     const row = raw as Record<string, unknown>;
     const partner = partnerById.get(safeText(row.partner_driver_id));
     const supportFields = mapQuoteWithSupport(row, {
-      applicationApprovedSupportTotal: appApprovedTotal,
+      applicationApprovedSupportTotal: supportCtx.appApprovedTotal,
+      applicationTotalPlannedSupport: supportCtx.appEstimatedTotal,
+      sponsorEstimatedSupportAmount: supportCtx.sponsor?.estimated_support_amount ?? null,
+      sponsorApprovedSupportAmount: supportCtx.sponsor?.approved_support_amount ?? null,
     });
     const breakdown = supportFields.support_breakdown;
+    const sponsorActive =
+      supportFields.sponsor_quote_enabled ||
+      supportCtx.sponsor != null ||
+      (supportCtx.appApprovedTotal ?? 0) > 0 ||
+      (supportCtx.appEstimatedTotal ?? 0) > 0 ||
+      breakdown != null;
     return {
       ...row,
       company_name: partner?.company_name ?? "—",
@@ -300,17 +318,21 @@ async function loadMemberAndGuestQuotes(
       support_settlement_type: resolveSettlementType(
         row.support_settlement_type ?? breakdown?.settlementType,
       ),
-      sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
-      support_breakdown: supportFields.support_breakdown,
-      total_planned_support: supportFields.total_planned_support,
+      sponsor_quote_enabled: sponsorActive,
+      confirmed_total_support: supportFields.total_confirmed_support,
       total_confirmed_support: supportFields.total_confirmed_support,
-      customer_planned_support: supportFields.customer_planned_support,
-      customer_confirmed_support: supportFields.customer_confirmed_support,
-      support_discount_planned_price: supportFields.support_discount_planned_price,
-      support_discount_applied_price: supportFields.support_discount_applied_price,
+      planned_total_support: supportFields.total_planned_support,
+      total_planned_support: supportFields.total_planned_support,
+      confirmed_customer_support: supportFields.customer_confirmed_support,
+      planned_customer_support: supportFields.customer_planned_support,
+      confirmed_discount_price: supportFields.final_discount_applied_price,
       final_discount_applied_price: supportFields.final_discount_applied_price,
+      support_discount_applied_price: supportFields.support_discount_applied_price,
+      support_discount_planned_price: supportFields.support_discount_planned_price,
+      member_price: supportFields.member_price,
       final_member_price: supportFields.support_discount_applied_price,
-      member_price: supportFields.support_discount_planned_price,
+      extension_support_amount: supportFields.extension_support,
+      support_breakdown: supportFields.support_breakdown,
     };
   });
 
@@ -401,11 +423,13 @@ export async function fetchAdminDetailQuotes(
   const sponsor = pickPrimarySponsor(enrichedPre);
   const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
   const appApproved = resolveApplicationApprovedSupportTotal(application, sponsor);
-  const { memberRows, guestRows } = await loadMemberAndGuestQuotes(
-    admin,
-    applicationId,
-    appApproved,
-  );
+  const appEstimated = resolveApplicationEstimatedSupportTotal(application, sponsor);
+  const { memberRows, guestRows } = await loadMemberAndGuestQuotes(admin, applicationId, {
+    application,
+    appApprovedTotal: appApproved,
+    appEstimatedTotal: appEstimated,
+    sponsor,
+  });
 
   const finalQuoteId = safeText(application.final_selected_quote_id);
   const finalSource = safeText(application.final_selected_quote_source) === "guest" ? "guest" : "member";

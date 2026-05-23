@@ -61,6 +61,14 @@ function appEstimated(ctx: AdminMemberQuoteSupportContext): number | null {
   return resolveApplicationEstimatedSupportTotal(ctx.application, ctx.sponsor);
 }
 
+function amountOrZero(value: number | null | undefined): number {
+  return value != null && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
+function rowValue(value: number | null | undefined): number {
+  return value != null && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
 export function resolveConfirmedTotalSupport(ctx: AdminMemberQuoteSupportContext): {
   value: number | null;
   source: string | null;
@@ -166,34 +174,41 @@ export function buildAdminMemberQuoteSupportDisplay(
       fallbacksUsed.push("customer_confirmed:derived_from_price");
     }
 
-    const driverFromQuote =
-      breakdownField(breakdown, "confirmed_driver_support", "partnerConfirmedSupport") ??
-      parseInteger(ctx.quote.confirmed_driver_support) ??
-      parseInteger(ctx.quote.final_driver_support_amount);
+    const customerConfirmed =
+      customerDisplay.value ??
+      (normalPrice != null && finalDiscountPrice != null
+        ? deriveCustomerConfirmedSupport({
+            normalPrice,
+            finalDiscountPrice,
+            confirmedExtensionSupport: extensionRaw,
+          })
+        : null);
 
-    const driverConfirmed =
-      driverFromQuote ??
-      resolvePartnerConfirmedSupport({
-        confirmedTotalSupport: confirmedTotal,
-        confirmedCustomerSupport: customerDisplay.value,
-        confirmedExtensionSupport: extensionRaw,
-      });
+    const discountResolvedFinal =
+      finalDiscountPrice ??
+      (normalPrice != null && customerConfirmed != null
+        ? Math.max(normalPrice - customerConfirmed - amountOrZero(extensionRaw), 0)
+        : null);
 
     return {
       rows: [
-        { label: "확정 지원금", value: confirmedTotal },
-        { label: "고객 확정 지원금", value: customerDisplay.value },
-        { label: "확정 연장 지원금", value: extensionRaw },
-        { label: "기사 확정 지원금", value: driverConfirmed },
-        { label: "지원금 할인 적용가", value: finalDiscountPrice },
+        { label: "확정 지원금", value: rowValue(confirmedTotal) },
+        { label: "고객 확정 지원금", value: rowValue(customerConfirmed) },
+        { label: "확정 연장 지원금", value: amountOrZero(extensionRaw) },
+        { label: "지원금 할인 적용가", value: rowValue(discountResolvedFinal) },
       ],
       fallbacksUsed,
       debug: buildAdminMemberQuoteDebug(ctx, breakdown, {
         confirmedTotal,
         plannedTotal: resolvePlannedTotalSupport(ctx).value,
-        discount: finalDiscountPrice,
+        discount: discountResolvedFinal,
         customerDisplay,
-        driverConfirmed,
+        driverConfirmed:
+          resolvePartnerConfirmedSupport({
+            confirmedTotalSupport: confirmedTotal,
+            confirmedCustomerSupport: customerConfirmed,
+            confirmedExtensionSupport: extensionRaw,
+          }) ?? null,
         extensionRaw,
         normalPrice,
       }),
@@ -215,18 +230,30 @@ export function buildAdminMemberQuoteSupportDisplay(
     parseInteger(ctx.quote.extension_support_amount) ??
     0;
 
+  const normalPrice = parseInteger(ctx.quote.price);
+
   const discountPlanned =
     breakdownField(breakdown, "planned_discount_price", "supportDiscountPlannedPrice") ??
     parseInteger(ctx.quote.planned_discount_price) ??
     parseInteger(ctx.quote.support_discount_planned_price) ??
     parseInteger(ctx.quote.member_price);
 
+  const customerPlannedResolved =
+    customerPlanned ??
+    (normalPrice != null && discountPlanned != null
+      ? deriveCustomerConfirmedSupport({
+          normalPrice,
+          finalDiscountPrice: discountPlanned,
+          confirmedExtensionSupport: extensionPlanned,
+        })
+      : null);
+
   return {
     rows: [
-      { label: "예상 지원금", value: plannedTotal },
-      { label: "고객 예상 지원금", value: customerPlanned },
-      { label: "예상 연장 지원금", value: extensionPlanned },
-      { label: "지원금 할인 예상가", value: discountPlanned },
+      { label: "예상 지원금", value: rowValue(plannedTotal) },
+      { label: "고객 예상 지원금", value: rowValue(customerPlannedResolved) },
+      { label: "예상 연장 지원금", value: amountOrZero(extensionPlanned) },
+      { label: "지원금 할인 예상가", value: rowValue(discountPlanned) },
     ],
     fallbacksUsed,
     debug: buildAdminMemberQuoteDebug(ctx, breakdown, {
