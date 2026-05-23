@@ -12,6 +12,10 @@ import {
 import { roleRegisterUrl } from "@/lib/role-hosts";
 import { parseStopovers } from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
+import {
+  CUSTOMER_ORGANIZATION_TYPES,
+  normalizeCustomerOrganizationType,
+} from "@/lib/organization-types";
 
 /** 고객 폼에 노출되는 유형만 (업체용 등은 렌더링하지 않음 — 기존 DB 값은 관리자에서 표시) */
 const APPLICATION_TYPE_RESERVATION_DONE = "이미 예약을 완료하신 경우";
@@ -43,14 +47,7 @@ const sponsorRegisterHref = roleRegisterUrl("sponsor");
 
 type DepartureTimeSlot = (typeof TIME_SLOT_OPTIONS)[number]["value"];
 
-const organizationTypes = [
-  "회사/직장",
-  "학교",
-  "교회/종교단체",
-  "공공기관",
-  "협회/단체",
-  "기타 소속단체",
-];
+const organizationTypes = CUSTOMER_ORGANIZATION_TYPES;
 
 /** Supabase `applications`에 넣는 컬럼만 (id·created_at 등 자동값 제외) */
 type ApplicationInsertPayload = {
@@ -450,9 +447,9 @@ export default function Home() {
         phone: formatPhoneNumber(phoneDigits),
         organization_name: formData.organizationName.trim(),
         organization_type:
-          formData.organizationType.trim() === ""
+          normalizeCustomerOrganizationType(formData.organizationType) === ""
             ? null
-            : formData.organizationType.trim(),
+            : normalizeCustomerOrganizationType(formData.organizationType),
         request_message: formData.requestMessage.trim(),
         file_url: needsAttachment ? uploadedFileUrl : null,
         file_name: needsAttachment ? uploadedFileName : null,
@@ -1089,12 +1086,12 @@ export default function Home() {
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
-                  목표 금액 마감
+                  마감목표
                 </p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                      일반견적 목표가
+                      일반견적
                     </span>
                     <input
                       type="text"
@@ -1112,7 +1109,7 @@ export default function Home() {
                   </label>
                   <label className="block">
                     <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                      무료 적용 희망가
+                      할인견적
                     </span>
                     <input
                       type="text"
@@ -1277,12 +1274,12 @@ export default function Home() {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
-                    목표 금액 마감
+                    마감목표
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                        일반견적 목표가
+                        일반견적
                       </span>
                       <input
                         type="text"
@@ -1300,7 +1297,7 @@ export default function Home() {
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                        무료 적용 희망가
+                        할인견적
                       </span>
                       <input
                         type="text"
@@ -1441,7 +1438,7 @@ export default function Home() {
                 onChange={(event) =>
                   setFormData((prev) => ({
                     ...prev,
-                    organizationType: event.target.value,
+                    organizationType: normalizeCustomerOrganizationType(event.target.value),
                   }))
                 }
               >
@@ -1457,7 +1454,7 @@ export default function Home() {
               <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
                 ※ 일부 업종 및 일반 동호회는 지원 대상에서 제외될 수 있습니다.
               </p>
-              {formData.organizationType === "기타 소속단체" ? (
+              {formData.organizationType === "공공기관" ? (
                 <p className="px-1 text-xs font-medium leading-5 tracking-[-0.02em] text-slate-400">
                   소속 확인이 가능한 단체만 심사 대상에 포함됩니다.
                 </p>
@@ -1613,12 +1610,12 @@ export default function Home() {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
-                    목표 금액 마감
+                    마감목표
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                        일반 견적 목표가
+                        일반견적
                       </span>
                       <input
                         type="text"
@@ -1636,7 +1633,7 @@ export default function Home() {
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                        무료 적용 희망가
+                        할인견적
                       </span>
                       <input
                         type="text"

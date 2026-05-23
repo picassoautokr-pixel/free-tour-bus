@@ -35,6 +35,7 @@ import {
 import { resolveSettlementType } from "@/lib/support-calculation";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { safeText } from "@/lib/sponsor";
+import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
 
 function parseInteger(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
@@ -193,7 +194,9 @@ export async function fetchAdminDetailBasic(
     organization_name:
       safeText(listRow?.organization_name) || safeText(application.organization_name),
     organization_type:
-      safeText(listRow?.organization_type) || safeText(application.organization_type),
+      normalizeCustomerOrganizationType(
+        safeText(listRow?.organization_type) || safeText(application.organization_type),
+      ),
     request_message: safeText(listRow?.request_message) || safeText(application.request_message),
     admin_memo: safeText(listRow?.admin_memo) || safeText(application.admin_memo),
     attachments: {

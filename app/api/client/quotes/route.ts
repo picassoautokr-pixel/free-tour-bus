@@ -11,6 +11,7 @@ import { sendNotificationSms } from "@/lib/notification-service";
 import { selectedPriceTypeToLegacyKind } from "@/lib/client-quote-match-selection";
 import { NORMAL_MATCH_SPONSOR_REASON } from "@/lib/selected-price-display";
 import { buildClientMemberQuoteSupport } from "@/lib/client-member-quote-payload";
+import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
 import {
   assertApplicationVisible,
   filterVisibleApplicationRows,
@@ -418,7 +419,8 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
       application_type: safeText(current.application_type),
       organization_type: safeText(current.organization_type),
       group_type:
-        safeText(current.organization_type) || safeText(current.application_type),
+        normalizeCustomerOrganizationType(current.organization_type) ||
+        safeText(current.application_type),
       organization_name: safeText(current.organization_name),
       bus_grade: safeText(current.bus_grade),
       passenger_count: parseInteger(current.passenger_count),

@@ -1,15 +1,11 @@
 import { calculateTotalPlannedSupport } from "@/lib/support-calculation";
 import { normalizeStringArray, parseInteger, safeText, sponsorSupportTypeLabel } from "@/lib/sponsor";
+import {
+  CUSTOMER_ORGANIZATION_TYPES,
+  normalizeCustomerOrganizationType,
+} from "@/lib/organization-types";
 
-export const SPONSOR_TARGET_GROUP_OPTIONS = [
-  "회사원/직장인",
-  "학생",
-  "종교",
-  "협회",
-  "동호회",
-  "공공기관",
-  "기타단체",
-] as const;
+export const SPONSOR_TARGET_GROUP_OPTIONS = CUSTOMER_ORGANIZATION_TYPES;
 
 export const SPONSOR_SUPPORT_CONDITION_OPTIONS = [
   { value: "홍보시", label: "홍보시" },
@@ -53,10 +49,16 @@ export type SponsorRuleRecord = Record<string, unknown> & {
 
 export function parseRuleTargetGroups(rule: Record<string, unknown>): string[] {
   const fromArray = normalizeStringArray(rule.target_groups);
-  if (fromArray.length > 0) return fromArray;
+  if (fromArray.length > 0) return fromArray.map(normalizeSponsorTargetGroupType);
   const legacy = safeText(rule.target_group);
   if (!legacy) return [];
-  return legacy.split(/[,·/]/).map((s) => s.trim()).filter(Boolean);
+  return legacy.split(/[,·/]/).map(normalizeSponsorTargetGroupType).filter(Boolean);
+}
+
+function normalizeSponsorTargetGroupType(raw: string): string {
+  const g = raw.trim();
+  if ((SPONSOR_TARGET_GROUP_OPTIONS as readonly string[]).includes(g)) return g;
+  return normalizeApplicationGroupType(g);
 }
 
 export function parseStaffAssignedRegions(staff: Record<string, unknown>): string[] {
@@ -67,7 +69,7 @@ export function parseStaffAssignedRegions(staff: Record<string, unknown>): strin
 
 /** 단체유형 → 지원단체 카탈로그 정규화 */
 export function normalizeApplicationGroupType(raw: string): string {
-  const g = raw.trim();
+  const g = normalizeCustomerOrganizationType(raw);
   if (!g) return "";
   if ((SPONSOR_TARGET_GROUP_OPTIONS as readonly string[]).includes(g)) return g;
   if (/회사|직장|기업|법인/.test(g)) return "회사원/직장인";

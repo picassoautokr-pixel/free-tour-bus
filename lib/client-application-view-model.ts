@@ -11,6 +11,7 @@ import {
 } from "@/lib/support-calculation";
 import { formatRemainingText } from "@/lib/quote-status";
 import { formatStopovers } from "@/lib/stopovers";
+import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
 
 export type ClientQuote = {
   source: "member" | "guest";
@@ -191,7 +192,7 @@ export function formatGroupType(app: ClientApplication): string {
   ]
     .map((v) => (v == null ? "" : String(v).trim()))
     .find((t) => t !== "" && t !== "—");
-  return value || LABEL.dash;
+  return value ? normalizeCustomerOrganizationType(value) : LABEL.dash;
 }
 
 export function formatAutoCloseRemaining(app: ClientApplication): string {

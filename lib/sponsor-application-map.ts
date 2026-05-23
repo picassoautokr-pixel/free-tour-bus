@@ -3,6 +3,7 @@
  */
 
 import { normalizeStringArray } from "@/lib/sponsor";
+import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
 
 function safeText(value: unknown, fallback = ""): string {
   if (value == null) return fallback;
@@ -116,7 +117,7 @@ export function mapSponsorApplicationTripFields(
       "grade",
       "vehicle_grade",
     ]),
-    group_type: groupType,
+    group_type: normalizeCustomerOrganizationType(groupType),
     organization_name: pickFirstText(application, [
       "organization_name",
       "applicant_name",

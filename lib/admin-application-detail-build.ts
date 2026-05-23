@@ -11,6 +11,7 @@ import { resolveAdminSponsorConfirmed } from "@/lib/admin-sponsor-confirmed";
 import { isSponsorStageConfirmed, resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
 import { SETTLEMENT_TYPE_LABELS } from "@/lib/support-calculation";
 import { safeText } from "@/lib/sponsor";
+import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
 
 export type AdminMatchedDriver = {
   source: "member" | "guest";
@@ -392,7 +393,9 @@ export function buildAdminApplicationDetailPayload(params: {
     applicant_name: safeText(list.applicant_name) || safeText(appRaw.applicant_name),
     phone: safeText(list.phone) || safeText(appRaw.phone),
     organization_name: safeText(list.organization_name) || safeText(appRaw.organization_name),
-    organization_type: safeText(list.organization_type) || safeText(appRaw.organization_type),
+    organization_type: normalizeCustomerOrganizationType(
+      safeText(list.organization_type) || safeText(appRaw.organization_type),
+    ),
     request_message: safeText(list.request_message) || safeText(appRaw.request_message),
     memo: safeText(list.request_message) || safeText(appRaw.request_message),
     attachments: {
