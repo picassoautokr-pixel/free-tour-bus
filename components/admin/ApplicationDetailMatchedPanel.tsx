@@ -15,13 +15,26 @@ import {
   isCustomerStageMatched,
   resolveCustomerStageBadge,
 } from "@/lib/admin-progress-stage";
+import { ApplicationDetailSkeleton, QuotesSectionSkeleton } from "@/components/admin/ApplicationDetailSkeleton";
+import {
+  loadAdminDetailBasic,
+  loadAdminDetailDebug,
+  loadAdminDetailQuotes,
+  loadAdminDetailSms,
+  loadAdminDetailSponsor,
+  refreshAdminDetailCache,
+  refreshAdminDetailQuotesCache,
+} from "@/lib/admin-detail-api-client";
 import { isQuoteDebugEnabled } from "@/lib/quote-debug-enable";
 import { createAdminBrowserClient } from "@/lib/supabase";
 import type {
-  AdminApplicationDetailPayload,
+  AdminApplicationDetailBasicPayload,
+  AdminApplicationDetailQuotesPayload,
   AdminGuestQuoteCard,
   AdminMemberQuoteCard,
   AdminMemberQuoteDebug,
+  AdminSmsLog,
+  AdminSponsorDetail,
 } from "@/lib/admin-application-detail-build";
 import { isApplicationMatchCompleted } from "@/lib/admin-application-detail-build";
 
@@ -52,6 +65,8 @@ type ListRow = {
   attachment_url: string;
   admin_memo: string;
   status: string;
+  final_selected_quote_id: string;
+  quote_status: string;
 };
 
 type ApplicationStatusValue = "pending" | "reviewing" | "approved" | "rejected";
@@ -341,8 +356,19 @@ export function ApplicationDetailMatchedPanel({
   onApplicationHidden?: () => void;
   lifecycleTools?: React.ReactNode;
 }) {
-  const [detail, setDetail] = useState<AdminApplicationDetailPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [basic, setBasic] = useState<AdminApplicationDetailBasicPayload | null>(null);
+  const [quotesPayload, setQuotesPayload] = useState<AdminApplicationDetailQuotesPayload | null>(
+    null,
+  );
+  const [sponsorDetail, setSponsorDetail] = useState<AdminSponsorDetail | null | undefined>(
+    undefined,
+  );
+  const [smsLogs, setSmsLogs] = useState<AdminSmsLog[] | null>(null);
+  const [debugRaw, setDebugRaw] = useState<unknown>(null);
+  const [loadingBasic, setLoadingBasic] = useState(true);
+  const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [loadingSponsor, setLoadingSponsor] = useState(false);
+  const [loadingSms, setLoadingSms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quotesOpen, setQuotesOpen] = useState(false);
   const [smsLogOpen, setSmsLogOpen] = useState(false);
@@ -356,46 +382,91 @@ export function ApplicationDetailMatchedPanel({
   const [memoBusy, setMemoBusy] = useState(false);
   const [hideBusy, setHideBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!row.id) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/admin/driver-quotes?application_id=${encodeURIComponent(row.id)}`,
-        { credentials: "same-origin" },
-      );
-      const json = (await res.json()) as {
-        error?: string;
-        detail?: AdminApplicationDetailPayload;
-      };
-      if (!res.ok) {
-        setError(json.error ?? "상세 정보를 불러오지 못했습니다.");
-        setDetail(null);
-        return;
-      }
-      const payload = json.detail ?? null;
-      if (payload) {
-        setDetail({
+  const loadBasic = useCallback(
+    async (force = false) => {
+      if (!row.id) return;
+      setLoadingBasic(true);
+      setError(null);
+      try {
+        const payload = await loadAdminDetailBasic(row.id, { force });
+        setBasic({
           ...payload,
           application: { ...payload.application, admin_memo: row.admin_memo },
         });
-      } else {
-        setError("detail 응답이 없습니다. API 배포 상태를 확인하세요.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "상세 정보를 불러오지 못했습니다.");
+        setBasic(null);
+      } finally {
+        setLoadingBasic(false);
       }
-    } catch {
-      setError("상세 정보를 불러오지 못했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  }, [row.id, row.admin_memo]);
+    },
+    [row.id, row.admin_memo],
+  );
+
+  const loadQuotes = useCallback(
+    async (force = false) => {
+      if (!row.id) return;
+      setLoadingQuotes(true);
+      setError(null);
+      try {
+        const quotes = await loadAdminDetailQuotes(row.id, { force });
+        setQuotesPayload(quotes);
+        if (isQuoteDebugEnabled()) {
+          const debug = await loadAdminDetailDebug(row.id, { force });
+          setDebugRaw(debug);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "견적 정보를 불러오지 못했습니다.");
+      } finally {
+        setLoadingQuotes(false);
+      }
+    },
+    [row.id],
+  );
+
+  const refreshAll = useCallback(() => {
+    refreshAdminDetailCache(row.id);
+    setQuotesPayload(null);
+    setSponsorDetail(undefined);
+    setSmsLogs(null);
+    setDebugRaw(null);
+    void loadBasic(true);
+    if (quotesOpen) void loadQuotes(true);
+  }, [row.id, quotesOpen, loadBasic, loadQuotes]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadBasic(false);
+  }, [loadBasic]);
 
-  const app = detail?.application ?? {};
-  const lifecycle = detail?.application ?? {};
+  useEffect(() => {
+    if (!quotesOpen || quotesPayload) return;
+    void loadQuotes(false);
+  }, [quotesOpen, quotesPayload, loadQuotes]);
+
+  useEffect(() => {
+    if (!sponsorInfoOpen || sponsorDetail !== undefined) return;
+    setLoadingSponsor(true);
+    void loadAdminDetailSponsor(row.id)
+      .then(setSponsorDetail)
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "후원 정보를 불러오지 못했습니다."),
+      )
+      .finally(() => setLoadingSponsor(false));
+  }, [sponsorInfoOpen, sponsorDetail, row.id]);
+
+  useEffect(() => {
+    if (!smsLogOpen || smsLogs) return;
+    setLoadingSms(true);
+    void loadAdminDetailSms(row.id)
+      .then(setSmsLogs)
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "문자 로그를 불러오지 못했습니다."),
+      )
+      .finally(() => setLoadingSms(false));
+  }, [smsLogOpen, smsLogs, row.id]);
+
+  const app = basic?.application ?? {};
+  const lifecycle = basic?.application ?? {};
   const customerStageBadge = resolveCustomerStageBadge({
     quoteStatus: String(app.quote_status ?? ""),
     finalSelectedQuoteId: String(lifecycle.final_selected_quote_id ?? ""),
@@ -404,7 +475,8 @@ export function ApplicationDetailMatchedPanel({
     quoteStatus: String(app.quote_status ?? ""),
     finalSelectedQuoteId: String(lifecycle.final_selected_quote_id ?? ""),
   });
-  const sponsorStageBadge = detail?.sponsor?.support_stage_badge ?? "없음";
+  const sponsorStageBadge = basic?.sponsor_stage.support_stage_badge ?? "없음";
+  const hasSponsor = basic?.sponsor_stage.has_sponsor ?? false;
 
   const deadlineLine = useMemo(() => {
     const deadline = String(app.quote_deadline_at ?? "").trim();
@@ -488,7 +560,8 @@ export function ApplicationDetailMatchedPanel({
         return;
       }
       setEditQuote(null);
-      void load();
+      refreshAdminDetailQuotesCache(row.id);
+      void loadQuotes(true);
     } catch {
       setError("견적 저장에 실패했습니다.");
     } finally {
@@ -496,13 +569,7 @@ export function ApplicationDetailMatchedPanel({
     }
   };
 
-  if (loading) {
-    return (
-      <p className="py-8 text-center text-sm font-semibold text-slate-500">상세 불러오는 중…</p>
-    );
-  }
-
-  if (error && !detail) {
+  if (error && !basic && !loadingBasic) {
     return (
       <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
         {error}
@@ -510,12 +577,16 @@ export function ApplicationDetailMatchedPanel({
     );
   }
 
-  if (!detail || !isApplicationMatchCompleted(lifecycle)) {
+  if (!loadingBasic && basic && !isApplicationMatchCompleted(lifecycle)) {
     return (
       <p className="text-sm text-slate-600">
         매칭완료 레이아웃을 사용할 수 없습니다. 기존 상세 보기를 이용하세요.
       </p>
     );
+  }
+
+  if (loadingBasic || !basic) {
+    return <ApplicationDetailSkeleton />;
   }
 
   const attachments = (app.attachments ?? {}) as Record<string, string>;
@@ -524,8 +595,24 @@ export function ApplicationDetailMatchedPanel({
     ? (app.stopovers as string[])
     : row.stopovers;
 
+  const matchedDriver = basic.matched_driver;
+  const quoteSummary = quotesPayload?.quote_summary;
+  const memberQuotes = quotesPayload?.member_quotes ?? [];
+  const guestQuotes = quotesPayload?.guest_quotes ?? [];
+
   return (
     <div className="space-y-4 pb-6">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => refreshAll()}
+          disabled={loadingBasic || loadingQuotes}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-800 disabled:opacity-50"
+        >
+          새로고침
+        </button>
+      </div>
+
       {error ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
           {error}
@@ -650,7 +737,7 @@ export function ApplicationDetailMatchedPanel({
                 {sponsorStageBadge}
               </span>
             </p>
-            {detail.sponsor ? (
+            {hasSponsor ? (
               <button
                 type="button"
                 onClick={() => setSponsorInfoOpen(true)}
@@ -682,39 +769,35 @@ export function ApplicationDetailMatchedPanel({
         </button>
       </SectionCard>
 
-      {detail.matched_driver ? (
+      {matchedDriver ? (
         <SectionCard title="4. 매칭기사" className="ring-2 ring-emerald-200">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="text-base font-black text-slate-950">
-                {detail.matched_driver.company_name}
-              </p>
-              <p className="text-sm font-semibold text-slate-700">
-                {detail.matched_driver.driver_name}
-              </p>
-              <p className="mt-1 text-sm">{detail.matched_driver.phone}</p>
+              <p className="text-base font-black text-slate-950">{matchedDriver.company_name}</p>
+              <p className="text-sm font-semibold text-slate-700">{matchedDriver.driver_name}</p>
+              <p className="mt-1 text-sm">{matchedDriver.phone}</p>
             </div>
             <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-black text-white">
-              {detail.matched_driver.badge}
+              {matchedDriver.badge}
             </span>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <a
-              href={phoneDialHref(detail.matched_driver.phone)}
+              href={phoneDialHref(matchedDriver.phone)}
               className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
             >
               전화하기
             </a>
             <a
-              href={phoneSmsHref(detail.matched_driver.phone)}
+              href={phoneSmsHref(matchedDriver.phone)}
               className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white"
             >
               문자하기
             </a>
           </div>
           <p className="mt-3 text-sm font-bold text-emerald-900">
-            선택 견적: {detail.matched_driver.selected_price_label}{" "}
-            {formatAdminWon(detail.matched_driver.selected_price)}
+            선택 견적: {matchedDriver.selected_price_label}{" "}
+            {formatAdminWon(matchedDriver.selected_price)}
           </p>
         </SectionCard>
       ) : null}
@@ -728,39 +811,44 @@ export function ApplicationDetailMatchedPanel({
           {quotesOpen ? "견적종합 접기" : "견적종합 보기"}
         </button>
         {quotesOpen ? (
+          loadingQuotes || !quotesPayload ? (
+            <QuotesSectionSkeleton />
+          ) : (
           <div className="mt-4 space-y-4">
+            {quoteSummary ? (
             <InfoGrid
               items={[
                 {
                   label: "제휴기사 신청",
-                  value: `${detail.quote_summary.member_quote_count}건`,
+                  value: `${quoteSummary.member_quote_count}건`,
                 },
                 {
                   label: "일반기사 신청",
-                  value: `${detail.quote_summary.guest_quote_count}건`,
+                  value: `${quoteSummary.guest_quote_count}건`,
                 },
                 {
                   label: "평균 일반견적가",
-                  value: formatAdminWon(detail.quote_summary.avg_normal_price),
+                  value: formatAdminWon(quoteSummary.avg_normal_price),
                 },
                 {
                   label: "평균 예상 지원금",
-                  value: formatAdminWon(detail.quote_summary.avg_estimated_support),
+                  value: formatAdminWon(quoteSummary.avg_estimated_support),
                 },
                 {
                   label: "평균 확정 지원금",
-                  value: formatAdminWon(detail.quote_summary.avg_approved_support),
+                  value: formatAdminWon(quoteSummary.avg_approved_support),
                 },
                 {
                   label: "연장회차",
-                  value: String(detail.quote_summary.extension_round),
+                  value: String(quoteSummary.extension_round),
                 },
               ]}
             />
+            ) : null}
             <div>
               <p className="mb-2 text-xs font-black text-slate-700">5-1. 제휴기사 견적</p>
               <div className="space-y-3">
-                {detail.member_quotes.map((q) => (
+                {memberQuotes.map((q) => (
                   <QuoteCardMember
                     key={q.id}
                     quote={q}
@@ -783,7 +871,7 @@ export function ApplicationDetailMatchedPanel({
             <div>
               <p className="mb-2 text-xs font-black text-slate-700">5-2. 일반기사 견적</p>
               <div className="space-y-3">
-                {detail.guest_quotes.map((q) => (
+                {guestQuotes.map((q) => (
                   <QuoteCardGuest
                     key={q.id}
                     quote={q}
@@ -803,6 +891,7 @@ export function ApplicationDetailMatchedPanel({
               </div>
             </div>
           </div>
+          )
         ) : null}
       </SectionCard>
 
@@ -812,41 +901,44 @@ export function ApplicationDetailMatchedPanel({
           onClick={() => setSmsLogOpen(true)}
           className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-black"
         >
-          문자발송 로그 보기 ({detail.sms_logs.length}건)
+          문자발송 로그 보기
+          {smsLogs ? ` (${smsLogs.length}건)` : ""}
         </button>
       </SectionCard>
 
-      {isQuoteDebugEnabled() ? (
+      {isQuoteDebugEnabled() && debugRaw ? (
         <SectionCard title="디버그 RAW">
           <pre className="max-h-64 overflow-auto text-[10px]">
-            {JSON.stringify(detail, null, 2)}
+            {JSON.stringify(debugRaw, null, 2)}
           </pre>
         </SectionCard>
       ) : null}
 
       <ModalShell title="후원업체 정보" open={sponsorInfoOpen} onClose={() => setSponsorInfoOpen(false)}>
-        {detail.sponsor ? (
+        {loadingSponsor ? (
+          <p className="text-sm text-slate-500">불러오는 중…</p>
+        ) : sponsorDetail ? (
           <InfoGrid
             items={[
-              { label: "업체명", value: detail.sponsor.sponsor_company_name },
-              { label: "지원단계", value: detail.sponsor.support_stage_badge },
-              { label: "지원종류", value: detail.sponsor.support_kind || "—" },
-              { label: "지원조건", value: detail.sponsor.support_condition || "—" },
-              { label: "지원유형", value: detail.sponsor.support_type || "—" },
+              { label: "업체명", value: sponsorDetail.sponsor_company_name },
+              { label: "지원단계", value: sponsorDetail.support_stage_badge },
+              { label: "지원종류", value: sponsorDetail.support_kind || "—" },
+              { label: "지원조건", value: sponsorDetail.support_condition || "—" },
+              { label: "지원유형", value: sponsorDetail.support_type || "—" },
               {
                 label: "예상 지원금",
-                value: formatAdminWon(detail.sponsor.estimated_support_amount),
+                value: formatAdminWon(sponsorDetail.estimated_support_amount),
               },
               {
                 label: "확정 지원금",
-                value: formatAdminWon(detail.sponsor.approved_support_amount),
+                value: formatAdminWon(sponsorDetail.approved_support_amount),
               },
               {
                 label: "확정 지원금 결정일시",
-                value: formatAdminCreatedAt(detail.sponsor.approved_at || null),
+                value: formatAdminCreatedAt(sponsorDetail.approved_at || null),
               },
-              { label: "담당자", value: detail.sponsor.assigned_staff_name || "—" },
-              { label: "담당자 전화", value: detail.sponsor.assigned_staff_phone || "—" },
+              { label: "담당자", value: sponsorDetail.assigned_staff_name || "—" },
+              { label: "담당자 전화", value: sponsorDetail.assigned_staff_phone || "—" },
             ]}
           />
         ) : (
@@ -855,11 +947,14 @@ export function ApplicationDetailMatchedPanel({
       </ModalShell>
 
       <ModalShell title="문자발송 로그" open={smsLogOpen} onClose={() => setSmsLogOpen(false)}>
+        {loadingSms ? (
+          <p className="text-sm text-slate-500">불러오는 중…</p>
+        ) : (
         <ul className="max-h-80 space-y-2 overflow-y-auto">
-          {detail.sms_logs.length === 0 ? (
+          {!smsLogs || smsLogs.length === 0 ? (
             <li className="text-sm text-slate-500">로그 없음</li>
           ) : (
-            detail.sms_logs.map((log, i) => (
+            smsLogs.map((log, i) => (
               <li key={`${log.sent_at}-${i}`} className="rounded-lg border border-slate-200 p-2 text-xs">
                 <p className="font-bold">{log.type}</p>
                 <p>
@@ -873,6 +968,7 @@ export function ApplicationDetailMatchedPanel({
             ))
           )}
         </ul>
+        )}
       </ModalShell>
 
       <ModalShell

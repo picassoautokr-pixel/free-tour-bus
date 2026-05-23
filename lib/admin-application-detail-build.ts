@@ -124,6 +124,35 @@ export type AdminApplicationDetailPayload = {
   quote_summary: AdminQuoteSummary;
 };
 
+/** 기본정보 API — 신청·단계·매칭기사만 */
+export type AdminApplicationDetailBasicPayload = {
+  application: Record<string, unknown>;
+  matched_driver: AdminMatchedDriver | null;
+  sponsor_stage: {
+    support_stage_badge: "지원검토" | "지원확정" | "없음";
+    sponsor_confirmed: boolean;
+    has_sponsor: boolean;
+  };
+};
+
+export type AdminApplicationDetailQuotesPayload = {
+  member_quotes: AdminMemberQuoteCard[];
+  guest_quotes: AdminGuestQuoteCard[];
+  quote_summary: AdminQuoteSummary;
+};
+
+export function stripMemberQuoteForClient(
+  card: AdminMemberQuoteCard,
+  includeDebug: boolean,
+): AdminMemberQuoteCard {
+  if (includeDebug) return card;
+  return {
+    ...card,
+    support_breakdown: null,
+    support_debug: null,
+  };
+}
+
 function parseInteger(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
   if (typeof value === "string" && value.trim() !== "") {
@@ -138,7 +167,7 @@ function average(nums: number[]): number | null {
   return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
 }
 
-function buildMemberQuoteCard(
+export function buildMemberQuoteCard(
   quote: Record<string, unknown>,
   finalQuoteId: string,
   sponsorConfirmed: boolean,
@@ -180,7 +209,7 @@ function buildMemberQuoteCard(
   };
 }
 
-function buildGuestQuoteCard(
+export function buildGuestQuoteCard(
   quote: Record<string, unknown>,
   finalQuoteId: string,
   finalSource: string,
@@ -202,7 +231,7 @@ function buildGuestQuoteCard(
   };
 }
 
-function pickPrimarySponsor(
+export function pickPrimarySponsor(
   preapprovals: Record<string, unknown>[],
 ): AdminSponsorDetail | null {
   if (preapprovals.length === 0) return null;
@@ -229,7 +258,7 @@ function pickPrimarySponsor(
   };
 }
 
-function buildMatchedDriver(
+export function buildMatchedDriver(
   finalQuoteId: string,
   finalSource: string,
   memberQuotes: AdminMemberQuoteCard[],

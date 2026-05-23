@@ -63,6 +63,8 @@ type ApplicationDetail = {
   file_name: string;
   admin_memo: string;
   status: string;
+  final_selected_quote_id: string;
+  quote_status: string;
 };
 
 type DriverQuoteDetail = {
@@ -587,6 +589,8 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
       file_name: safeText(r.file_name, ""),
       admin_memo: safeText(r.admin_memo, ""),
       status: safeText(r.status, ""),
+      final_selected_quote_id: safeText(r.final_selected_quote_id, ""),
+      quote_status: safeText(r.quote_status, ""),
     };
   });
 }
@@ -2060,35 +2064,9 @@ function DetailSlidePanel({
   onOpenSms: (row: ApplicationDetail) => void;
   onApplicationHidden?: () => void;
 }) {
-  const [useMatchedLayout, setUseMatchedLayout] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (!open || row == null) {
-      setUseMatchedLayout(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/admin/driver-quotes?application_id=${encodeURIComponent(row.id)}`,
-          { credentials: "same-origin" },
-        );
-        const json = (await res.json()) as {
-          detail?: { application?: Record<string, unknown> };
-          application?: { final_selected_quote_id?: string };
-        };
-        if (cancelled) return;
-        const lifecycle = json.detail?.application ?? json.application ?? {};
-        setUseMatchedLayout(isApplicationMatchCompleted(lifecycle));
-      } catch {
-        if (!cancelled) setUseMatchedLayout(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, row?.id]);
+  const useMatchedLayout = isApplicationMatchCompleted({
+    final_selected_quote_id: row?.final_selected_quote_id ?? "",
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -2189,13 +2167,7 @@ function DetailSlidePanel({
             문자 발송
           </button>
 
-          {useMatchedLayout === null ? (
-            <p className="py-6 text-center text-sm font-semibold text-slate-500">
-              상세 정보 확인 중…
-            </p>
-          ) : null}
-
-          {useMatchedLayout === true ? (
+          {useMatchedLayout ? (
             <ApplicationDetailMatchedPanel
               row={row}
               onOpenSms={onOpenSms}
@@ -2212,9 +2184,7 @@ function DetailSlidePanel({
                 </details>
               }
             />
-          ) : null}
-
-          {useMatchedLayout === false ? (
+          ) : (
           <>
           <dl>
             <DetailField label="접수번호">
@@ -2434,7 +2404,7 @@ function DetailSlidePanel({
             }
           />
           </>
-          ) : null}
+          )}
         </div>
       </aside>
     </>
