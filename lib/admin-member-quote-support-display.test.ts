@@ -60,6 +60,7 @@ test("confirmed display: customer derived, not total fallback", () => {
   });
 
   const byLabel = Object.fromEntries(display.rows.map((r) => [r.label, r.value]));
+  assert.equal(byLabel["일반견적가"], 500_000);
   assert.equal(byLabel["확정 지원금"], 250_000);
   assert.equal(byLabel["고객 확정 지원금"], 200_000);
   assert.equal(byLabel["확정 연장 지원금"], 0);

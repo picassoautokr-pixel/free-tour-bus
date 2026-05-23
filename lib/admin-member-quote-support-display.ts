@@ -123,7 +123,6 @@ function resolveDiscountAppliedPrice(
     ["quote.support_discount_applied_price", parseInteger(ctx.quote.support_discount_applied_price)],
     ["quote.final_member_price", parseInteger(ctx.quote.final_member_price)],
     ["quote.sponsor_discounted_price", parseInteger(ctx.quote.sponsor_discounted_price)],
-    ["application.selected_price", parseInteger(ctx.application.selected_price)],
   ];
   for (const [source, value] of chain) {
     if (value != null) return { value, source };
@@ -190,10 +189,14 @@ export function buildAdminMemberQuoteSupportDisplay(
         ? Math.max(normalPrice - customerConfirmed - amountOrZero(extensionRaw), 0)
         : null);
 
+    const extensionRound = parseInteger(ctx.application.extension_round) ?? 0;
+
     return {
       rows: [
+        { label: "일반견적가", value: rowValue(normalPrice) },
         { label: "확정 지원금", value: rowValue(confirmedTotal) },
         { label: "고객 확정 지원금", value: rowValue(customerConfirmed) },
+        { label: "연장회차", value: extensionRound },
         { label: "확정 연장 지원금", value: amountOrZero(extensionRaw) },
         { label: "지원금 할인 적용가", value: rowValue(discountResolvedFinal) },
       ],
@@ -248,10 +251,14 @@ export function buildAdminMemberQuoteSupportDisplay(
         })
       : null);
 
+  const extensionRound = parseInteger(ctx.application.extension_round) ?? 0;
+
   return {
     rows: [
+      { label: "일반견적가", value: rowValue(normalPrice) },
       { label: "예상 지원금", value: rowValue(plannedTotal) },
       { label: "고객 예상 지원금", value: rowValue(customerPlannedResolved) },
+      { label: "연장회차", value: extensionRound },
       { label: "예상 연장 지원금", value: amountOrZero(extensionPlanned) },
       { label: "지원금 할인 예상가", value: rowValue(discountPlanned) },
     ],

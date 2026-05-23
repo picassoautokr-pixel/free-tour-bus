@@ -18,6 +18,8 @@ export function sanitizeOperationalError(
 ): string {
   const trimmed = message.trim();
   if (trimmed === "") return fallback;
+  if (trimmed === fallback) return fallback;
+  if (trimmed.startsWith(`${fallback}\n`)) return trimmed;
   if (isInternalDbError(trimmed)) {
     return isQuoteDebugEnabled() ? `${fallback}\n${trimmed}` : fallback;
   }

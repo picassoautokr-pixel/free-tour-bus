@@ -3,6 +3,7 @@ import {
   resolveApplicationApprovedSupportTotal,
   resolveApplicationEstimatedSupportTotal,
 } from "@/lib/application-approved-support";
+import { resolveAdminSelectedQuoteDisplay } from "@/lib/admin-selected-quote-price";
 import { isSponsorStageConfirmed, resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
 import { SETTLEMENT_TYPE_LABELS } from "@/lib/support-calculation";
 import { safeText } from "@/lib/sponsor";
@@ -209,7 +210,7 @@ export function buildMemberQuoteCard(
       sponsor != null ||
       sponsorConfirmed ||
       breakdown != null ||
-      supportDisplay.rows.some((r) => r.value != null),
+      supportDisplay.rows.length > 0,
     support_breakdown: breakdown,
     support_debug: {
       ...supportDisplay.debug,
@@ -273,6 +274,7 @@ export function buildMatchedDriver(
   memberQuotes: AdminMemberQuoteCard[],
   guestQuotes: AdminGuestQuoteCard[],
   application: Record<string, unknown>,
+  sponsorConfirmed = false,
 ): AdminMatchedDriver | null {
   if (!finalQuoteId) return null;
 
@@ -293,17 +295,19 @@ export function buildMatchedDriver(
 
   const mq = memberQuotes.find((q) => q.id === finalQuoteId);
   if (!mq) return null;
+  const selected = resolveAdminSelectedQuoteDisplay({
+    application,
+    memberQuote: mq,
+    sponsorConfirmed,
+  });
   return {
     source: "member",
     company_name: mq.company_name,
     driver_name: mq.driver_name,
     phone: mq.phone,
     quote_id: mq.id,
-    selected_price:
-      parseInteger(application.selected_price) ??
-      mq.support_rows.find((r) => r.label.includes("할인"))?.value ??
-      mq.price,
-    selected_price_label: safeText(application.selected_price_label, "지원금 할인 적용가"),
+    selected_price: selected.selected_price,
+    selected_price_label: selected.selected_price_label,
     badge: "제휴기사",
   };
 }
@@ -406,7 +410,14 @@ export function buildAdminApplicationDetailPayload(params: {
 
   return {
     application,
-    matched_driver: buildMatchedDriver(finalQuoteId, finalSource, member_quotes, guest_quotes, application),
+    matched_driver: buildMatchedDriver(
+      finalQuoteId,
+      finalSource,
+      member_quotes,
+      guest_quotes,
+      application,
+      sponsorConfirmed,
+    ),
     member_quotes,
     guest_quotes,
     sponsor,

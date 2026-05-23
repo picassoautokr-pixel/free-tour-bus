@@ -112,8 +112,10 @@ async function loadApplicationRow(
 
 async function loadMatchedDriverOnly(
   admin: SupabaseClient,
+  applicationId: string,
   application: Record<string, unknown>,
   sponsorConfirmed: boolean,
+  sponsor: AdminSponsorDetail | null,
 ): Promise<ReturnType<typeof buildMatchedDriver>> {
   const finalId = safeText(application.final_selected_quote_id);
   if (!finalId) return null;
@@ -184,8 +186,8 @@ async function loadMatchedDriverOnly(
     ...supportFields,
     price: supportFields.price,
   };
-  const card = buildMemberQuoteCard(row, finalId, sponsorConfirmed, application, null);
-  return buildMatchedDriver(finalId, "member", [card], [], application);
+  const card = buildMemberQuoteCard(row, finalId, sponsorConfirmed, application, sponsor);
+  return buildMatchedDriver(finalId, "member", [card], [], application, sponsorConfirmed);
 }
 
 export async function fetchAdminDetailBasic(
@@ -230,7 +232,16 @@ export async function fetchAdminDetailBasic(
     estimated_support_amount: resolveApplicationEstimatedSupportTotal(application),
   };
 
-  const matched_driver = await loadMatchedDriverOnly(admin, application, sponsorConfirmed);
+  const sponsorQuick = await fetchAdminDetailSponsor(admin, applicationId);
+  const sponsorConfirmedResolved =
+    sponsorConfirmed || (sponsorQuick?.sponsor_confirmed ?? false);
+  const matched_driver = await loadMatchedDriverOnly(
+    admin,
+    applicationId,
+    application,
+    sponsorConfirmedResolved,
+    sponsorQuick,
+  );
 
   return {
     application: applicationOut,

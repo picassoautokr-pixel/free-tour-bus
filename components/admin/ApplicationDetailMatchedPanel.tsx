@@ -186,21 +186,23 @@ function QuoteSupportDebugBlock({ debug }: { debug: AdminMemberQuoteDebug }) {
 
 function QuoteCardMember({
   quote,
+  showSupportDetails = true,
   onEdit,
   onSms,
   onSponsorInfo,
 }: {
   quote: AdminMemberQuoteCard;
+  showSupportDetails?: boolean;
   onEdit: () => void;
   onSms: () => void;
   onSponsorInfo: () => void;
 }) {
   const debugOn = isQuoteDebugEnabled();
   const showSupportPricing =
-    quote.sponsor_quote_enabled ||
-    quote.sponsor_stage_badge === "지원검토" ||
-    quote.sponsor_stage_badge === "지원확정" ||
-    quote.support_rows.length > 0;
+    showSupportDetails &&
+    (quote.sponsor_stage_badge === "지원검토" ||
+      quote.sponsor_stage_badge === "지원확정" ||
+      quote.support_rows.length > 0);
   return (
     <article
       className={`rounded-xl border p-3 ${
@@ -227,10 +229,6 @@ function QuoteCardMember({
       </div>
       <p className="mt-2 text-sm font-semibold text-slate-800">{quote.phone}</p>
       <dl className="mt-2 grid gap-1 text-xs">
-        <div className="flex justify-between gap-2">
-          <dt className="text-slate-500">일반견적가</dt>
-          <dd className="font-bold">{formatAdminWon(quote.price)}</dd>
-        </div>
         {showSupportPricing
           ? quote.support_rows.map((row) => (
               <div key={row.label} className="flex justify-between gap-2">
@@ -859,6 +857,7 @@ export function ApplicationDetailMatchedPanel({
                   <QuoteCardMember
                     key={q.id}
                     quote={q}
+                    showSupportDetails={hasSponsor}
                     onEdit={() => {
                       setEditQuoteKind("member");
                       setEditQuote(q);
