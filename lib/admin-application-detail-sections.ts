@@ -23,8 +23,13 @@ import {
 } from "@/lib/quote-auction";
 import {
   resolveApplicationApprovedSupportTotal,
+  resolveApplicationEstimatedSupportTotal,
 } from "@/lib/application-approved-support";
-import { DRIVER_QUOTE_ADMIN_DETAIL_SELECT } from "@/lib/driver-quote-select";
+import {
+  DRIVER_QUOTE_MINIMAL_SELECT,
+  DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
+} from "@/lib/driver-quote-select";
+import { resolveSettlementType } from "@/lib/support-calculation";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { safeText } from "@/lib/sponsor";
 
@@ -47,15 +52,41 @@ function isMissingColumnError(error: { message?: string; code?: string } | null 
   );
 }
 
-const APPLICATION_BASIC_SELECT = `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, is_hidden, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, target_normal_price, target_member_price, quote_deadline_at, extension_round`;
-
-const MEMBER_QUOTE_SELECT = DRIVER_QUOTE_ADMIN_DETAIL_SELECT;
+const APPLICATION_BASIC_SELECT = `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, is_hidden, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, target_normal_price, target_member_price, quote_deadline_at, extension_round, support_breakdown_snapshot`;
 
 const GUEST_QUOTE_SELECT =
   "id, created_at, application_id, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status";
 
 const PREAPPROVAL_SELECT =
   "id, status, sponsor_company_id, sponsor_rule_id, estimated_support_amount, approved_support_amount, approved_at, support_kind, support_condition, support_type, assigned_staff_id";
+
+async function loadMemberQuotesRows(
+  admin: SupabaseClient,
+  applicationId: string,
+): Promise<Record<string, unknown>[]> {
+  const primary = await admin
+    .from("driver_quotes")
+    .select(DRIVER_QUOTE_MINIMAL_SELECT)
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
+
+  if (
+    primary.error &&
+    isMissingColumnError(primary.error) &&
+    /support_breakdown/i.test(primary.error.message)
+  ) {
+    const fallback = await admin
+      .from("driver_quotes")
+      .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    if (fallback.error) throw new Error(fallback.error.message);
+    return Array.isArray(fallback.data) ? (fallback.data as Record<string, unknown>[]) : [];
+  }
+
+  if (primary.error) throw new Error(primary.error.message);
+  return Array.isArray(primary.data) ? (primary.data as Record<string, unknown>[]) : [];
+}
 
 async function loadApplicationRow(
   admin: SupabaseClient,
@@ -99,12 +130,24 @@ async function loadMatchedDriverOnly(
     return buildMatchedDriver(finalId, source, [], [card], application);
   }
 
-  const { data: quoteRaw, error: quoteErr } = await admin
+  let quoteRes = await admin
     .from("driver_quotes")
-    .select(MEMBER_QUOTE_SELECT)
+    .select(DRIVER_QUOTE_MINIMAL_SELECT)
     .eq("id", finalId)
     .maybeSingle();
-  if (quoteErr || !quoteRaw) return null;
+  if (
+    quoteRes.error &&
+    isMissingColumnError(quoteRes.error) &&
+    /support_breakdown/i.test(quoteRes.error.message)
+  ) {
+    quoteRes = await admin
+      .from("driver_quotes")
+      .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
+      .eq("id", finalId)
+      .maybeSingle();
+  }
+  if (quoteRes.error || !quoteRes.data) return null;
+  const quoteRaw = quoteRes.data;
 
   const quote = quoteRaw as Record<string, unknown>;
   const partnerId = safeText(quote.partner_driver_id);
@@ -180,6 +223,7 @@ export async function fetchAdminDetailBasic(
     },
     sponsor_approved_support_amount: resolveApplicationApprovedSupportTotal(application),
     approved_support_amount: resolveApplicationApprovedSupportTotal(application),
+    estimated_support_amount: resolveApplicationEstimatedSupportTotal(application),
   };
 
   const matched_driver = await loadMatchedDriverOnly(admin, application, sponsorConfirmed);
@@ -204,12 +248,8 @@ async function loadMemberAndGuestQuotes(
   memberRows: Record<string, unknown>[];
   guestRows: Record<string, unknown>[];
 }> {
-  const [memberRes, guestRes] = await Promise.all([
-    admin
-      .from("driver_quotes")
-      .select(MEMBER_QUOTE_SELECT)
-      .eq("application_id", applicationId)
-      .order("created_at", { ascending: false }),
+  const [memberRaw, guestRes] = await Promise.all([
+    loadMemberQuotesRows(admin, applicationId),
     admin
       .from("guest_driver_quotes")
       .select(GUEST_QUOTE_SELECT)
@@ -217,10 +257,7 @@ async function loadMemberAndGuestQuotes(
       .order("created_at", { ascending: false }),
   ]);
 
-  if (memberRes.error) throw new Error(memberRes.error.message);
   if (guestRes.error) throw new Error(guestRes.error.message);
-
-  const memberRaw = Array.isArray(memberRes.data) ? memberRes.data : [];
   const partnerIds = Array.from(
     new Set(
       memberRaw
@@ -253,13 +290,16 @@ async function loadMemberAndGuestQuotes(
     const supportFields = mapQuoteWithSupport(row, {
       applicationApprovedSupportTotal: appApprovedTotal,
     });
+    const breakdown = supportFields.support_breakdown;
     return {
       ...row,
       company_name: partner?.company_name ?? "—",
       manager_name: partner?.manager_name ?? "—",
       phone: partner?.phone ?? "—",
       price: supportFields.price,
-      support_settlement_type: safeText(row.support_settlement_type, "client_priority"),
+      support_settlement_type: resolveSettlementType(
+        row.support_settlement_type ?? breakdown?.settlementType,
+      ),
       sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
       support_breakdown: supportFields.support_breakdown,
       total_planned_support: supportFields.total_planned_support,

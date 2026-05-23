@@ -11,7 +11,7 @@ export function isInternalDbError(message: string): boolean {
   return INTERNAL_DB_ERROR.test(message);
 }
 
-/** Postgres/스키마 오류는 DEBUG에서만 원문 노출 */
+/** Postgres/스키마 오류는 운영 메시지로 대체, DEBUG에서는 원문을 함께 표시 */
 export function sanitizeOperationalError(
   message: string,
   fallback = "견적 데이터를 불러오는 중 문제가 발생했습니다.",
@@ -19,7 +19,9 @@ export function sanitizeOperationalError(
   const trimmed = message.trim();
   if (trimmed === "") return fallback;
   if (isInternalDbError(trimmed)) {
-    return isQuoteDebugEnabled() ? trimmed : fallback;
+    return isQuoteDebugEnabled() ? `${fallback}\n${trimmed}` : fallback;
   }
-  return trimmed;
+  return isQuoteDebugEnabled() && trimmed !== fallback
+    ? `${fallback}\n${trimmed}`
+    : trimmed;
 }

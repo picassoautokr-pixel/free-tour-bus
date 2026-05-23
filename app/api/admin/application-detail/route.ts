@@ -86,9 +86,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, section: "debug", debug });
   } catch (e) {
     const raw = e instanceof Error ? e.message : "상세 조회에 실패했습니다.";
-    const error = sanitizeOperationalError(raw);
+    const error = sanitizeOperationalError(
+      raw,
+      "견적 데이터를 불러오는 중 문제가 발생했습니다.",
+    );
     return NextResponse.json(
-      serverDebugEnabled ? { error, debug_error: raw } : { error },
+      {
+        error,
+        ...(serverDebugEnabled || process.env.NODE_ENV !== "production"
+          ? { debug_error: raw }
+          : {}),
+      },
       { status: 502 },
     );
   }

@@ -366,7 +366,6 @@ export function ApplicationDetailMatchedPanel({
   );
   const [smsLogs, setSmsLogs] = useState<AdminSmsLog[] | null>(null);
   const [debugRaw, setDebugRaw] = useState<unknown>(null);
-  const [debugError, setDebugError] = useState<string | null>(null);
   const [loadingBasic, setLoadingBasic] = useState(true);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [loadingSponsor, setLoadingSponsor] = useState(false);
@@ -375,7 +374,6 @@ export function ApplicationDetailMatchedPanel({
 
   const reportError = useCallback((e: unknown, fallback: string) => {
     const raw = e instanceof Error ? e.message : fallback;
-    setDebugError(isQuoteDebugEnabled() ? raw : null);
     setError(sanitizeOperationalError(raw, fallback));
   }, []);
   const [quotesOpen, setQuotesOpen] = useState(false);
@@ -618,13 +616,8 @@ export function ApplicationDetailMatchedPanel({
       </div>
 
       {error ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+        <p className="whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
           {error}
-        </p>
-      ) : null}
-      {debugError && isQuoteDebugEnabled() ? (
-        <p className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-[10px] text-slate-800">
-          DEBUG: {debugError}
         </p>
       ) : null}
 

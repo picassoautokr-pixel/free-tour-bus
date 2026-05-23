@@ -37,10 +37,12 @@ async function fetchSection<T>(
   };
   if (!res.ok) {
     const raw =
-      (isQuoteDebugEnabled() && typeof json.debug_error === "string"
+      typeof json.debug_error === "string"
         ? json.debug_error
-        : json.error) ?? "상세 조회에 실패했습니다.";
-    throw new Error(sanitizeOperationalError(raw));
+        : typeof json.error === "string"
+          ? json.error
+          : "상세 조회에 실패했습니다.";
+    throw new Error(sanitizeOperationalError(raw, "견적 데이터를 불러오는 중 문제가 발생했습니다."));
   }
   return parse(json);
 }

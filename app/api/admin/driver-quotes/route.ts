@@ -12,9 +12,8 @@ import { buildAdminApplicationDetailPayload } from "@/lib/admin-application-deta
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import {
-  DRIVER_QUOTE_ROW_SELECT,
-  DRIVER_QUOTE_ROW_SELECT_LEGACY,
-  DRIVER_QUOTE_ROW_SELECT_MINIMAL,
+  DRIVER_QUOTE_MINIMAL_SELECT,
+  DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
 } from "@/lib/driver-quote-select";
 import { sanitizeOperationalError } from "@/lib/operational-error-message";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -137,29 +136,14 @@ export async function GET(request: Request) {
     error: { message: string; code?: string } | null;
   } = await admin
     .from("driver_quotes")
-    .select(DRIVER_QUOTE_ROW_SELECT)
+    .select(DRIVER_QUOTE_MINIMAL_SELECT)
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
-  if (isMissingColumnError(quotesResult.error)) {
+  const quotesErrMsg = quotesResult.error?.message ?? "";
+  if (isMissingColumnError(quotesResult.error) && /support_breakdown/i.test(quotesErrMsg)) {
     quotesResult = await admin
       .from("driver_quotes")
-      .select(DRIVER_QUOTE_ROW_SELECT_LEGACY)
-      .eq("application_id", applicationId)
-      .order("created_at", { ascending: false });
-  }
-  if (isMissingColumnError(quotesResult.error)) {
-    quotesResult = await admin
-      .from("driver_quotes")
-      .select(DRIVER_QUOTE_ROW_SELECT_MINIMAL)
-      .eq("application_id", applicationId)
-      .order("created_at", { ascending: false });
-  }
-  if (isMissingColumnError(quotesResult.error)) {
-    quotesResult = await admin
-      .from("driver_quotes")
-      .select(
-        "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status",
-      )
+      .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
       .eq("application_id", applicationId)
       .order("created_at", { ascending: false });
   }

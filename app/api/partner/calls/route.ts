@@ -4,9 +4,8 @@ import { ensureContractNumber } from "@/lib/contract-deposit";
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
 import {
-  DRIVER_QUOTE_ROW_SELECT,
-  DRIVER_QUOTE_ROW_SELECT_LEGACY,
-  DRIVER_QUOTE_ROW_SELECT_MINIMAL,
+  DRIVER_QUOTE_MINIMAL_SELECT,
+  DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
 } from "@/lib/driver-quote-select";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
@@ -394,32 +393,15 @@ export async function GET() {
       error: { message: string; code?: string } | null;
     } = await admin
       .from("driver_quotes")
-      .select(DRIVER_QUOTE_ROW_SELECT)
+      .select(DRIVER_QUOTE_MINIMAL_SELECT)
       .in("application_id", ids)
       .or(orFilter)
       .order("created_at", { ascending: false });
-    if (isMissingColumnError(memberQuotesResult.error)) {
+    const memberQuotesErrMsg = memberQuotesResult.error?.message ?? "";
+    if (isMissingColumnError(memberQuotesResult.error) && /support_breakdown/i.test(memberQuotesErrMsg)) {
       memberQuotesResult = await admin
         .from("driver_quotes")
-        .select(DRIVER_QUOTE_ROW_SELECT_LEGACY)
-        .in("application_id", ids)
-        .or(orFilter)
-        .order("created_at", { ascending: false });
-    }
-    if (isMissingColumnError(memberQuotesResult.error)) {
-      memberQuotesResult = await admin
-        .from("driver_quotes")
-        .select(DRIVER_QUOTE_ROW_SELECT_MINIMAL)
-        .in("application_id", ids)
-        .or(orFilter)
-        .order("created_at", { ascending: false });
-    }
-    if (isMissingColumnError(memberQuotesResult.error)) {
-      memberQuotesResult = await admin
-        .from("driver_quotes")
-        .select(
-          "id, application_id, price, vehicle_type, available_time, message, status, created_at",
-        )
+        .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
         .in("application_id", ids)
         .or(orFilter)
         .order("created_at", { ascending: false });

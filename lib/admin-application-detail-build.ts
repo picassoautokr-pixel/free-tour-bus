@@ -1,4 +1,8 @@
 import { buildAdminMemberQuoteSupportDisplay } from "@/lib/admin-member-quote-support-display";
+import {
+  resolveApplicationApprovedSupportTotal,
+  resolveApplicationEstimatedSupportTotal,
+} from "@/lib/application-approved-support";
 import { isSponsorStageConfirmed, resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
 import { SETTLEMENT_TYPE_LABELS } from "@/lib/support-calculation";
 import { safeText } from "@/lib/sponsor";
@@ -311,6 +315,9 @@ export function buildAdminApplicationDetailPayload(params: {
   const lifecycle = params.applicationLifecycle ?? {};
   const list = params.listRow ?? {};
   const appRaw = params.applicationRow ?? {};
+  const sponsor = pickPrimarySponsor(params.preapprovalRows);
+  const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
+  const appMerged = { ...appRaw, ...lifecycle };
 
   const application: Record<string, unknown> = {
     ...appRaw,
@@ -350,13 +357,9 @@ export function buildAdminApplicationDetailPayload(params: {
     selected_price_type: safeText(appRaw.selected_price_type),
     selected_price_label: safeText(appRaw.selected_price_label),
     selected_price: parseInteger(appRaw.selected_price),
-    sponsor_approved_support_amount:
-      parseInteger(lifecycle.sponsor_approved_support_amount) ??
-      parseInteger(appRaw.sponsor_approved_support_amount),
-    approved_support_amount:
-      parseInteger(lifecycle.sponsor_approved_support_amount) ??
-      parseInteger(appRaw.sponsor_approved_support_amount),
-    estimated_support_amount: parseInteger(appRaw.estimated_support_amount),
+    sponsor_approved_support_amount: resolveApplicationApprovedSupportTotal(appMerged, sponsor),
+    approved_support_amount: resolveApplicationApprovedSupportTotal(appMerged, sponsor),
+    estimated_support_amount: resolveApplicationEstimatedSupportTotal(appMerged, sponsor),
     final_selected_guest_quote_id:
       safeText(appRaw.final_selected_guest_quote_id) ||
       (safeText(lifecycle.final_selected_quote_source) === "guest"
@@ -366,9 +369,6 @@ export function buildAdminApplicationDetailPayload(params: {
 
   const finalQuoteId = safeText(lifecycle.final_selected_quote_id);
   const finalSource = safeText(lifecycle.final_selected_quote_source) === "guest" ? "guest" : "member";
-
-  const sponsor = pickPrimarySponsor(params.preapprovalRows);
-  const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
 
   if (application.estimated_support_amount == null && sponsor?.estimated_support_amount != null) {
     application.estimated_support_amount = sponsor.estimated_support_amount;

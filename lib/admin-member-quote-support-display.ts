@@ -70,7 +70,6 @@ export function resolveConfirmedTotalSupport(ctx: AdminMemberQuoteSupportContext
     ["support_breakdown.confirmed_total_support", breakdownField(breakdown, "confirmed_total_support", "totalConfirmedSupport")],
     ["quote.confirmed_total_support", parseInteger(ctx.quote.confirmed_total_support)],
     ["quote.total_confirmed_support", parseInteger(ctx.quote.total_confirmed_support)],
-    ["quote.approved_support_amount", parseInteger(ctx.quote.approved_support_amount)],
     ["application.approved_support_amount", parseInteger(ctx.application.approved_support_amount)],
     ["application.sponsor_approved_support_amount", parseInteger(ctx.application.sponsor_approved_support_amount)],
     ["sponsor.approved_support_amount", ctx.sponsor?.approved_support_amount ?? null],

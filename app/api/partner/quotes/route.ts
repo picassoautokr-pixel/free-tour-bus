@@ -12,7 +12,10 @@ import {
   buildPlannedDbPayload,
   computeConfirmedFromPlanned,
 } from "@/lib/quote-support-snapshot";
-import { DRIVER_QUOTE_ROW_SELECT, DRIVER_QUOTE_ROW_SELECT_LEGACY } from "@/lib/driver-quote-select";
+import {
+  DRIVER_QUOTE_MINIMAL_SELECT,
+  DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
+} from "@/lib/driver-quote-select";
 import { freezeQuotePlannedSupportBreakdown } from "@/lib/support-breakdown-snapshot";
 import { resolveSettlementType } from "@/lib/support-calculation";
 import type { SponsorRuleRecord } from "@/lib/sponsor-rule-helpers";
@@ -412,7 +415,7 @@ export async function POST(request: Request) {
   const insertResult = await admin
     .from("driver_quotes")
     .insert(insertPayload)
-    .select(DRIVER_QUOTE_ROW_SELECT)
+    .select(DRIVER_QUOTE_MINIMAL_SELECT)
     .single();
   let inserted: unknown = insertResult.data;
   let insertError = insertResult.error;
@@ -448,7 +451,7 @@ export async function POST(request: Request) {
     const legacy = await admin
       .from("driver_quotes")
       .insert(legacyPayload)
-      .select(DRIVER_QUOTE_ROW_SELECT_LEGACY)
+      .select(DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN)
       .single();
     inserted = legacy.data;
     insertError = legacy.error;

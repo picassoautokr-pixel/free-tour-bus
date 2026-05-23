@@ -177,35 +177,8 @@ export function buildConfirmedDbPayload(confirmed: ConfirmedSupportSnapshot) {
   };
 }
 
-export const DRIVER_QUOTE_SUPPORT_SELECT = [
-  "id",
-  "price",
-  "support_settlement_type",
-  "sponsor_quote_enabled",
-  "planned_total_support",
-  "planned_customer_support",
-  "planned_driver_support",
-  "planned_discount_price",
-  "planned_final_price",
-  "confirmed_total_support",
-  "confirmed_customer_support",
-  "confirmed_driver_support",
-  "confirmed_discount_price",
-  "confirmed_final_price",
-  "preapproved_support_amount",
-  "estimated_support_amount",
-  "customer_support_amount",
-  "support_discount_amount",
-  "driver_support_amount",
-  "sponsor_support_amount",
-  "approved_support_amount",
-  "member_price",
-  "sponsor_discounted_price",
-  "final_customer_support_amount",
-  "final_driver_support_amount",
-  "final_member_price",
-  "extension_support_amount",
-].join(", ");
+export const DRIVER_QUOTE_SUPPORT_SELECT =
+  "id, price, support_breakdown, support_settlement_type, extension_support_amount, extension_applied";
 
 export function clearConfirmedDbPayload() {
   return {
