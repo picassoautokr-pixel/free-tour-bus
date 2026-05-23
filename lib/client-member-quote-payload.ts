@@ -5,6 +5,9 @@
 import { breakdownFromQuoteRow } from "@/lib/support-breakdown-snapshot";
 import {
   buildQuoteSupportBreakdown,
+  resolveConfirmedCustomerSupportDisplay,
+  resolvePartnerConfirmedSupport,
+  resolveStoredFinalDiscountPrice,
   type BuildQuoteSupportBreakdownOptions,
   type QuoteSupportBreakdown,
   type QuoteSupportInput,
@@ -117,10 +120,7 @@ function resolveConfirmedTotalSupport(
   );
 }
 
-/**
- * 확정 시 고객 확정 지원금 = min(고객 예정, 총 확정)
- * 지원금 할인 적용가 = 일반견적가 - 고객 확정 지원금 - 연장 지원금
- */
+/** 확정 지원금·고객 확정·기사 확정·할인 적용가 — support-calculation 공통 규칙 */
 function computeClientSupportFromRow(
   row: MemberQuoteRow,
   options?: ClientMemberQuoteSupportOptions,
@@ -159,33 +159,56 @@ function computeClientSupportFromRow(
 
   let confirmedCustomerSupport: number | null = null;
   let driverConfirmedSupport: number | null = null;
+  let discountAppliedPrice: number | null = null;
 
   if (isConfirmed) {
-    const storedCustomer = parseIntField(
-      row.confirmed_customer_support ?? row.final_customer_support_amount,
-    );
-    if (storedCustomer > 0) {
-      confirmedCustomerSupport = storedCustomer;
-    } else if (plannedCustomerSupport > 0 && confirmedTotalSupport > 0) {
-      confirmedCustomerSupport = Math.min(plannedCustomerSupport, confirmedTotalSupport);
-    } else if (confirmedTotalSupport > 0) {
-      confirmedCustomerSupport = confirmedTotalSupport;
+    const storedBreakdown = breakdownFromQuoteRow(row as QuoteSupportInput);
+    discountAppliedPrice = resolveStoredFinalDiscountPrice({
+      breakdownFinal: storedBreakdown?.finalDiscountAppliedPrice,
+      breakdownApplied: storedBreakdown?.supportDiscountAppliedPrice,
+      confirmedDiscountPrice: row.confirmed_discount_price,
+      finalDiscountAppliedPrice: row.final_discount_applied_price,
+      supportDiscountAppliedPrice: row.support_discount_applied_price,
+      finalMemberPrice: row.final_member_price,
+      sponsorDiscountedPrice: row.sponsor_discounted_price,
+    });
+
+    const customerResolved = resolveConfirmedCustomerSupportDisplay({
+      breakdownConfirmedCustomer: storedBreakdown?.customerConfirmedSupport,
+      quoteConfirmedCustomer: row.confirmed_customer_support,
+      quoteFinalCustomerSupport: row.final_customer_support_amount,
+      normalPrice,
+      finalDiscountPrice: discountAppliedPrice,
+      confirmedExtensionSupport: extensionSupport,
+    });
+    confirmedCustomerSupport = customerResolved.value;
+
+    if (discountAppliedPrice == null && confirmedCustomerSupport != null && normalPrice > 0) {
+      discountAppliedPrice = Math.max(
+        normalPrice - confirmedCustomerSupport - extensionSupport,
+        0,
+      );
+    }
+    if (confirmedCustomerSupport == null && discountAppliedPrice != null) {
+      confirmedCustomerSupport = resolveConfirmedCustomerSupportDisplay({
+        breakdownConfirmedCustomer: storedBreakdown?.customerConfirmedSupport,
+        quoteConfirmedCustomer: row.confirmed_customer_support as unknown,
+        quoteFinalCustomerSupport: row.final_customer_support_amount as unknown,
+        normalPrice,
+        finalDiscountPrice: discountAppliedPrice,
+        confirmedExtensionSupport: extensionSupport,
+      }).value;
     }
 
-    if (confirmedCustomerSupport != null) {
-      driverConfirmedSupport =
-        confirmedTotalSupport > 0
-          ? Math.max(confirmedTotalSupport - confirmedCustomerSupport, 0)
-          : parseIntField(row.confirmed_driver_support) || null;
-    }
-  }
-
-  let discountAppliedPrice: number | null = null;
-  if (isConfirmed && normalPrice > 0 && confirmedCustomerSupport != null) {
-    discountAppliedPrice = Math.max(
-      normalPrice - confirmedCustomerSupport - extensionSupport,
-      0,
-    );
+    const storedDriver = parseIntField(row.confirmed_driver_support ?? row.final_driver_support_amount);
+    driverConfirmedSupport =
+      storedDriver > 0
+        ? storedDriver
+        : resolvePartnerConfirmedSupport({
+            confirmedTotalSupport: confirmedTotalSupport > 0 ? confirmedTotalSupport : null,
+            confirmedCustomerSupport,
+            confirmedExtensionSupport: extensionSupport,
+          });
   }
 
   return {
@@ -336,15 +359,6 @@ export function applyClientPartnerQuoteApiFields(
     breakdown?.isConfirmed === true ||
     (confirmedTotal != null && confirmedTotal > 0);
 
-  if (
-    isConfirmed &&
-    confirmedCustomer == null &&
-    plannedCustomer != null &&
-    confirmedTotal != null
-  ) {
-    confirmedCustomer = Math.min(plannedCustomer, confirmedTotal);
-  }
-
   let applied =
     quote.final_discount_applied_price ??
     quote.support_discount_applied_price ??
@@ -354,8 +368,31 @@ export function applyClientPartnerQuoteApiFields(
     breakdown?.supportDiscountAppliedPrice ??
     null;
 
-  if (applied == null && isConfirmed && normalPrice != null && confirmedCustomer != null) {
-    applied = Math.max(normalPrice - confirmedCustomer - extension, 0);
+  if (isConfirmed) {
+    const customerResolved = resolveConfirmedCustomerSupportDisplay({
+      breakdownConfirmedCustomer:
+        breakdown?.confirmed_customer_support ?? breakdown?.customerConfirmedSupport,
+      quoteConfirmedCustomer: quote.confirmed_customer_support,
+      quoteFinalCustomerSupport: quote.final_customer_support_amount,
+      normalPrice,
+      finalDiscountPrice: applied,
+      confirmedExtensionSupport: extension,
+    });
+    confirmedCustomer = customerResolved.value;
+    if (applied == null && confirmedCustomer != null && normalPrice != null) {
+      applied = Math.max(normalPrice - confirmedCustomer - extension, 0);
+    }
+    if (confirmedCustomer == null && applied != null && normalPrice != null) {
+      confirmedCustomer = resolveConfirmedCustomerSupportDisplay({
+        breakdownConfirmedCustomer:
+          breakdown?.confirmed_customer_support ?? breakdown?.customerConfirmedSupport,
+        quoteConfirmedCustomer: quote.confirmed_customer_support,
+        quoteFinalCustomerSupport: quote.final_customer_support_amount,
+        normalPrice,
+        finalDiscountPrice: applied,
+        confirmedExtensionSupport: extension,
+      }).value;
+    }
   }
 
   const hydratedBreakdown: ClientSerializedSupportBreakdown | null | undefined = breakdown

@@ -96,6 +96,114 @@ export function parseSupportInteger(value: unknown): number | null {
   return null;
 }
 
+/** 고객 확정 지원금 역산 공식 (클라이언트·파트너·어드민 공통) */
+export const CONFIRMED_CUSTOMER_DERIVE_FORMULA =
+  "normal_price - final_discount_price - confirmed_extension_support";
+
+export type ConfirmedCustomerSupportSource =
+  | "support_breakdown"
+  | "quote_field"
+  | "derived_from_price"
+  | "missing";
+
+/**
+ * 일반견적가 − 지원금 할인 적용가 − 확정 연장 지원금
+ * (confirmed_total_support 로 대체하지 않음)
+ */
+export function deriveCustomerConfirmedSupport(params: {
+  normalPrice: number | null;
+  finalDiscountPrice: number | null;
+  confirmedExtensionSupport?: number | null;
+}): number | null {
+  const normal = params.normalPrice;
+  const discount = params.finalDiscountPrice;
+  if (normal == null || discount == null) return null;
+  const extension = Math.max(0, params.confirmedExtensionSupport ?? 0);
+  const value = normal - discount - extension;
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.trunc(value);
+}
+
+/** 기사 확정 지원금 = 총 확정 − 고객 확정 − 연장 확정 */
+export function resolvePartnerConfirmedSupport(params: {
+  confirmedTotalSupport: number | null;
+  confirmedCustomerSupport: number | null;
+  confirmedExtensionSupport?: number | null;
+}): number | null {
+  const total = params.confirmedTotalSupport;
+  const customer = params.confirmedCustomerSupport;
+  if (total == null || customer == null) return null;
+  const extension = Math.max(0, params.confirmedExtensionSupport ?? 0);
+  return Math.max(Math.trunc(total - customer - extension), 0);
+}
+
+/** 저장된 할인 적용가 필드 우선 (역산용) */
+export function resolveStoredFinalDiscountPrice(input: {
+  breakdownFinal?: unknown;
+  breakdownApplied?: unknown;
+  confirmedDiscountPrice?: unknown;
+  finalDiscountAppliedPrice?: unknown;
+  supportDiscountAppliedPrice?: unknown;
+  finalMemberPrice?: unknown;
+  sponsorDiscountedPrice?: unknown;
+  selectedPrice?: unknown;
+}): number | null {
+  return (
+    parseSupportInteger(input.breakdownFinal) ??
+    parseSupportInteger(input.breakdownApplied) ??
+    parseSupportInteger(input.confirmedDiscountPrice) ??
+    parseSupportInteger(input.finalDiscountAppliedPrice) ??
+    parseSupportInteger(input.supportDiscountAppliedPrice) ??
+    parseSupportInteger(input.finalMemberPrice) ??
+    parseSupportInteger(input.sponsorDiscountedPrice) ??
+    parseSupportInteger(input.selectedPrice)
+  );
+}
+
+/**
+ * 고객 확정 지원금 표시/계산 (A: breakdown·quote 저장값 → B: 가격 역산 → null)
+ * confirmed_total_support 를 고객 지원금으로 쓰지 않음.
+ */
+export function resolveConfirmedCustomerSupportDisplay(params: {
+  breakdownConfirmedCustomer?: number | null;
+  quoteConfirmedCustomer?: unknown;
+  quoteFinalCustomerSupport?: unknown;
+  normalPrice: number | null;
+  finalDiscountPrice: number | null;
+  confirmedExtensionSupport?: number | null;
+}): {
+  value: number | null;
+  source: ConfirmedCustomerSupportSource;
+  formula: string | null;
+} {
+  const fromBreakdown = parseSupportInteger(params.breakdownConfirmedCustomer);
+  if (fromBreakdown != null) {
+    return { value: fromBreakdown, source: "support_breakdown", formula: null };
+  }
+
+  const fromQuote =
+    parseSupportInteger(params.quoteConfirmedCustomer) ??
+    parseSupportInteger(params.quoteFinalCustomerSupport);
+  if (fromQuote != null) {
+    return { value: fromQuote, source: "quote_field", formula: null };
+  }
+
+  const derived = deriveCustomerConfirmedSupport({
+    normalPrice: params.normalPrice,
+    finalDiscountPrice: params.finalDiscountPrice,
+    confirmedExtensionSupport: params.confirmedExtensionSupport,
+  });
+  if (derived != null) {
+    return {
+      value: derived,
+      source: "derived_from_price",
+      formula: CONFIRMED_CUSTOMER_DERIVE_FORMULA,
+    };
+  }
+
+  return { value: null, source: "missing", formula: null };
+}
+
 export function calculateTotalPlannedSupport(params: {
   passengerCount: number;
   supportPerPerson?: number;

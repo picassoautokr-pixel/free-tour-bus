@@ -8,8 +8,11 @@ import {
   calculateTotalPlannedSupport,
   formatSupportAmount,
   formatSupportAmountFromBreakdown,
+  resolveConfirmedCustomerSupportDisplay,
   resolveConfirmedTotalSupport,
+  resolvePartnerConfirmedSupport,
   resolvePlannedSupportSnapshot,
+  deriveCustomerConfirmedSupport,
 } from "./support-calculation";
 
 describe("calculateTotalPlannedSupport", () => {
@@ -203,6 +206,36 @@ describe("formatSupportAmount", () => {
         "final",
       ),
       "미확정",
+    );
+  });
+});
+
+describe("resolveConfirmedCustomerSupportDisplay", () => {
+  it("역산: 500000 - 300000 - 0 = 200000 (총 확정으로 대체하지 않음)", () => {
+    const result = resolveConfirmedCustomerSupportDisplay({
+      breakdownConfirmedCustomer: null,
+      quoteConfirmedCustomer: null,
+      normalPrice: 500_000,
+      finalDiscountPrice: 300_000,
+      confirmedExtensionSupport: 0,
+    });
+    assert.equal(result.value, 200_000);
+    assert.equal(result.source, "derived_from_price");
+    assert.equal(
+      resolvePartnerConfirmedSupport({
+        confirmedTotalSupport: 250_000,
+        confirmedCustomerSupport: 200_000,
+        confirmedExtensionSupport: 0,
+      }),
+      50_000,
+    );
+    assert.equal(
+      deriveCustomerConfirmedSupport({
+        normalPrice: 500_000,
+        finalDiscountPrice: 300_000,
+        confirmedExtensionSupport: 0,
+      }),
+      200_000,
     );
   });
 });

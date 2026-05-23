@@ -2,8 +2,31 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildAdminMemberQuoteSupportDisplay } from "@/lib/admin-member-quote-support-display";
+import {
+  deriveCustomerConfirmedSupport,
+  resolvePartnerConfirmedSupport,
+} from "@/lib/support-calculation";
 
-test("confirmed display falls back to application approved_support_amount", () => {
+test("deriveCustomerConfirmedSupport from normal and discount", () => {
+  assert.equal(
+    deriveCustomerConfirmedSupport({
+      normalPrice: 500_000,
+      finalDiscountPrice: 300_000,
+      confirmedExtensionSupport: 0,
+    }),
+    200_000,
+  );
+  assert.equal(
+    resolvePartnerConfirmedSupport({
+      confirmedTotalSupport: 250_000,
+      confirmedCustomerSupport: 200_000,
+      confirmedExtensionSupport: 0,
+    }),
+    50_000,
+  );
+});
+
+test("confirmed display: customer derived, not total fallback", () => {
   const display = buildAdminMemberQuoteSupportDisplay({
     quote: {
       price: 500_000,
@@ -38,8 +61,10 @@ test("confirmed display falls back to application approved_support_amount", () =
 
   const byLabel = Object.fromEntries(display.rows.map((r) => [r.label, r.value]));
   assert.equal(byLabel["확정 지원금"], 250_000);
-  assert.equal(byLabel["고객 확정 지원금"], 250_000);
+  assert.equal(byLabel["고객 확정 지원금"], 200_000);
   assert.equal(byLabel["확정 연장 지원금"], 0);
+  assert.equal(byLabel["기사 확정 지원금"], 50_000);
   assert.equal(byLabel["지원금 할인 적용가"], 300_000);
-  assert.ok(display.fallbacksUsed.some((s) => s.includes("application.")));
+  assert.equal(display.debug.confirmed_customer_support_source, "derived_from_price");
+  assert.ok(display.fallbacksUsed.some((s) => s.includes("derived_from_price")));
 });

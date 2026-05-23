@@ -136,6 +136,17 @@ function QuoteSupportDebugBlock({ debug }: { debug: AdminMemberQuoteDebug }) {
         <li>planned_total_support (resolved): {debug.planned_total_support ?? "—"}</li>
         <li>confirmed_total_support (resolved): {debug.confirmed_total_support ?? "—"}</li>
         <li>resolved_discount_price: {debug.resolved_discount_price ?? "—"}</li>
+        <li>
+          confirmed_customer_support_source: {debug.confirmed_customer_support_source ?? "—"}
+        </li>
+        <li>
+          confirmed_customer_support_formula:{" "}
+          {debug.confirmed_customer_support_formula ?? "—"}
+        </li>
+        <li>
+          derived_preview: {debug.confirmed_customer_support_derived_preview ?? "—"}
+        </li>
+        <li>confirmed_driver_support: {debug.confirmed_driver_support ?? "—"}</li>
         <li>calculation_status: {debug.calculation_status}</li>
         <li>failed_reason: {debug.failed_reason ?? "—"}</li>
         <li>calculation_error: {debug.calculation_error ?? "—"}</li>

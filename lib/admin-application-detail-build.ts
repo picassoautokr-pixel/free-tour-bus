@@ -35,6 +35,10 @@ export type AdminMemberQuoteDebug = {
   approved_support_amount: number | null;
   estimated_support_amount: number | null;
   resolved_discount_price: number | null;
+  confirmed_customer_support_source: string | null;
+  confirmed_customer_support_formula: string | null;
+  confirmed_customer_support_derived_preview: number | null;
+  confirmed_driver_support: number | null;
   fallbacks_used: string[];
 };
 

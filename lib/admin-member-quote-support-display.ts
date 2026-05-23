@@ -4,6 +4,11 @@
 
 import type { AdminMemberQuoteDebug, AdminMemberQuoteSupportRow } from "@/lib/admin-application-detail-build";
 import type { AdminSponsorDetail } from "@/lib/admin-application-detail-build";
+import {
+  deriveCustomerConfirmedSupport,
+  resolveConfirmedCustomerSupportDisplay,
+  resolvePartnerConfirmedSupport,
+} from "@/lib/support-calculation";
 import { safeText } from "@/lib/sponsor";
 
 function parseInteger(value: unknown): number | null {
@@ -105,12 +110,8 @@ export function resolvePlannedTotalSupport(ctx: AdminMemberQuoteSupportContext):
 
 function resolveDiscountAppliedPrice(
   ctx: AdminMemberQuoteSupportContext,
-  confirmedTotal: number | null,
 ): { value: number | null; source: string | null } {
   const breakdown = breakdownRecord(ctx.quote);
-  const normal = parseInteger(ctx.quote.price);
-  const selected = parseInteger(ctx.application.selected_price);
-
   const chain: Array<[string, number | null]> = [
     ["support_breakdown.final_discount_price", breakdownField(breakdown, "final_discount_price", "finalDiscountAppliedPrice")],
     [
@@ -122,15 +123,7 @@ function resolveDiscountAppliedPrice(
     ["quote.support_discount_applied_price", parseInteger(ctx.quote.support_discount_applied_price)],
     ["quote.final_member_price", parseInteger(ctx.quote.final_member_price)],
     ["quote.sponsor_discounted_price", parseInteger(ctx.quote.sponsor_discounted_price)],
-    [
-      "derived.selected_price_minus_confirmed",
-      selected != null && confirmedTotal != null ? Math.max(selected - confirmedTotal, 0) : null,
-    ],
-    [
-      "derived.normal_minus_confirmed",
-      normal != null && confirmedTotal != null ? Math.max(normal - confirmedTotal, 0) : null,
-    ],
-    ["application.selected_price", selected],
+    ["application.selected_price", parseInteger(ctx.application.selected_price)],
   ];
   for (const [source, value] of chain) {
     if (value != null) return { value, source };
@@ -152,39 +145,65 @@ export function buildAdminMemberQuoteSupportDisplay(
   };
 
   if (ctx.sponsorConfirmed) {
-    const confirmed = resolveConfirmedTotalSupport(ctx);
-    const confirmedTotal = pick("confirmed_total", confirmed);
-
-    const customerRaw =
-      breakdownField(breakdown, "confirmed_customer_support", "customerConfirmedSupport") ??
-      parseInteger(ctx.quote.confirmed_customer_support) ??
-      parseInteger(ctx.quote.customer_confirmed_support) ??
-      parseInteger(ctx.quote.final_customer_support_amount) ??
-      confirmedTotal;
-
-    if (customerRaw != null && customerRaw === confirmedTotal && confirmed.source?.startsWith("application.")) {
-      fallbacksUsed.push("customer_confirmed:confirmed_total");
-    }
+    const normalPrice = parseInteger(ctx.quote.price);
+    const discountResolved = resolveDiscountAppliedPrice(ctx);
+    const finalDiscountPrice = pick("discount", discountResolved);
 
     const extensionRaw =
       breakdownField(breakdown, "confirmed_extension_support", "extensionSupport") ??
       parseInteger(ctx.quote.confirmed_extension_support) ??
       0;
 
-    const discount = resolveDiscountAppliedPrice(ctx, confirmedTotal);
+    const confirmed = resolveConfirmedTotalSupport(ctx);
+    const confirmedTotal = pick("confirmed_total", confirmed);
+
+    const customerDisplay = resolveConfirmedCustomerSupportDisplay({
+      breakdownConfirmedCustomer: breakdownField(
+        breakdown,
+        "confirmed_customer_support",
+        "customerConfirmedSupport",
+      ),
+      quoteConfirmedCustomer: parseInteger(ctx.quote.confirmed_customer_support),
+      quoteFinalCustomerSupport: parseInteger(ctx.quote.final_customer_support_amount),
+      normalPrice,
+      finalDiscountPrice,
+      confirmedExtensionSupport: extensionRaw,
+    });
+
+    if (customerDisplay.source === "derived_from_price") {
+      fallbacksUsed.push("customer_confirmed:derived_from_price");
+    }
+
+    const driverFromQuote =
+      breakdownField(breakdown, "confirmed_driver_support", "partnerConfirmedSupport") ??
+      parseInteger(ctx.quote.confirmed_driver_support) ??
+      parseInteger(ctx.quote.final_driver_support_amount);
+
+    const driverConfirmed =
+      driverFromQuote ??
+      resolvePartnerConfirmedSupport({
+        confirmedTotalSupport: confirmedTotal,
+        confirmedCustomerSupport: customerDisplay.value,
+        confirmedExtensionSupport: extensionRaw,
+      });
 
     return {
       rows: [
         { label: "확정 지원금", value: confirmedTotal },
-        { label: "고객 확정 지원금", value: customerRaw },
+        { label: "고객 확정 지원금", value: customerDisplay.value },
         { label: "확정 연장 지원금", value: extensionRaw },
-        { label: "지원금 할인 적용가", value: pick("discount", discount) },
+        { label: "기사 확정 지원금", value: driverConfirmed },
+        { label: "지원금 할인 적용가", value: finalDiscountPrice },
       ],
       fallbacksUsed,
       debug: buildAdminMemberQuoteDebug(ctx, breakdown, {
         confirmedTotal,
         plannedTotal: resolvePlannedTotalSupport(ctx).value,
-        discount: discount.value,
+        discount: finalDiscountPrice,
+        customerDisplay,
+        driverConfirmed,
+        extensionRaw,
+        normalPrice,
       }),
     };
   }
@@ -222,6 +241,10 @@ export function buildAdminMemberQuoteSupportDisplay(
       confirmedTotal: resolveConfirmedTotalSupport(ctx).value,
       plannedTotal,
       discount: discountPlanned,
+      customerDisplay: null,
+      driverConfirmed: null,
+      extensionRaw: extensionPlanned,
+      normalPrice: parseInteger(ctx.quote.price),
     }),
   };
 }
@@ -233,6 +256,10 @@ function buildAdminMemberQuoteDebug(
     confirmedTotal: number | null;
     plannedTotal: number | null;
     discount: number | null;
+    customerDisplay: ReturnType<typeof resolveConfirmedCustomerSupportDisplay> | null;
+    driverConfirmed: number | null;
+    extensionRaw: number | null;
+    normalPrice: number | null;
   },
 ): AdminMemberQuoteDebug {
   const calcStatus =
@@ -254,6 +281,15 @@ function buildAdminMemberQuoteDebug(
       missingSnapshotFields.push(key);
     }
   }
+
+  const derivedPreview =
+    resolved.normalPrice != null && resolved.discount != null
+      ? deriveCustomerConfirmedSupport({
+          normalPrice: resolved.normalPrice,
+          finalDiscountPrice: resolved.discount,
+          confirmedExtensionSupport: resolved.extensionRaw,
+        })
+      : null;
 
   return {
     has_support_breakdown: breakdown != null,
@@ -277,6 +313,10 @@ function buildAdminMemberQuoteDebug(
     approved_support_amount: appApproved(ctx),
     estimated_support_amount: appEstimated(ctx),
     resolved_discount_price: resolved.discount,
+    confirmed_customer_support_source: resolved.customerDisplay?.source ?? null,
+    confirmed_customer_support_formula: resolved.customerDisplay?.formula ?? null,
+    confirmed_customer_support_derived_preview: derivedPreview,
+    confirmed_driver_support: resolved.driverConfirmed,
     fallbacks_used: [],
   };
 }
