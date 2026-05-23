@@ -338,8 +338,7 @@ export function resolveConfirmedTotalSupport(
 
   const direct =
     parseSupportInteger(quote.confirmed_total_support) ??
-    parseSupportInteger(quote.approved_support_amount) ??
-    parseSupportInteger(quote.sponsor_approved_support_amount);
+    parseSupportInteger(quote.approved_support_amount);
 
   if (direct != null) return Math.max(0, direct);
 

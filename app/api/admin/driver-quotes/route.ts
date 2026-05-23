@@ -11,6 +11,12 @@ import { ensureContractNumber } from "@/lib/contract-deposit";
 import { buildAdminApplicationDetailPayload } from "@/lib/admin-application-detail-build";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import {
+  DRIVER_QUOTE_ROW_SELECT,
+  DRIVER_QUOTE_ROW_SELECT_LEGACY,
+  DRIVER_QUOTE_ROW_SELECT_MINIMAL,
+} from "@/lib/driver-quote-select";
+import { sanitizeOperationalError } from "@/lib/operational-error-message";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -131,26 +137,20 @@ export async function GET(request: Request) {
     error: { message: string; code?: string } | null;
   } = await admin
     .from("driver_quotes")
-    .select(
-      "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, planned_final_price, confirmed_total_support, confirmed_customer_support, confirmed_driver_support, confirmed_discount_price, confirmed_final_price, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, support_recalculated_at, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, extension_support_amount",
-    )
+    .select(DRIVER_QUOTE_ROW_SELECT)
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
   if (isMissingColumnError(quotesResult.error)) {
     quotesResult = await admin
       .from("driver_quotes")
-      .select(
-        "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
-      )
+      .select(DRIVER_QUOTE_ROW_SELECT_LEGACY)
       .eq("application_id", applicationId)
       .order("created_at", { ascending: false });
   }
   if (isMissingColumnError(quotesResult.error)) {
     quotesResult = await admin
       .from("driver_quotes")
-      .select(
-        "id, created_at, application_id, partner_driver_id, auth_user_id, price, vehicle_type, available_time, message, status, support_discount_amount, customer_support_amount, member_price, sponsor_discounted_price",
-      )
+      .select(DRIVER_QUOTE_ROW_SELECT_MINIMAL)
       .eq("application_id", applicationId)
       .order("created_at", { ascending: false });
   }
@@ -166,7 +166,10 @@ export async function GET(request: Request) {
   const { data: quotesRaw, error: quotesError } = quotesResult;
 
   if (quotesError) {
-    return NextResponse.json({ error: quotesError.message }, { status: 502 });
+    return NextResponse.json(
+      { error: sanitizeOperationalError(quotesError.message) },
+      { status: 502 },
+    );
   }
 
   const quotes = Array.isArray(quotesRaw) ? quotesRaw : [];
@@ -244,8 +247,8 @@ export async function GET(request: Request) {
       is_member_quote: row.is_member_quote === true,
       converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id),
       sponsor_support_amount: supportFields.total_planned_support,
-      sponsor_support_status: safeText(row.sponsor_support_status),
-      sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
+      sponsor_support_status: safeText(sponsorSummary.sponsor_support_status),
+      sponsor_approved_support_amount: supportFields.total_confirmed_support ?? appApprovedTotal,
       sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
       sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
       driver_support_amount: supportFields.partner_planned_support,

@@ -5,6 +5,10 @@ import {
   siteBaseUrl,
 } from "@/lib/notification-service";
 import { generateContractNumber } from "@/lib/contract-deposit";
+import {
+  DRIVER_QUOTE_AUCTION_SELECT,
+  DRIVER_QUOTE_AUCTION_SELECT_LEGACY,
+} from "@/lib/driver-quote-select";
 
 export const DEFAULT_BUSINESS_START_TIME = "09:00";
 export const DEFAULT_BUSINESS_END_TIME = "18:00";
@@ -381,12 +385,12 @@ async function fetchQuoteCandidates(
 ): Promise<QuoteCandidate[]> {
   let memberResult = await admin
     .from("driver_quotes")
-    .select("id, price, final_member_price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
+    .select(DRIVER_QUOTE_AUCTION_SELECT)
     .eq("application_id", applicationId);
   if (isMissingColumnError(memberResult.error)) {
     memberResult = await admin
       .from("driver_quotes")
-      .select("id, price, member_price, sponsor_discounted_price, sponsor_quote_enabled, customer_support_amount, support_discount_amount, sponsor_support_status, sponsor_approved_support_amount")
+      .select(DRIVER_QUOTE_AUCTION_SELECT_LEGACY)
       .eq("application_id", applicationId);
   }
   if (isMissingColumnError(memberResult.error)) {
@@ -407,8 +411,20 @@ async function fetchQuoteCandidates(
     const finalMemberPrice = parseInteger(row.final_member_price);
     const customerSupportAmount =
       parseInteger(row.customer_support_amount) ?? parseInteger(row.support_discount_amount);
-    const hasApprovedSupport = parseInteger(row.sponsor_approved_support_amount) != null &&
-      (parseInteger(row.sponsor_approved_support_amount) ?? 0) > 0;
+    const breakdown = row.support_breakdown as { totalConfirmedSupport?: number } | null | undefined;
+    const confirmedFromBreakdown =
+      breakdown != null && typeof breakdown === "object"
+        ? parseInteger(
+            (breakdown as Record<string, unknown>).totalConfirmedSupport ??
+              (breakdown as Record<string, unknown>).confirmed_total_support,
+          )
+        : null;
+    const hasApprovedSupport =
+      (confirmedFromBreakdown != null && confirmedFromBreakdown > 0) ||
+      (parseInteger(row.approved_support_amount) != null &&
+        (parseInteger(row.approved_support_amount) ?? 0) > 0) ||
+      (parseInteger(row.confirmed_total_support) != null &&
+        (parseInteger(row.confirmed_total_support) ?? 0) > 0);
     return {
       id: safeText(row.id),
       source: "member" as const,

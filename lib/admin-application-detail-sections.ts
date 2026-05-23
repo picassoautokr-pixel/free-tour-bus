@@ -21,6 +21,10 @@ import {
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
 } from "@/lib/quote-auction";
+import {
+  resolveApplicationApprovedSupportTotal,
+} from "@/lib/application-approved-support";
+import { DRIVER_QUOTE_ADMIN_DETAIL_SELECT } from "@/lib/driver-quote-select";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { safeText } from "@/lib/sponsor";
 
@@ -45,8 +49,7 @@ function isMissingColumnError(error: { message?: string; code?: string } | null 
 
 const APPLICATION_BASIC_SELECT = `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, is_hidden, sponsor_support_status, sponsor_approved_support_amount, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, target_normal_price, target_member_price, quote_deadline_at, extension_round`;
 
-const MEMBER_QUOTE_SELECT =
-  "id, created_at, application_id, partner_driver_id, price, vehicle_type, available_time, message, status, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, confirmed_total_support, confirmed_customer_support, confirmed_driver_support, confirmed_discount_price, member_price, final_member_price, sponsor_discounted_price, sponsor_quote_enabled, extension_support_amount, estimated_support_amount, approved_support_amount, sponsor_support_status, sponsor_approved_support_amount";
+const MEMBER_QUOTE_SELECT = DRIVER_QUOTE_ADMIN_DETAIL_SELECT;
 
 const GUEST_QUOTE_SELECT =
   "id, created_at, application_id, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status";
@@ -122,7 +125,7 @@ async function loadMatchedDriverOnly(
     }
   }
 
-  const appApproved = parseInteger(application.sponsor_approved_support_amount);
+  const appApproved = resolveApplicationApprovedSupportTotal(application);
   const supportFields = mapQuoteWithSupport(quote, {
     applicationApprovedSupportTotal: appApproved,
   });
@@ -175,8 +178,8 @@ export async function fetchAdminDetailBasic(
       file_name: safeText(listRow?.file_name) || safeText(application.file_name),
       attachment_url: safeText(listRow?.attachment_url) || safeText(application.attachment_url),
     },
-    sponsor_approved_support_amount: parseInteger(application.sponsor_approved_support_amount),
-    approved_support_amount: parseInteger(application.sponsor_approved_support_amount),
+    sponsor_approved_support_amount: resolveApplicationApprovedSupportTotal(application),
+    approved_support_amount: resolveApplicationApprovedSupportTotal(application),
   };
 
   const matched_driver = await loadMatchedDriverOnly(admin, application, sponsorConfirmed);
@@ -353,17 +356,16 @@ export async function fetchAdminDetailQuotes(
 
   if (!application) throw new Error("신청을 찾을 수 없습니다.");
 
-  const appApproved = parseInteger(application.sponsor_approved_support_amount);
+  const preRows = Array.isArray(preRes.data) ? (preRes.data as Record<string, unknown>[]) : [];
+  const enrichedPre = await enrichPreapprovals(admin, preRows);
+  const sponsor = pickPrimarySponsor(enrichedPre);
+  const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
+  const appApproved = resolveApplicationApprovedSupportTotal(application, sponsor);
   const { memberRows, guestRows } = await loadMemberAndGuestQuotes(
     admin,
     applicationId,
     appApproved,
   );
-
-  const preRows = Array.isArray(preRes.data) ? (preRes.data as Record<string, unknown>[]) : [];
-  const enrichedPre = await enrichPreapprovals(admin, preRows);
-  const sponsor = pickPrimarySponsor(enrichedPre);
-  const sponsorConfirmed = sponsor ? sponsor.sponsor_confirmed : false;
 
   const finalQuoteId = safeText(application.final_selected_quote_id);
   const finalSource = safeText(application.final_selected_quote_source) === "guest" ? "guest" : "member";

@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import { processApplicationQuoteLifecycle } from "@/lib/quote-auction";
+import {
+  DRIVER_QUOTE_ROW_SELECT,
+  DRIVER_QUOTE_ROW_SELECT_LEGACY,
+  DRIVER_QUOTE_ROW_SELECT_MINIMAL,
+} from "@/lib/driver-quote-select";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
 import { normalizeRegion, normalizeServiceRegions } from "@/lib/regions";
@@ -389,18 +394,14 @@ export async function GET() {
       error: { message: string; code?: string } | null;
     } = await admin
       .from("driver_quotes")
-      .select(
-        "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, planned_final_price, confirmed_total_support, confirmed_customer_support, confirmed_driver_support, confirmed_discount_price, confirmed_final_price, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, support_recalculated_at, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, extension_support_amount, client_reward_amount",
-      )
+      .select(DRIVER_QUOTE_ROW_SELECT)
       .in("application_id", ids)
       .or(orFilter)
       .order("created_at", { ascending: false });
     if (isMissingColumnError(memberQuotesResult.error)) {
       memberQuotesResult = await admin
         .from("driver_quotes")
-        .select(
-          "id, application_id, price, vehicle_type, available_time, message, status, created_at, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled, driver_support_amount, client_reward_amount",
-        )
+        .select(DRIVER_QUOTE_ROW_SELECT_LEGACY)
         .in("application_id", ids)
         .or(orFilter)
         .order("created_at", { ascending: false });
@@ -408,9 +409,7 @@ export async function GET() {
     if (isMissingColumnError(memberQuotesResult.error)) {
       memberQuotesResult = await admin
         .from("driver_quotes")
-        .select(
-          "id, application_id, price, vehicle_type, available_time, message, status, created_at, support_discount_amount, customer_support_amount, member_price, sponsor_discounted_price",
-        )
+        .select(DRIVER_QUOTE_ROW_SELECT_MINIMAL)
         .in("application_id", ids)
         .or(orFilter)
         .order("created_at", { ascending: false });
@@ -475,8 +474,13 @@ export async function GET() {
         is_member_quote: row.is_member_quote === true,
         converted_from_guest_quote_id: safeText(row.converted_from_guest_quote_id, ""),
         sponsor_support_amount: supportFields.total_planned_support,
-        sponsor_support_status: safeText(row.sponsor_support_status),
-        sponsor_approved_support_amount: parseInteger(row.sponsor_approved_support_amount),
+        sponsor_support_status:
+          sponsorApproved != null && sponsorApproved > 0
+            ? "approved"
+            : sponsorEstimated != null && sponsorEstimated > 0
+              ? "preapproved"
+              : "none",
+        sponsor_approved_support_amount: supportFields.total_confirmed_support ?? sponsorApproved,
         sponsor_discounted_price: parseInteger(row.sponsor_discounted_price),
         sponsor_quote_enabled: supportFields.sponsor_quote_enabled,
         driver_support_amount: supportFields.partner_planned_support,

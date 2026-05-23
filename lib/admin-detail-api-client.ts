@@ -14,6 +14,7 @@ import {
   invalidateAdminDetailQuotes,
   patchAdminDetailCache,
 } from "@/lib/admin-detail-client-cache";
+import { sanitizeOperationalError } from "@/lib/operational-error-message";
 import { isQuoteDebugEnabled } from "@/lib/quote-debug-enable";
 
 async function fetchSection<T>(
@@ -30,9 +31,16 @@ async function fetchSection<T>(
   const res = await fetch(`/api/admin/application-detail?${params.toString()}`, {
     credentials: "same-origin",
   });
-  const json = (await res.json()) as Record<string, unknown> & { error?: string };
+  const json = (await res.json()) as Record<string, unknown> & {
+    error?: string;
+    debug_error?: string;
+  };
   if (!res.ok) {
-    throw new Error(json.error ?? "상세 조회에 실패했습니다.");
+    const raw =
+      (isQuoteDebugEnabled() && typeof json.debug_error === "string"
+        ? json.debug_error
+        : json.error) ?? "상세 조회에 실패했습니다.";
+    throw new Error(sanitizeOperationalError(raw));
   }
   return parse(json);
 }

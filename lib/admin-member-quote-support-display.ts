@@ -5,6 +5,10 @@
 import type { AdminMemberQuoteDebug, AdminMemberQuoteSupportRow } from "@/lib/admin-application-detail-build";
 import type { AdminSponsorDetail } from "@/lib/admin-application-detail-build";
 import {
+  resolveApplicationApprovedSupportTotal,
+  resolveApplicationEstimatedSupportTotal,
+} from "@/lib/application-approved-support";
+import {
   deriveCustomerConfirmedSupport,
   resolveConfirmedCustomerSupportDisplay,
   resolvePartnerConfirmedSupport,
@@ -50,21 +54,11 @@ export type AdminMemberQuoteSupportDisplay = {
 };
 
 function appApproved(ctx: AdminMemberQuoteSupportContext): number | null {
-  return (
-    parseInteger(ctx.application.sponsor_approved_support_amount) ??
-    parseInteger(ctx.application.approved_support_amount) ??
-    ctx.sponsor?.approved_support_amount ??
-    null
-  );
+  return resolveApplicationApprovedSupportTotal(ctx.application, ctx.sponsor);
 }
 
 function appEstimated(ctx: AdminMemberQuoteSupportContext): number | null {
-  return (
-    parseInteger(ctx.application.estimated_support_amount) ??
-    parseInteger(ctx.application.sponsor_estimated_support_amount) ??
-    ctx.sponsor?.estimated_support_amount ??
-    null
-  );
+  return resolveApplicationEstimatedSupportTotal(ctx.application, ctx.sponsor);
 }
 
 export function resolveConfirmedTotalSupport(ctx: AdminMemberQuoteSupportContext): {
@@ -77,9 +71,8 @@ export function resolveConfirmedTotalSupport(ctx: AdminMemberQuoteSupportContext
     ["quote.confirmed_total_support", parseInteger(ctx.quote.confirmed_total_support)],
     ["quote.total_confirmed_support", parseInteger(ctx.quote.total_confirmed_support)],
     ["quote.approved_support_amount", parseInteger(ctx.quote.approved_support_amount)],
-    ["quote.sponsor_approved_support_amount", parseInteger(ctx.quote.sponsor_approved_support_amount)],
-    ["application.sponsor_approved_support_amount", parseInteger(ctx.application.sponsor_approved_support_amount)],
     ["application.approved_support_amount", parseInteger(ctx.application.approved_support_amount)],
+    ["application.sponsor_approved_support_amount", parseInteger(ctx.application.sponsor_approved_support_amount)],
     ["sponsor.approved_support_amount", ctx.sponsor?.approved_support_amount ?? null],
   ];
   for (const [source, value] of chain) {

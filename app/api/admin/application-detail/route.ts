@@ -7,6 +7,7 @@ import {
   fetchAdminDetailSms,
   fetchAdminDetailSponsor,
 } from "@/lib/admin-application-detail-sections";
+import { sanitizeOperationalError } from "@/lib/operational-error-message";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
@@ -84,7 +85,11 @@ export async function GET(request: Request) {
     const debug = await fetchAdminDetailDebug(admin, applicationId, undefined);
     return NextResponse.json({ ok: true, section: "debug", debug });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "상세 조회에 실패했습니다.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    const raw = e instanceof Error ? e.message : "상세 조회에 실패했습니다.";
+    const error = sanitizeOperationalError(raw);
+    return NextResponse.json(
+      serverDebugEnabled ? { error, debug_error: raw } : { error },
+      { status: 502 },
+    );
   }
 }

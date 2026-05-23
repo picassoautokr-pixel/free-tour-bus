@@ -25,6 +25,7 @@ import {
   refreshAdminDetailCache,
   refreshAdminDetailQuotesCache,
 } from "@/lib/admin-detail-api-client";
+import { sanitizeOperationalError } from "@/lib/operational-error-message";
 import { isQuoteDebugEnabled } from "@/lib/quote-debug-enable";
 import { createAdminBrowserClient } from "@/lib/supabase";
 import type {
@@ -365,11 +366,18 @@ export function ApplicationDetailMatchedPanel({
   );
   const [smsLogs, setSmsLogs] = useState<AdminSmsLog[] | null>(null);
   const [debugRaw, setDebugRaw] = useState<unknown>(null);
+  const [debugError, setDebugError] = useState<string | null>(null);
   const [loadingBasic, setLoadingBasic] = useState(true);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [loadingSponsor, setLoadingSponsor] = useState(false);
   const [loadingSms, setLoadingSms] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const reportError = useCallback((e: unknown, fallback: string) => {
+    const raw = e instanceof Error ? e.message : fallback;
+    setDebugError(isQuoteDebugEnabled() ? raw : null);
+    setError(sanitizeOperationalError(raw, fallback));
+  }, []);
   const [quotesOpen, setQuotesOpen] = useState(false);
   const [smsLogOpen, setSmsLogOpen] = useState(false);
   const [sponsorInfoOpen, setSponsorInfoOpen] = useState(false);
@@ -394,13 +402,13 @@ export function ApplicationDetailMatchedPanel({
           application: { ...payload.application, admin_memo: row.admin_memo },
         });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "상세 정보를 불러오지 못했습니다.");
+        reportError(e, "상세 정보를 불러오지 못했습니다.");
         setBasic(null);
       } finally {
         setLoadingBasic(false);
       }
     },
-    [row.id, row.admin_memo],
+    [row.id, row.admin_memo, reportError],
   );
 
   const loadQuotes = useCallback(
@@ -416,12 +424,12 @@ export function ApplicationDetailMatchedPanel({
           setDebugRaw(debug);
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "견적 정보를 불러오지 못했습니다.");
+        reportError(e, "견적 데이터를 불러오는 중 문제가 발생했습니다.");
       } finally {
         setLoadingQuotes(false);
       }
     },
-    [row.id],
+    [row.id, reportError],
   );
 
   const refreshAll = useCallback(() => {
@@ -448,9 +456,7 @@ export function ApplicationDetailMatchedPanel({
     setLoadingSponsor(true);
     void loadAdminDetailSponsor(row.id)
       .then(setSponsorDetail)
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "후원 정보를 불러오지 못했습니다."),
-      )
+      .catch((e) => reportError(e, "후원 정보를 불러오지 못했습니다."))
       .finally(() => setLoadingSponsor(false));
   }, [sponsorInfoOpen, sponsorDetail, row.id]);
 
@@ -459,9 +465,7 @@ export function ApplicationDetailMatchedPanel({
     setLoadingSms(true);
     void loadAdminDetailSms(row.id)
       .then(setSmsLogs)
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "문자 로그를 불러오지 못했습니다."),
-      )
+      .catch((e) => reportError(e, "문자 로그를 불러오지 못했습니다."))
       .finally(() => setLoadingSms(false));
   }, [smsLogOpen, smsLogs, row.id]);
 
@@ -616,6 +620,11 @@ export function ApplicationDetailMatchedPanel({
       {error ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
           {error}
+        </p>
+      ) : null}
+      {debugError && isQuoteDebugEnabled() ? (
+        <p className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-[10px] text-slate-800">
+          DEBUG: {debugError}
         </p>
       ) : null}
 

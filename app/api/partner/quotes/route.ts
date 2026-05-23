@@ -12,6 +12,7 @@ import {
   buildPlannedDbPayload,
   computeConfirmedFromPlanned,
 } from "@/lib/quote-support-snapshot";
+import { DRIVER_QUOTE_ROW_SELECT, DRIVER_QUOTE_ROW_SELECT_LEGACY } from "@/lib/driver-quote-select";
 import { freezeQuotePlannedSupportBreakdown } from "@/lib/support-breakdown-snapshot";
 import { resolveSettlementType } from "@/lib/support-calculation";
 import type { SponsorRuleRecord } from "@/lib/sponsor-rule-helpers";
@@ -411,9 +412,7 @@ export async function POST(request: Request) {
   const insertResult = await admin
     .from("driver_quotes")
     .insert(insertPayload)
-    .select(
-      "id, price, estimated_support_amount, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, confirmed_total_support, confirmed_customer_support, confirmed_driver_support, confirmed_discount_price, preapproved_support_amount, approved_support_amount, support_discount_amount, customer_support_amount, driver_support_amount, final_customer_support_amount, final_driver_support_amount, member_price, final_member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
-    )
+    .select(DRIVER_QUOTE_ROW_SELECT)
     .single();
   let inserted: unknown = insertResult.data;
   let insertError = insertResult.error;
@@ -449,9 +448,7 @@ export async function POST(request: Request) {
     const legacy = await admin
       .from("driver_quotes")
       .insert(legacyPayload)
-      .select(
-        "id, price, estimated_support_amount, support_discount_amount, customer_support_amount, member_price, is_member_quote, converted_from_guest_quote_id, sponsor_support_amount, sponsor_support_status, sponsor_approved_support_amount, sponsor_discounted_price, sponsor_quote_enabled",
-      )
+      .select(DRIVER_QUOTE_ROW_SELECT_LEGACY)
       .single();
     inserted = legacy.data;
     insertError = legacy.error;
