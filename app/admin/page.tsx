@@ -27,7 +27,9 @@ import {
   type Profile,
 } from "@/lib/profile";
 import { roleLoginPath } from "@/lib/role-hosts";
+import { ApplicationDetailMatchedPanel } from "@/components/admin/ApplicationDetailMatchedPanel";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
+import { isApplicationMatchCompleted } from "@/lib/admin-application-detail-build";
 import { SponsorCompaniesAdmin } from "@/components/admin/SponsorCompaniesAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { createAdminBrowserClient } from "@/lib/supabase";
@@ -918,11 +920,13 @@ function StatusChangeSection({
   statusFromServer,
   memoFromServer,
   onSaved,
+  compact = false,
 }: {
   rowId: string;
   statusFromServer: string;
   memoFromServer: string;
   onSaved: (nextStatus: ApplicationStatusValue, nextMemo: string) => void;
+  compact?: boolean;
 }) {
   const persistedId = isPersistableApplicationId(rowId);
   const normalizedSaved = coerceApplicationStatus(statusFromServer);
@@ -969,15 +973,25 @@ function StatusChangeSection({
   };
 
   return (
-    <div className="mt-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100/80">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        상태 변경
-      </p>
-      <p className="mt-1 text-xs text-slate-500">
-        내부용 메모이며 저장 후 목록 배지가 바로 반영됩니다.
-      </p>
+    <div
+      className={
+        compact
+          ? "mt-2 space-y-2"
+          : "mt-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100/80"
+      }
+    >
+      {!compact ? (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            상태 변경
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            내부용 메모이며 저장 후 목록 배지가 바로 반영됩니다.
+          </p>
+        </>
+      ) : null}
 
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+      <div className={`flex flex-col gap-3 sm:flex-row sm:items-stretch ${compact ? "" : "mt-3"}`}>
         <select
           value={selected}
           onChange={(e) =>
@@ -995,31 +1009,33 @@ function StatusChangeSection({
         </select>
       </div>
 
-      <div className="mt-3">
-        <label className="block">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            관리자 메모
-          </span>
-          <textarea
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            disabled={saving || !persistedId}
-            placeholder="반려 이유, 승인 참고사항, 지원금 전달 담당자에게 공유할 내용을 입력하세요."
-            className="mt-2 min-h-[140px] w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-100 disabled:text-slate-400"
-          />
-          <p className="mt-2 text-xs text-slate-500">
-            ※ 내부용 메모입니다. 신청자에게 노출되지 않습니다.
-          </p>
-        </label>
-      </div>
+      {!compact ? (
+        <div className="mt-3">
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              관리자 메모
+            </span>
+            <textarea
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              disabled={saving || !persistedId}
+              placeholder="반려 이유, 승인 참고사항, 지원금 전달 담당자에게 공유할 내용을 입력하세요."
+              className="mt-2 min-h-[140px] w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+            />
+            <p className="mt-2 text-xs text-slate-500">
+              ※ 내부용 메모입니다. 신청자에게 노출되지 않습니다.
+            </p>
+          </label>
+        </div>
+      ) : null}
 
       <button
         type="button"
         onClick={() => void handleSave()}
         disabled={saving || !persistedId || unchanged}
-        className="mt-3 h-11 w-full rounded-xl bg-slate-900 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
+        className={`${compact ? "mt-1" : "mt-3"} h-10 w-full rounded-xl bg-slate-900 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45`}
       >
-        {saving ? "저장 중…" : "상태 및 메모 저장"}
+        {saving ? "저장 중…" : compact ? "상태 저장" : "상태 및 메모 저장"}
       </button>
 
       {!persistedId ? (
@@ -2039,6 +2055,36 @@ function DetailSlidePanel({
   ) => void;
   onOpenSms: (row: ApplicationDetail) => void;
 }) {
+  const [useMatchedLayout, setUseMatchedLayout] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!open || row == null) {
+      setUseMatchedLayout(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/driver-quotes?application_id=${encodeURIComponent(row.id)}`,
+          { credentials: "same-origin" },
+        );
+        const json = (await res.json()) as {
+          detail?: { application?: Record<string, unknown> };
+          application?: { final_selected_quote_id?: string };
+        };
+        if (cancelled) return;
+        const lifecycle = json.detail?.application ?? json.application ?? {};
+        setUseMatchedLayout(isApplicationMatchCompleted(lifecycle));
+      } catch {
+        if (!cancelled) setUseMatchedLayout(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, row?.id]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -2078,7 +2124,9 @@ function DetailSlidePanel({
       />
 
       <aside
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col bg-white shadow-2xl ring-1 ring-slate-200"
+        className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl ring-1 ring-slate-200 ${
+          useMatchedLayout ? "max-w-2xl" : "max-w-lg"
+        }`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="admin-detail-title"
@@ -2135,6 +2183,45 @@ function DetailSlidePanel({
           >
             문자 발송
           </button>
+
+          {useMatchedLayout === null ? (
+            <p className="py-6 text-center text-sm font-semibold text-slate-500">
+              상세 정보 확인 중…
+            </p>
+          ) : null}
+
+          {useMatchedLayout === true ? (
+            <ApplicationDetailMatchedPanel
+              row={row}
+              onOpenSms={onOpenSms}
+              onStatusSaved={onStatusSaved}
+              statusSection={
+                <StatusChangeSection
+                  key={`matched-status-${row.id}`}
+                  rowId={row.id}
+                  statusFromServer={row.status}
+                  memoFromServer={row.admin_memo}
+                  onSaved={(nextStatus, nextMemo) =>
+                    onStatusSaved(row.id, nextStatus, nextMemo)
+                  }
+                  compact
+                />
+              }
+              lifecycleTools={
+                <details className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                  <summary className="cursor-pointer text-xs font-black text-slate-700">
+                    견적 운영 도구 (자동마감·비회원 매칭)
+                  </summary>
+                  <div className="mt-2 [&>section]:mt-0 [&>section]:border-0 [&>section]:bg-transparent [&>section]:p-0 [&>section]:shadow-none [&>section]:ring-0">
+                    <DriverQuotesSection applicationId={row.id} applicationDetail={row} />
+                  </div>
+                </details>
+              }
+            />
+          ) : null}
+
+          {useMatchedLayout === false ? (
+          <>
           <dl>
             <DetailField label="접수번호">
               <span className="font-mono font-semibold tracking-tight">
@@ -2352,6 +2439,8 @@ function DetailSlidePanel({
               onStatusSaved(row.id, nextStatus, nextMemo)
             }
           />
+          </>
+          ) : null}
         </div>
       </aside>
     </>

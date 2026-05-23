@@ -8,6 +8,7 @@ import {
   supportRewardAmounts,
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
+import { buildAdminApplicationDetailPayload } from "@/lib/admin-application-detail-build";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -89,16 +90,24 @@ export async function GET(request: Request) {
 
   await processApplicationQuoteLifecycle(admin, applicationId);
 
-  const applicationResult: {
+  const applicationSelectFull = `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`;
+  const applicationSelectBase = `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`;
+
+  let applicationResult: {
     data: unknown | null;
     error: { message: string; code?: string } | null;
   } = await admin
     .from("applications")
-    .select(
-      `${quoteLifecycleSelectColumns()}, created_at, receipt_number, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
-    )
+    .select(applicationSelectFull)
     .eq("id", applicationId)
     .maybeSingle();
+  if (isMissingColumnError(applicationResult.error)) {
+    applicationResult = await admin
+      .from("applications")
+      .select(applicationSelectBase)
+      .eq("id", applicationId)
+      .maybeSingle();
+  }
   const { data: applicationRaw, error: applicationError } = applicationResult;
   if (applicationError) {
     return NextResponse.json({ error: applicationError.message }, { status: 502 });
@@ -433,8 +442,116 @@ export async function GET(request: Request) {
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
 
+  const { data: preapprovalRows } = await admin
+    .from("sponsor_preapprovals")
+    .select("*")
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
+
+  const preapprovals = Array.isArray(preapprovalRows) ? preapprovalRows : [];
+  const companyIds = [
+    ...new Set(
+      preapprovals
+        .map((row) => safeText((row as Record<string, unknown>).sponsor_company_id))
+        .filter(Boolean),
+    ),
+  ];
+  const ruleIds = [
+    ...new Set(
+      preapprovals
+        .map((row) => safeText((row as Record<string, unknown>).sponsor_rule_id))
+        .filter(Boolean),
+    ),
+  ];
+  const staffIds = [
+    ...new Set(
+      preapprovals
+        .map((row) => safeText((row as Record<string, unknown>).assigned_staff_id))
+        .filter(Boolean),
+    ),
+  ];
+  const [{ data: companyRows }, { data: ruleRows }, { data: staffRows }] = await Promise.all([
+    companyIds.length > 0
+      ? admin.from("sponsor_companies").select("id, company_name").in("id", companyIds)
+      : Promise.resolve({ data: [] }),
+    ruleIds.length > 0
+      ? admin.from("sponsor_rules").select("id, title, support_condition").in("id", ruleIds)
+      : Promise.resolve({ data: [] }),
+    staffIds.length > 0
+      ? admin.from("sponsor_staff").select("id, name, phone").in("id", staffIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const companyNameById = new Map(
+    (Array.isArray(companyRows) ? companyRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      safeText((row as Record<string, unknown>).company_name),
+    ]),
+  );
+  const ruleById = new Map(
+    (Array.isArray(ruleRows) ? ruleRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
+    ]),
+  );
+  const staffById = new Map(
+    (Array.isArray(staffRows) ? staffRows : []).map((row) => [
+      safeText((row as Record<string, unknown>).id),
+      row as Record<string, unknown>,
+    ]),
+  );
+
+  const enrichedPreapprovals = preapprovals.map((rowRaw) => {
+    const row = rowRaw as Record<string, unknown>;
+    const staff = staffById.get(safeText(row.assigned_staff_id)) ?? {};
+    const rule = ruleById.get(safeText(row.sponsor_rule_id)) ?? {};
+    return {
+      ...row,
+      sponsor_company_name: companyNameById.get(safeText(row.sponsor_company_id)) ?? "",
+      sponsor_rule_title: safeText(rule.title),
+      support_condition: safeText(rule.support_condition),
+      assigned_staff_name: safeText(staff.name),
+      assigned_staff_phone: safeText(staff.phone),
+    };
+  });
+
+  const notificationLogRows = Array.isArray(notificationRows) ? notificationRows : [];
+  const detail = buildAdminApplicationDetailPayload({
+    applicationRow: application as Record<string, unknown> | null,
+    applicationLifecycle: application
+      ? ({
+          id: safeText(application.id),
+          quote_status: safeText(application.quote_status, "collecting"),
+          quote_deadline_at: safeText(application.quote_deadline_at),
+          quote_limit_count: parseInteger(application.quote_limit_count),
+          target_normal_price: parseInteger(application.target_normal_price),
+          target_member_price: parseInteger(application.target_member_price),
+          quote_closed_at: safeText(application.quote_closed_at),
+          quote_closed_reason: safeText(application.quote_closed_reason),
+          auto_selected_quote_id: safeText(application.auto_selected_quote_id),
+          auto_selected_quote_source: safeText(application.auto_selected_quote_source),
+          auto_selected_at: safeText(application.auto_selected_at),
+          auto_final_confirm_at: safeText(application.auto_final_confirm_at),
+          final_selected_quote_id: safeText(application.final_selected_quote_id),
+          final_selected_quote_source: safeText(application.final_selected_quote_source),
+          final_selected_at: safeText(application.final_selected_at),
+          extension_round: parseInteger(application.extension_round) ?? 0,
+          sponsor_support_status: safeText(sponsorSummary.sponsor_support_status, "none"),
+          sponsor_approved_support_amount:
+            parseInteger(sponsorSummary.sponsor_approved_support_amount) ?? 0,
+          sponsor_preapproved_count: parseInteger(sponsorSummary.sponsor_preapproved_count) ?? 0,
+          sponsor_approved_count: parseInteger(sponsorSummary.sponsor_approved_count) ?? 0,
+          sponsor_rejected_count: parseInteger(sponsorSummary.sponsor_rejected_count) ?? 0,
+        } as Record<string, unknown>)
+      : null,
+    memberQuoteRows: normalized as unknown as Record<string, unknown>[],
+    guestQuoteRows: guest_quotes as unknown as Record<string, unknown>[],
+    preapprovalRows: enrichedPreapprovals,
+    notificationRows: notificationLogRows as Record<string, unknown>[],
+  });
+
   return NextResponse.json({
     ok: true,
+    detail,
     application: application
       ? {
           id: safeText(application.id),
@@ -525,16 +642,45 @@ export async function PATCH(request: Request) {
     match_result?: unknown;
     application_id?: unknown;
     action?: unknown;
+    quote_id?: unknown;
+    quote_kind?: unknown;
+    quote_patch?: unknown;
   };
   try {
-    body = (await request.json()) as {
-      guest_quote_id?: unknown;
-      match_result?: unknown;
-      application_id?: unknown;
-      action?: unknown;
-    };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const quoteId = safeText(body.quote_id);
+  const quoteKind = safeText(body.quote_kind);
+  const quotePatch =
+    body.quote_patch && typeof body.quote_patch === "object"
+      ? (body.quote_patch as Record<string, unknown>)
+      : null;
+  if (quoteId && quotePatch) {
+    const admin = createServiceRoleSupabase();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다." },
+        { status: 503 },
+      );
+    }
+    const table = quoteKind === "guest" ? "guest_driver_quotes" : "driver_quotes";
+    const patch: Record<string, unknown> = {};
+    if (quotePatch.price !== undefined) patch.price = parseInteger(quotePatch.price);
+    if (quotePatch.vehicle_type !== undefined) patch.vehicle_type = safeText(quotePatch.vehicle_type);
+    if (quotePatch.available_time !== undefined) patch.available_time = safeText(quotePatch.available_time);
+    if (quotePatch.message !== undefined) patch.message = safeText(quotePatch.message);
+    if (quotePatch.status !== undefined) patch.status = safeText(quotePatch.status);
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: "수정할 필드가 없습니다." }, { status: 400 });
+    }
+    const { error: updateError } = await admin.from(table).update(patch).eq("id", quoteId);
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 502 });
+    }
+    return NextResponse.json({ ok: true });
   }
 
   const action = safeText(body.action);
