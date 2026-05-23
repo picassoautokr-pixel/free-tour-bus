@@ -10,6 +10,7 @@ import {
 import {
   fmt,
   partnerSupportSummaryForCard,
+  quoteSupportDisplayModelForCall,
   quoteFormPlannedAmounts,
   settlementLabel,
   sponsorStageLabel,
@@ -103,6 +104,7 @@ export function PartnerCallExpandPanel({
   customerPhone?: string;
 }) {
   const supportSummary = partnerSupportSummaryForCard(call);
+  const supportModel = quoteSupportDisplayModelForCall(call);
   const breakdown = supportSummary.breakdown;
   const sponsorConfirmed = supportSummary.showConfirmed;
   const hideSupport = partnerCallHidesSupportDetail(call, stage);
@@ -163,7 +165,11 @@ export function PartnerCallExpandPanel({
   }
 
   const discountLabel = partnerListDiscountLabel(sponsorConfirmed);
-  const discountAmount = partnerListDiscountAmount(breakdown, sponsorConfirmed);
+  const discountAmount =
+    supportModel?.support_stage === "지원확정"
+      ? supportModel.final_discount_price
+      : supportModel?.planned_discount_price ??
+        partnerListDiscountAmount(breakdown, sponsorConfirmed);
   const matchedQuote = partnerMatchedListQuote(call, breakdown);
 
   return (

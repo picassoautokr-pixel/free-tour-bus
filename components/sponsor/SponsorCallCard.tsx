@@ -12,6 +12,7 @@ import {
   formatWon,
   isMatchCompleted,
   matchStageLabel,
+  sponsorSupportDisplayModelForCall,
   type SponsorCallRow,
 } from "@/lib/sponsor-call-view-model";
 import {
@@ -95,6 +96,7 @@ export function SponsorCallCard({
   sponsorRule?: Record<string, unknown> | null;
 }) {
   const matched = isMatchCompleted(call);
+  const supportModel = sponsorSupportDisplayModelForCall(call);
   const eligibleRules = filterRulesForCall(rules, {
     passengerCount: call.passenger_count,
     groupType: call.group_type ?? "",
@@ -139,7 +141,7 @@ export function SponsorCallCard({
           {listMode === "confirmed" ? (
             <>
               <ListCell label={LABEL.confirmedSupport}>
-                {formatWon(call.approved_support_amount)}
+                {formatWon(supportModel?.confirmed_total_support ?? call.approved_support_amount)}
               </ListCell>
               <ListCell label={LABEL.staff}>
                 {call.assigned_staff_name || LABEL.dash}
@@ -219,8 +221,22 @@ export function SponsorCallCard({
               </p>
               <p>
                 <span className="font-bold text-slate-500">{LABEL.confirmedSupport}</span>{" "}
-                {formatWon(call.approved_support_amount)}
+                {formatWon(supportModel?.confirmed_total_support ?? call.approved_support_amount)}
               </p>
+              {supportModel ? (
+                <div className="rounded-xl bg-white p-3 ring-1 ring-slate-100">
+                  {supportModel.display_rows.map((row) => (
+                    <p key={row.label} className="flex justify-between gap-3">
+                      <span className="font-bold text-slate-500">{row.label}</span>
+                      <span>{row.label === "연장회차" ? row.value ?? 0 : formatWon(row.value)}</span>
+                    </p>
+                  ))}
+                  <p className="flex justify-between gap-3">
+                    <span className="font-bold text-slate-500">정산모드</span>
+                    <span>{supportModel.support_settlement_label}</span>
+                  </p>
+                </div>
+              ) : null}
               <p>
                 <span className="font-bold text-slate-500">{LABEL.staff}</span>{" "}
                 {call.assigned_staff_name || LABEL.dash}{" "}

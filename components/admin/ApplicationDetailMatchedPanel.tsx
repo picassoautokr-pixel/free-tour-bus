@@ -169,6 +169,29 @@ function QuoteSupportDebugBlock({ debug }: { debug: AdminMemberQuoteDebug }) {
         <li>missing_required_fields: {JSON.stringify(debug.missing_required_fields)}</li>
         <li>missing_snapshot_fields: {JSON.stringify(debug.missing_snapshot_fields)}</li>
         <li>selected_price: {debug.selected_price ?? "—"}</li>
+        <li>application.selected_price_type: {debug.application_selected_price_type ?? "—"}</li>
+        <li>application.selected_price_label: {debug.application_selected_price_label ?? "—"}</li>
+        <li>application.selected_price: {debug.application_selected_price ?? "—"}</li>
+        <li>
+          application.client_price_selection_kind:{" "}
+          {debug.application_client_price_selection_kind ?? "—"}
+        </li>
+        <li>
+          application.final_selected_quote_id: {debug.application_final_selected_quote_id ?? "—"}
+        </li>
+        <li>quote.price: {debug.quote_price ?? "—"}</li>
+        <li>sponsor_status_resolution: {debug.sponsor_status_resolution ?? "—"}</li>
+        <li>
+          sponsor_confirmed_resolved:{" "}
+          {debug.sponsor_confirmed_resolved === true
+            ? "true"
+            : debug.sponsor_confirmed_resolved === false
+              ? "false"
+              : "—"}
+        </li>
+        <li>
+          selected_price_calculation_source: {debug.selected_price_calculation_source ?? "—"}
+        </li>
         <li>approved_support_amount: {debug.approved_support_amount ?? "—"}</li>
         <li>estimated_support_amount: {debug.estimated_support_amount ?? "—"}</li>
         <li>UI fallbacks_used: {JSON.stringify(debug.fallbacks_used)}</li>

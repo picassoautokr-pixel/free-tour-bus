@@ -5,6 +5,7 @@
 import { CLIENT_UI } from "@/app/client/dashboard/client-display";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 import { LABEL } from "@/lib/client-dashboard-labels";
+import { buildQuoteSupportDisplayModel } from "@/lib/quote-support-display-model";
 
 export const QUOTE_SCREEN_LABEL = {
   supportDiscountApplied: "지원금 할인 적용가",
@@ -89,26 +90,15 @@ export function quoteSupportIsConfirmed(
   application?: ClientApplication,
 ): boolean {
   if (quote.source === "guest") return false;
-  const breakdown = quote.support_breakdown as BreakdownRow | null | undefined;
-  if (breakdown?.isConfirmed === true || breakdown?.is_confirmed === true) return true;
-  if (quote.sponsor_support_status === "approved") return true;
-  if (quote.support_status === "approved") return true;
-  if (application?.sponsor_support_status === "approved") return true;
-  const confirmedTotal =
-    breakdownAmount(breakdown, "totalConfirmedSupport", "confirmed_total_support") ??
-    parseAmount(quote.confirmed_total_support) ??
-    parseAmount(quote.sponsor_approved_support_amount) ??
-    parseAmount(quote.approved_support_amount) ??
-    parseAmount(application?.sponsor_approved_support_amount);
-  if (confirmedTotal != null && confirmedTotal > 0) return true;
-  const applied =
-    breakdownAmount(breakdown, "finalDiscountAppliedPrice", "final_discount_applied_price") ??
-    parseAmount(quote.final_discount_applied_price) ??
-    parseAmount(quote.confirmed_discount_price) ??
-    parseAmount(quote.support_discount_applied_price);
-  const normal = resolveNormalPrice(quote);
-  if (applied != null && normal != null && applied < normal) return true;
-  return false;
+  return (
+    buildQuoteSupportDisplayModel({
+      application: application as unknown as Record<string, unknown>,
+      quote: quote as unknown as Record<string, unknown>,
+      support_breakdown: quote.support_breakdown,
+      extension_count: (application as unknown as Record<string, unknown> | undefined)
+        ?.extension_round,
+    }).support_stage === "지원확정"
+  );
 }
 
 function resolveSupportPriceFromApi(quote: ClientQuote, confirmed: boolean): number | null {
@@ -156,52 +146,21 @@ export function quoteSubmitPriceLines(
     };
   }
 
-  const supportConfirmed = quoteSupportIsConfirmed(quote, application);
-  let supportPrice = resolveSupportPriceFromApi(quote, supportConfirmed);
-
-  if (supportPrice == null && normalPrice != null) {
-    const breakdown = quote.support_breakdown as BreakdownRow | null | undefined;
-    const extension =
-      parseAmount(quote.extension_support_amount) ??
-      breakdownAmount(breakdown, "extensionSupport", "extension_support_amount") ??
-      0;
-    let plannedCustomer =
-      parseAmount(quote.planned_customer_support) ??
-      breakdownAmount(breakdown, "customerPlannedSupport", "planned_customer_support") ??
-      parseAmount((quote as ClientQuote & BreakdownRow).customer_support_amount);
-    const memberHint = parseAmount(quote.member_price);
-    if (plannedCustomer == null && memberHint != null && memberHint < normalPrice) {
-      plannedCustomer = Math.max(normalPrice - memberHint - extension, 0);
-    }
-    if (supportConfirmed) {
-      const confirmedTotal =
-        breakdownAmount(breakdown, "totalConfirmedSupport", "confirmed_total_support") ??
-        parseAmount(quote.confirmed_total_support) ??
-        parseAmount(quote.sponsor_approved_support_amount) ??
-        parseAmount(application?.sponsor_approved_support_amount);
-      const confirmedCustomer =
-        breakdownAmount(breakdown, "customerConfirmedSupport", "confirmed_customer_support") ??
-        parseAmount(quote.confirmed_customer_support);
-      if (confirmedCustomer != null) {
-        supportPrice = Math.max(normalPrice - confirmedCustomer - extension, 0);
-      } else if (plannedCustomer != null && confirmedTotal != null) {
-        supportPrice = Math.max(
-          normalPrice - Math.min(plannedCustomer, confirmedTotal) - extension,
-          0,
-        );
-      } else if (confirmedTotal != null) {
-        supportPrice = Math.max(normalPrice - confirmedTotal - extension, 0);
-      } else if (plannedCustomer != null) {
-        supportPrice = Math.max(normalPrice - plannedCustomer - extension, 0);
-      }
-    } else if (plannedCustomer != null) {
-      supportPrice = Math.max(normalPrice - plannedCustomer - extension, 0);
-    }
-  }
+  const model = buildQuoteSupportDisplayModel({
+    application: application as unknown as Record<string, unknown>,
+    quote: quote as unknown as Record<string, unknown>,
+    support_breakdown: quote.support_breakdown,
+    extension_count: (application as unknown as Record<string, unknown> | undefined)
+      ?.extension_round,
+  });
+  const supportConfirmed = model.support_stage === "지원확정";
+  const supportPrice = supportConfirmed
+    ? model.final_discount_price
+    : model.planned_discount_price;
 
   return {
     isGuest: false,
-    normalPrice,
+    normalPrice: model.normal_price ?? normalPrice,
     supportLabel: supportConfirmed
       ? QUOTE_SCREEN_LABEL.supportDiscountApplied
       : QUOTE_SCREEN_LABEL.supportDiscountPlanned,

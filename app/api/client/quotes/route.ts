@@ -684,36 +684,46 @@ export async function POST(request: Request) {
       selected_price_type: selectedPriceType,
       selected_price_label: selectedPriceLabel,
       selected_price: selectedPrice,
+      client_price_selection_kind: legacyKind,
     };
 
-    let coreUpdate = await admin.from("applications").update(corePatch).eq("id", applicationId);
+    let coreUpdate = await admin
+      .from("applications")
+      .update({ ...corePatch, ...selectedPricePatch })
+      .eq("id", applicationId);
     if (coreUpdate.error) {
-      return NextResponse.json({ error: coreUpdate.error.message }, { status: 502 });
-    }
-
-    let priceUpdate = await admin
-      .from("applications")
-      .update(selectedPricePatch)
-      .eq("id", applicationId);
-    if (priceUpdate.error) {
-      if (isMissingColumnError(priceUpdate.error)) {
-        return NextResponse.json(
-          {
-            error:
-              "선택 견적 저장 컬럼이 없습니다. sql/application_selected_price.sql 을 Supabase에 적용한 뒤 다시 매칭해 주세요.",
-          },
-          { status: 503 },
-        );
+      if (isMissingColumnError(coreUpdate.error)) {
+        const fallbackCore = await admin.from("applications").update(corePatch).eq("id", applicationId);
+        if (fallbackCore.error) {
+          return NextResponse.json({ error: fallbackCore.error.message }, { status: 502 });
+        }
+        const priceOnly = await admin
+          .from("applications")
+          .update({
+            selected_price_type: selectedPriceType,
+            selected_price_label: selectedPriceLabel,
+            selected_price: selectedPrice,
+          })
+          .eq("id", applicationId);
+        if (priceOnly.error) {
+          return NextResponse.json(
+            {
+              error:
+                "선택 견적 저장 컬럼이 없습니다. sql/application_selected_price.sql 을 Supabase에 적용한 뒤 다시 매칭해 주세요.",
+            },
+            { status: 503 },
+          );
+        }
+        const kindUpdate = await admin
+          .from("applications")
+          .update({ client_price_selection_kind: legacyKind })
+          .eq("id", applicationId);
+        if (kindUpdate.error && !isMissingColumnError(kindUpdate.error)) {
+          return NextResponse.json({ error: kindUpdate.error.message }, { status: 502 });
+        }
+      } else {
+        return NextResponse.json({ error: coreUpdate.error.message }, { status: 502 });
       }
-      return NextResponse.json({ error: priceUpdate.error.message }, { status: 502 });
-    }
-
-    const kindUpdate = await admin
-      .from("applications")
-      .update({ client_price_selection_kind: legacyKind })
-      .eq("id", applicationId);
-    if (kindUpdate.error && !isMissingColumnError(kindUpdate.error)) {
-      return NextResponse.json({ error: kindUpdate.error.message }, { status: 502 });
     }
     if (selectedPriceType === "normal") {
       await admin

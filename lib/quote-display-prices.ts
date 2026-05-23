@@ -7,6 +7,7 @@ import {
   type QuoteSupportBreakdown,
   type QuoteSupportInput,
 } from "@/lib/support-calculation";
+import { buildQuoteSupportDisplayModel } from "@/lib/quote-support-display-model";
 
 export type QuoteDisplayPriceInput = QuoteSupportInput & {
   final_member_price?: unknown;
@@ -63,21 +64,43 @@ export function mapQuoteWithSupport(
   row: QuoteDisplayPriceInput,
   options?: BuildQuoteSupportBreakdownOptions,
 ) {
+  const model = buildQuoteSupportDisplayModel({
+    quote: {
+      ...row,
+      approved_support_amount:
+        row.approved_support_amount ?? options?.applicationApprovedSupportTotal,
+      estimated_support_amount:
+        row.estimated_support_amount ?? options?.applicationTotalPlannedSupport,
+    } as Record<string, unknown>,
+    sponsor_preapproval: {
+      estimated_support_amount: options?.sponsorEstimatedSupportAmount,
+      approved_support_amount: options?.sponsorApprovedSupportAmount,
+      status:
+        options?.sponsorApprovedSupportAmount != null &&
+        options.sponsorApprovedSupportAmount > 0
+          ? "approved"
+          : undefined,
+    },
+    support_breakdown: row.support_breakdown,
+  });
   const display = getQuoteDisplayPrices(row, options);
   const b = display.breakdown;
   return {
-    price: display.normalPrice,
-    member_price: display.supportDiscountPlannedPrice,
-    support_discount_planned_price: display.supportDiscountPlannedPrice,
-    support_discount_applied_price: display.supportDiscountAppliedPrice,
-    final_discount_applied_price: display.finalDiscountAppliedPrice,
-    total_planned_support: b.totalPlannedSupport,
-    customer_planned_support: b.customerPlannedSupport,
-    partner_planned_support: b.partnerPlannedSupport,
-    total_confirmed_support: b.totalConfirmedSupport,
-    customer_confirmed_support: b.customerConfirmedSupport,
-    partner_confirmed_support: b.partnerConfirmedSupport,
-    extension_support: b.extensionSupport,
+    price: model.normal_price,
+    member_price: model.planned_discount_price,
+    support_discount_planned_price: model.planned_discount_price,
+    support_discount_applied_price: model.final_discount_price,
+    final_discount_applied_price: model.final_discount_price,
+    total_planned_support: model.planned_total_support,
+    customer_planned_support: model.planned_customer_support,
+    partner_planned_support: model.planned_driver_support,
+    total_confirmed_support: model.confirmed_total_support,
+    customer_confirmed_support: model.confirmed_customer_support,
+    partner_confirmed_support: model.confirmed_driver_support,
+    extension_support:
+      model.support_stage === "지원확정"
+        ? model.confirmed_extension_support
+        : model.planned_extension_support,
     support_breakdown: b,
     sponsor_quote_enabled: b.sponsorQuoteEnabled,
   };

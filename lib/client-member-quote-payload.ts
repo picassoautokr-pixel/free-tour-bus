@@ -12,6 +12,7 @@ import {
   type QuoteSupportBreakdown,
   type QuoteSupportInput,
 } from "@/lib/support-calculation";
+import { buildQuoteSupportDisplayModel } from "@/lib/quote-support-display-model";
 import type { ClientApplication, ClientQuote } from "@/lib/client-application-view-model";
 
 /** 클라이언트 JSON — camelCase + snake_case 병행 */
@@ -271,41 +272,71 @@ export function buildClientMemberQuoteSupport(
   row: QuoteSupportInput & MemberQuoteRow,
   options?: ClientMemberQuoteSupportOptions,
 ): ClientMemberQuoteSupportFields {
-  const computed = computeClientSupportFromRow(row, options);
   const baseBreakdown =
     breakdownFromQuoteRow(row) ?? buildQuoteSupportBreakdown(row, options);
+  const model = buildQuoteSupportDisplayModel({
+    application: {
+      sponsor_support_status: options?.applicationSponsorStatus,
+      target_normal_price: options?.applicationTargetNormalPrice,
+      target_member_price: options?.applicationTargetMemberPrice,
+    },
+    quote: {
+      ...row,
+      estimated_support_amount:
+        row.estimated_support_amount ?? options?.sponsorEstimatedSupportAmount,
+      approved_support_amount:
+        row.approved_support_amount ??
+        options?.sponsorApprovedSupportAmount ??
+        options?.applicationApprovedSupportTotal,
+    },
+    sponsor_preapproval: {
+      status:
+        options?.applicationSponsorStatus === "approved" ||
+        (options?.sponsorApprovedSupportAmount ?? 0) > 0
+          ? "approved"
+          : undefined,
+      estimated_support_amount: options?.sponsorEstimatedSupportAmount,
+      approved_support_amount: options?.sponsorApprovedSupportAmount,
+    },
+    support_breakdown: row.support_breakdown ?? baseBreakdown,
+  });
+  const computed = {
+    normalPrice: model.normal_price ?? 0,
+    plannedCustomerSupport: model.planned_customer_support ?? 0,
+    confirmedTotalSupport: model.confirmed_total_support ?? 0,
+    extensionSupport:
+      model.support_stage === "지원확정"
+        ? model.confirmed_extension_support
+        : model.planned_extension_support,
+    isConfirmed: model.support_stage === "지원확정",
+    confirmedCustomerSupport: model.confirmed_customer_support,
+    discountAppliedPrice: model.final_discount_price,
+    plannedDiscountPrice: model.planned_discount_price,
+    driverConfirmedSupport: model.confirmed_driver_support,
+  };
   const clientBreakdown = mergeSerializedBreakdown(baseBreakdown, computed);
 
-  const applied = computed.discountAppliedPrice;
-  const planned =
-    computed.plannedDiscountPrice ??
-    clientBreakdown.supportDiscountPlannedPrice ??
-    (computed.normalPrice > 0 && computed.plannedCustomerSupport > 0
-      ? Math.max(
-          computed.normalPrice - computed.plannedCustomerSupport - computed.extensionSupport,
-          0,
-        )
-      : null);
-
   return {
-    price: computed.normalPrice > 0 ? computed.normalPrice : null,
-    member_price: planned,
-    support_discount_planned_price: planned,
-    support_discount_applied_price: applied,
-    final_discount_applied_price: applied,
-    confirmed_discount_price: applied,
+    price: model.normal_price,
+    member_price: model.planned_discount_price,
+    support_discount_planned_price: model.planned_discount_price,
+    support_discount_applied_price: model.final_discount_price,
+    final_discount_applied_price: model.final_discount_price,
+    confirmed_discount_price: model.final_discount_price,
     support_breakdown: clientBreakdown,
-    planned_total_support: clientBreakdown.planned_total_support ?? clientBreakdown.totalPlannedSupport,
-    planned_customer_support:
-      computed.plannedCustomerSupport > 0 ? computed.plannedCustomerSupport : null,
-    planned_driver_support: clientBreakdown.partnerPlannedSupport,
+    planned_total_support: model.planned_total_support,
+    planned_customer_support: model.planned_customer_support,
+    planned_driver_support: model.planned_driver_support,
     confirmed_total_support:
-      computed.isConfirmed && computed.confirmedTotalSupport > 0
-        ? computed.confirmedTotalSupport
+      model.support_stage === "지원확정" && model.confirmed_total_support != null
+        ? model.confirmed_total_support
         : null,
-    confirmed_customer_support: computed.confirmedCustomerSupport,
-    confirmed_driver_support: computed.driverConfirmedSupport,
-    extension_support_amount: computed.extensionSupport,
+    confirmed_customer_support: model.confirmed_customer_support,
+    confirmed_driver_support: model.confirmed_driver_support,
+    extension_support_amount:
+      model.support_stage === "지원확정"
+        ? model.confirmed_extension_support
+        : model.planned_extension_support,
     sponsor_quote_enabled: baseBreakdown.sponsorQuoteEnabled,
   };
 }

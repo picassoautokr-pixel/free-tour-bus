@@ -10,6 +10,10 @@ import {
   type BuildQuoteSupportBreakdownOptions,
   type QuoteSupportInput,
 } from "@/lib/support-calculation";
+import {
+  buildQuoteSupportDisplayModel,
+  type QuoteSupportDisplayModel,
+} from "@/lib/quote-support-display-model";
 
 export type PartnerSponsorOnCall = {
   id: string;
@@ -132,6 +136,47 @@ export function quoteBreakdownForCall(call: PartnerCallLike): QuoteSupportBreakd
   return buildQuoteSupportBreakdown(input, options);
 }
 
+export function quoteSupportDisplayModelForCall(
+  call: PartnerCallLike,
+): QuoteSupportDisplayModel | null {
+  if (!call.my_quote || call.my_quote.source !== "member") return null;
+  const totals = applicationSupportTotals(call);
+  const primarySponsor = (call.sponsors ?? [])[0] ?? null;
+  const quote = call.my_quote as PartnerMyQuoteLike & Record<string, unknown>;
+  return buildQuoteSupportDisplayModel({
+    application: {
+      ...call,
+      approved_support_amount: call.sponsor_approved_support_amount,
+      estimated_support_amount: call.sponsor_estimated_support_amount,
+    } as unknown as Record<string, unknown>,
+    quote: {
+      ...quote,
+      approved_support_amount:
+        quote.approved_support_amount ??
+        quote.sponsor_approved_support_amount ??
+        call.sponsor_approved_support_amount ??
+        totals.totalConfirmed,
+      estimated_support_amount:
+        quote.estimated_support_amount ??
+        call.sponsor_estimated_support_amount ??
+        totals.totalPlanned,
+    } as unknown as Record<string, unknown>,
+    sponsor_preapproval: primarySponsor
+      ? {
+          status: primarySponsor.status,
+          estimated_support_amount: primarySponsor.estimated_support_amount,
+          approved_support_amount: primarySponsor.approved_support_amount,
+        }
+      : {
+          status: call.sponsor_support_status,
+          estimated_support_amount: call.sponsor_estimated_support_amount,
+          approved_support_amount: call.sponsor_approved_support_amount,
+        },
+    support_breakdown: call.my_quote.support_breakdown,
+    extension_count: call.extension_round,
+  });
+}
+
 /** 상단 요약 카드·하단 breakdown 동일 소스 */
 export function partnerSupportSummaryForCard(call: PartnerCallLike): {
   breakdown: QuoteSupportBreakdown | null;
@@ -139,8 +184,21 @@ export function partnerSupportSummaryForCard(call: PartnerCallLike): {
   totalPlannedForForm: number;
   summaryFormatted: string;
 } {
+  const model = quoteSupportDisplayModelForCall(call);
   const breakdown = quoteBreakdownForCall(call);
   const sponsorApproved = sponsorStageConfirmed(call.sponsor_support_status);
+
+  if (model) {
+    const showConfirmed = model.support_stage === "지원확정";
+    return {
+      breakdown,
+      showConfirmed,
+      totalPlannedForForm: model.planned_total_support ?? 0,
+      summaryFormatted: showConfirmed
+        ? fmt(model.confirmed_total_support, "confirmed", breakdown ?? undefined)
+        : fmt(model.planned_total_support, "planned", breakdown ?? undefined),
+    };
+  }
 
   if (breakdown && breakdown.calculationStatus === "ok") {
     const showConfirmed =

@@ -14,6 +14,7 @@ import {
   formatQuoteProgress,
   matchedRunStatus,
   partnerSupportSummaryForCard,
+  quoteSupportDisplayModelForCall,
   type PartnerCallLike,
 } from "@/lib/partner-call-view-model";
 import {
@@ -124,6 +125,7 @@ export function PartnerCallCard({
   customerPhone?: string;
 }) {
   const supportSummary = partnerSupportSummaryForCard(call);
+  const supportModel = quoteSupportDisplayModelForCall(call);
   const breakdown = supportSummary.breakdown;
   const sponsorConfirmed = supportSummary.showConfirmed;
   const memberQuoted = call.my_quote?.source === "member";
@@ -143,7 +145,11 @@ export function PartnerCallCard({
 
   const quotedNormal = call.my_quote?.price ?? null;
   const discountLabel = partnerListDiscountLabel(sponsorConfirmed);
-  const discountAmount = partnerListDiscountAmount(breakdown, sponsorConfirmed);
+  const discountAmount =
+    supportModel?.support_stage === "지원확정"
+      ? supportModel.final_discount_price
+      : supportModel?.planned_discount_price ??
+        partnerListDiscountAmount(breakdown, sponsorConfirmed);
   const matchedQuote = partnerMatchedListQuote(call, breakdown);
 
   const expandMode = formOpen ? "quote" : detailOpen ? "detail" : referralOpen ? "referral" : null;

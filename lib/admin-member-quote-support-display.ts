@@ -13,6 +13,9 @@ import {
   resolveConfirmedCustomerSupportDisplay,
   resolvePartnerConfirmedSupport,
 } from "@/lib/support-calculation";
+import { buildQuoteSupportDisplayModel } from "@/lib/quote-support-display-model";
+import { resolveAdminSponsorConfirmed } from "@/lib/admin-sponsor-confirmed";
+import { resolveApplicationSelectedPriceType } from "@/lib/admin-selected-quote-price";
 import { safeText } from "@/lib/sponsor";
 
 function parseInteger(value: unknown): number | null {
@@ -121,145 +124,79 @@ function resolveDiscountAppliedPrice(
 export function buildAdminMemberQuoteSupportDisplay(
   ctx: AdminMemberQuoteSupportContext,
 ): AdminMemberQuoteSupportDisplay {
-  const breakdown = breakdownRecord(ctx.quote);
-  const fallbacksUsed: string[] = [];
+  const model = buildQuoteSupportDisplayModel({
+    application: ctx.application,
+    quote: {
+      ...ctx.quote,
+      sponsor_support_status: ctx.sponsorConfirmed
+        ? "approved"
+        : ctx.quote.sponsor_support_status,
+    },
+    sponsor_preapproval: ctx.sponsor
+      ? {
+          status: ctx.sponsor.sponsor_confirmed ? "approved" : ctx.sponsor.support_status,
+          estimated_support_amount: ctx.sponsor.estimated_support_amount,
+          approved_support_amount: ctx.sponsor.approved_support_amount,
+        }
+      : null,
+    support_breakdown: ctx.quote.support_breakdown,
+    extension_count: ctx.application.extension_round,
+  });
 
-  const pick = (label: string, resolved: { value: number | null; source: string | null }) => {
-    if (resolved.source && !resolved.source.startsWith("support_breakdown.")) {
-      fallbacksUsed.push(`${label}:${resolved.source}`);
-    }
-    return resolved.value;
-  };
-
-  if (ctx.sponsorConfirmed) {
-    const normalPrice = parseInteger(ctx.quote.price);
-    const discountResolved = resolveDiscountAppliedPrice(ctx);
-    const finalDiscountPrice = pick("discount", discountResolved);
-
-    const extensionRaw =
-      breakdownField(breakdown, "confirmed_extension_support", "extensionSupport") ??
-      parseInteger(ctx.quote.confirmed_extension_support) ??
-      0;
-
-    const confirmed = resolveConfirmedTotalSupport(ctx);
-    const confirmedTotal = pick("confirmed_total", confirmed);
-
-    const customerDisplay = resolveConfirmedCustomerSupportDisplay({
-      breakdownConfirmedCustomer: breakdownField(
-        breakdown,
-        "confirmed_customer_support",
-        "customerConfirmedSupport",
-      ),
-      quoteConfirmedCustomer: parseInteger(ctx.quote.confirmed_customer_support),
-      quoteFinalCustomerSupport: parseInteger(ctx.quote.final_customer_support_amount),
-      normalPrice,
-      finalDiscountPrice,
-      confirmedExtensionSupport: extensionRaw,
-    });
-
-    if (customerDisplay.source === "derived_from_price") {
-      fallbacksUsed.push("customer_confirmed:derived_from_price");
-    }
-
-    const customerConfirmed =
-      customerDisplay.value ??
-      (normalPrice != null && finalDiscountPrice != null
-        ? deriveCustomerConfirmedSupport({
-            normalPrice,
-            finalDiscountPrice,
-            confirmedExtensionSupport: extensionRaw,
-          })
-        : null);
-
-    const discountResolvedFinal =
-      finalDiscountPrice ??
-      (normalPrice != null && customerConfirmed != null
-        ? Math.max(normalPrice - customerConfirmed - amountOrZero(extensionRaw), 0)
-        : null);
-
-    const extensionRound = parseInteger(ctx.application.extension_round) ?? 0;
-
-    return {
-      rows: [
-        { label: "일반견적가", value: rowValue(normalPrice) },
-        { label: "확정 지원금", value: rowValue(confirmedTotal) },
-        { label: "고객 확정 지원금", value: rowValue(customerConfirmed) },
-        { label: "연장회차", value: extensionRound },
-        { label: "확정 연장 지원금", value: amountOrZero(extensionRaw) },
-        { label: "지원금 할인 적용가", value: rowValue(discountResolvedFinal) },
-      ],
-      fallbacksUsed,
-      debug: buildAdminMemberQuoteDebug(ctx, breakdown, {
-        confirmedTotal,
-        plannedTotal: resolvePlannedTotalSupport(ctx).value,
-        discount: discountResolvedFinal,
-        customerDisplay,
-        driverConfirmed:
-          resolvePartnerConfirmedSupport({
-            confirmedTotalSupport: confirmedTotal,
-            confirmedCustomerSupport: customerConfirmed,
-            confirmedExtensionSupport: extensionRaw,
-          }) ?? null,
-        extensionRaw,
-        normalPrice,
-      }),
-    };
-  }
-
-  const planned = resolvePlannedTotalSupport(ctx);
-  const plannedTotal = pick("planned_total", planned);
-
-  const customerPlanned =
-    breakdownField(breakdown, "planned_customer_support", "customerPlannedSupport") ??
-    parseInteger(ctx.quote.planned_customer_support) ??
-    parseInteger(ctx.quote.customer_planned_support) ??
-    parseInteger(ctx.quote.customer_support_amount);
-
-  const extensionPlanned =
-    breakdownField(breakdown, "planned_extension_support", "extensionSupport") ??
-    parseInteger(ctx.quote.planned_extension_support) ??
-    parseInteger(ctx.quote.extension_support_amount) ??
-    0;
-
-  const normalPrice = parseInteger(ctx.quote.price);
-
-  const discountPlanned =
-    breakdownField(breakdown, "planned_discount_price", "supportDiscountPlannedPrice") ??
-    parseInteger(ctx.quote.planned_discount_price) ??
-    parseInteger(ctx.quote.support_discount_planned_price) ??
-    parseInteger(ctx.quote.member_price);
-
-  const customerPlannedResolved =
-    customerPlanned ??
-    (normalPrice != null && discountPlanned != null
-      ? deriveCustomerConfirmedSupport({
-          normalPrice,
-          finalDiscountPrice: discountPlanned,
-          confirmedExtensionSupport: extensionPlanned,
-        })
-      : null);
-
-  const extensionRound = parseInteger(ctx.application.extension_round) ?? 0;
+  const fallbacksUsed = [
+    model.debug.normal_price_source,
+    model.debug.planned_total_support_source,
+    model.debug.confirmed_total_support_source,
+    model.debug.customer_support_source,
+    model.debug.discount_price_source,
+  ].filter(
+    (source): source is string =>
+      typeof source === "string" && !source.startsWith("support_breakdown."),
+  );
 
   return {
-    rows: [
-      { label: "일반견적가", value: rowValue(normalPrice) },
-      { label: "예상 지원금", value: rowValue(plannedTotal) },
-      { label: "고객 예상 지원금", value: rowValue(customerPlannedResolved) },
-      { label: "연장회차", value: extensionRound },
-      { label: "예상 연장 지원금", value: amountOrZero(extensionPlanned) },
-      { label: "지원금 할인 예상가", value: rowValue(discountPlanned) },
-    ],
+    rows: model.display_rows,
     fallbacksUsed,
-    debug: buildAdminMemberQuoteDebug(ctx, breakdown, {
-      confirmedTotal: resolveConfirmedTotalSupport(ctx).value,
-      plannedTotal,
-      discount: discountPlanned,
-      customerDisplay: null,
-      driverConfirmed: null,
-      extensionRaw: extensionPlanned,
-      normalPrice: parseInteger(ctx.quote.price),
-    }),
+    debug: {
+      has_support_breakdown: model.debug.support_breakdown_raw != null,
+      support_breakdown_raw: model.debug.support_breakdown_raw,
+      planned_total_support: model.planned_total_support,
+      confirmed_total_support: model.confirmed_total_support,
+      application_selected_price_type: model.debug.selected_price_type,
+      application_selected_price_label: model.debug.selected_price_label,
+      application_selected_price: model.debug.selected_price,
+      application_client_price_selection_kind: model.debug.client_price_selection_kind,
+      application_final_selected_quote_id: safeText(ctx.application.final_selected_quote_id) || null,
+      quote_price: model.normal_price,
+      sponsor_status_resolution: model.debug.support_stage_source,
+      sponsor_confirmed_resolved: model.support_stage === "지원확정",
+      selected_price_calculation_source: model.debug.discount_price_source,
+      calculation_status: safeText(model.debug.support_breakdown_raw?.calculation_status) || "ok",
+      calculation_error:
+        safeText(model.debug.support_breakdown_raw?.calculation_error) ||
+        safeText(model.debug.support_breakdown_raw?.calculationError) ||
+        null,
+      fallback_used: null,
+      missing_fields: model.debug.support_breakdown_raw?.missing_fields ?? null,
+      failed_reason: null,
+      missing_required_fields: null,
+      missing_snapshot_fields: [],
+      selected_price: model.selected_price,
+      approved_support_amount: model.confirmed_total_support,
+      estimated_support_amount: model.planned_total_support,
+      resolved_discount_price:
+        model.support_stage === "지원확정"
+          ? model.final_discount_price
+          : model.planned_discount_price,
+      confirmed_customer_support_source: model.debug.customer_support_source,
+      confirmed_customer_support_formula:
+        model.debug.customer_support_source === "derived:normal-final_discount-extension"
+          ? "normal_price - final_discount_price - confirmed_extension_support"
+          : null,
+      confirmed_customer_support_derived_preview: model.confirmed_customer_support,
+      confirmed_driver_support: model.confirmed_driver_support,
+      fallbacks_used: fallbacksUsed,
+    },
   };
 }
 
@@ -305,11 +242,27 @@ function buildAdminMemberQuoteDebug(
         })
       : null;
 
+  const sponsorResolution = resolveAdminSponsorConfirmed({
+    application: ctx.application,
+    sponsor: ctx.sponsor,
+  });
+
   return {
     has_support_breakdown: breakdown != null,
     support_breakdown_raw: breakdown,
     planned_total_support: resolved.plannedTotal,
     confirmed_total_support: resolved.confirmedTotal,
+    application_selected_price_type: resolveApplicationSelectedPriceType(ctx.application) || null,
+    application_selected_price_label: safeText(ctx.application.selected_price_label) || null,
+    application_selected_price: parseInteger(ctx.application.selected_price),
+    application_client_price_selection_kind:
+      safeText(ctx.application.client_price_selection_kind) || null,
+    application_final_selected_quote_id:
+      safeText(ctx.application.final_selected_quote_id) || null,
+    quote_price: parseInteger(ctx.quote.price),
+    sponsor_status_resolution: sponsorResolution.source,
+    sponsor_confirmed_resolved: sponsorResolution.confirmed,
+    selected_price_calculation_source: null,
     calculation_status: calcStatus,
     calculation_error:
       safeText(breakdown?.calculation_error) || safeText(breakdown?.calculationError) || null,

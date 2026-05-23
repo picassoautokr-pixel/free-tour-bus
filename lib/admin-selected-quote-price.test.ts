@@ -45,4 +45,26 @@ test("selected quote uses discount row when stored price is normal price", () =>
   });
   assert.equal(result.selected_price, 300_000);
   assert.equal(result.selected_price_label, "지원금 할인 적용가");
+  assert.equal(result.selected_price_type, "support_confirmed");
+});
+
+test("support_confirmed uses breakdown not stored normal price", () => {
+  const result = resolveAdminSelectedQuoteDisplay({
+    application: {
+      selected_price_type: "support_confirmed",
+      selected_price_label: "지원금 할인 적용가",
+      selected_price: 500_000,
+    },
+    quoteRow: {
+      price: 500_000,
+      support_breakdown: {
+        final_discount_price: 300_000,
+        confirmed_total_support: 250_000,
+        confirmed_customer_support: 200_000,
+      },
+    },
+    sponsorConfirmed: false,
+  });
+  assert.equal(result.selected_price, 300_000);
+  assert.match(result.calculation_source, /final_discount/);
 });

@@ -8,6 +8,10 @@ import type {
 } from "@/lib/sponsor-matched-contact";
 import { sponsorSupportTypeLabel } from "@/lib/sponsor";
 import { isSponsorSupportUnusedByNormalMatch } from "@/lib/selected-price-display";
+import {
+  buildQuoteSupportDisplayModel,
+  type QuoteSupportDisplayModel,
+} from "@/lib/quote-support-display-model";
 
 export type SponsorCallRow = {
   id: string;
@@ -150,6 +154,23 @@ export function payoutStatusLabel(status?: string | null): string {
 export function formatWon(value: number | null | undefined): string {
   if (value == null) return LABEL.unconfirmed;
   return `${value.toLocaleString("ko-KR")}${LABEL.wonSuffix}`;
+}
+
+export function sponsorSupportDisplayModelForCall(
+  call: SponsorCallRow,
+): QuoteSupportDisplayModel | null {
+  const quote = call.quote;
+  if (!quote) return null;
+  return buildQuoteSupportDisplayModel({
+    application: call as unknown as Record<string, unknown>,
+    quote,
+    sponsor_preapproval: {
+      status: call.status,
+      estimated_support_amount: call.estimated_support_amount,
+      approved_support_amount: call.approved_support_amount,
+    },
+    support_breakdown: quote.support_breakdown,
+  });
 }
 
 export function formatQuoteDeadline(deadline?: string): string {

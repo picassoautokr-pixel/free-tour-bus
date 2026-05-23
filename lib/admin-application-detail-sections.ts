@@ -17,7 +17,8 @@ import {
   type AdminSmsLog,
   type AdminSponsorDetail,
 } from "@/lib/admin-application-detail-build";
-import { isSponsorStageConfirmed, resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
+import { resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
+import { resolveAdminSponsorConfirmed } from "@/lib/admin-sponsor-confirmed";
 import {
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
@@ -48,10 +49,10 @@ const APPLICATION_LIFECYCLE_CORE =
   "id, quote_status, quote_deadline_at, target_normal_price, target_member_price, final_selected_quote_id, final_selected_quote_source, extension_round";
 
 const APPLICATION_SELECT_CANDIDATES = [
-  `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, is_hidden, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, support_breakdown_snapshot`,
-  `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, admin_memo, status, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
-  `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, admin_memo, status`,
-  "id, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, admin_memo, status, final_selected_quote_id, final_selected_quote_source, quote_status, extension_round",
+  `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, is_hidden, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, support_breakdown_snapshot`,
+  `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
+  `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status`,
+  "id, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, final_selected_quote_id, final_selected_quote_source, quote_status, extension_round",
 ] as const;
 
 const GUEST_QUOTE_SELECT =
@@ -154,7 +155,7 @@ async function loadMatchedDriverOnly(
   };
   try {
     const card = buildMemberQuoteCard(row, finalId, sponsorConfirmed, application, sponsor);
-    return buildMatchedDriver(finalId, "member", [card], [], application, sponsorConfirmed);
+    return buildMatchedDriver(finalId, "member", [card], [], application, sponsorConfirmed, quote);
   } catch (cardErr) {
     console.error("[application-detail] matched member card", cardErr);
     return null;
@@ -179,7 +180,6 @@ export async function fetchAdminDetailBasic(
   }
 
   const sponsorStatus = safeText(application.sponsor_support_status, "none");
-  const sponsorConfirmed = isSponsorStageConfirmed(sponsorStatus);
   const preCount = parseInteger(application.sponsor_preapproved_count) ?? 0;
   const appCount = parseInteger(application.sponsor_approved_count) ?? 0;
 
@@ -218,8 +218,11 @@ export async function fetchAdminDetailBasic(
     warnings.push(`후원 정보 조회 실패: ${msg}`);
   }
 
-  const sponsorConfirmedResolved =
-    sponsorConfirmed || (sponsorQuick?.sponsor_confirmed ?? false);
+  const sponsorResolution = resolveAdminSponsorConfirmed({
+    application,
+    sponsor: sponsorQuick,
+  });
+  const sponsorConfirmedResolved = sponsorResolution.confirmed;
 
   if (safeText(application.final_selected_quote_id)) {
     try {
@@ -251,7 +254,7 @@ export async function fetchAdminDetailBasic(
     matched_driver,
     sponsor: sponsorQuick,
     sponsor_stage: {
-      support_stage_badge: resolveSponsorStageBadge(sponsorStatus),
+      support_stage_badge: sponsorResolution.badge,
       sponsor_confirmed: sponsorConfirmedResolved,
       has_sponsor: hasSponsorFromPre,
     },
@@ -446,9 +449,12 @@ export async function fetchAdminDetailQuotes(
   const preRows = Array.isArray(preRes.data) ? (preRes.data as Record<string, unknown>[]) : [];
   const enrichedPre = await enrichPreapprovals(admin, preRows);
   const sponsor = pickPrimarySponsor(enrichedPre);
-  const sponsorConfirmed =
-    (sponsor ? sponsor.sponsor_confirmed : false) ||
-    isSponsorStageConfirmed(safeText(application.sponsor_support_status));
+  const sponsorResolution = resolveAdminSponsorConfirmed({
+    application,
+    sponsor,
+    preapprovalRows: enrichedPre,
+  });
+  const sponsorConfirmed = sponsorResolution.confirmed;
   const appApproved = resolveApplicationApprovedSupportTotal(application, sponsor);
   const appEstimated = resolveApplicationEstimatedSupportTotal(application, sponsor);
   const { memberRows, guestRows } = await loadMemberAndGuestQuotes(admin, applicationId, {

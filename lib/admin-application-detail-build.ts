@@ -3,7 +3,11 @@ import {
   resolveApplicationApprovedSupportTotal,
   resolveApplicationEstimatedSupportTotal,
 } from "@/lib/application-approved-support";
-import { resolveAdminSelectedQuoteDisplay } from "@/lib/admin-selected-quote-price";
+import {
+  resolveAdminSelectedQuoteDisplay,
+  resolveApplicationSelectedPriceType,
+} from "@/lib/admin-selected-quote-price";
+import { resolveAdminSponsorConfirmed } from "@/lib/admin-sponsor-confirmed";
 import { isSponsorStageConfirmed, resolveSponsorStageBadge } from "@/lib/admin-progress-stage";
 import { SETTLEMENT_TYPE_LABELS } from "@/lib/support-calculation";
 import { safeText } from "@/lib/sponsor";
@@ -45,6 +49,15 @@ export type AdminMemberQuoteDebug = {
   confirmed_customer_support_derived_preview: number | null;
   confirmed_driver_support: number | null;
   fallbacks_used: string[];
+  application_selected_price_type?: string | null;
+  application_selected_price_label?: string | null;
+  application_selected_price?: number | null;
+  application_client_price_selection_kind?: string | null;
+  application_final_selected_quote_id?: string | null;
+  quote_price?: number | null;
+  sponsor_status_resolution?: string | null;
+  sponsor_confirmed_resolved?: boolean;
+  selected_price_calculation_source?: string | null;
 };
 
 export type AdminMemberQuoteCard = {
@@ -201,13 +214,24 @@ export function buildMemberQuoteCard(
   sponsor: AdminSponsorDetail | null,
 ): AdminMemberQuoteCard {
   const settlement = safeText(quote.support_settlement_type, "client_priority");
+  const sponsorResolution = resolveAdminSponsorConfirmed({
+    application,
+    sponsor,
+  });
+  const sponsorConfirmedResolved = sponsorConfirmed || sponsorResolution.confirmed;
+
   const supportDisplay = buildAdminMemberQuoteSupportDisplay({
     quote,
     application,
     sponsor,
-    sponsorConfirmed,
+    sponsorConfirmed: sponsorConfirmedResolved,
   });
   const breakdown = supportDisplay.debug.support_breakdown_raw;
+  const selectedResolution = resolveAdminSelectedQuoteDisplay({
+    application,
+    quoteRow: quote,
+    sponsorConfirmed: sponsorConfirmedResolved,
+  });
 
   return {
     id: safeText(quote.id),
@@ -219,7 +243,7 @@ export function buildMemberQuoteCard(
     support_settlement_type: settlement,
     support_settlement_label: SETTLEMENT_TYPE_LABELS[settlement as keyof typeof SETTLEMENT_TYPE_LABELS] ?? settlement,
     support_rows: supportDisplay.rows,
-    sponsor_stage_badge: sponsorConfirmed ? "지원확정" : "지원검토",
+    sponsor_stage_badge: sponsorConfirmedResolved ? "지원확정" : "지원검토",
     created_at: safeText(quote.created_at),
     message: safeText(quote.message),
     status: safeText(quote.status, "submitted"),
@@ -229,13 +253,19 @@ export function buildMemberQuoteCard(
     sponsor_quote_enabled:
       quote.sponsor_quote_enabled === true ||
       sponsor != null ||
-      sponsorConfirmed ||
+      sponsorConfirmedResolved ||
       breakdown != null ||
-      supportDisplay.rows.length > 0,
+      supportDisplay.rows.length > 0 ||
+      resolveApplicationSelectedPriceType(application) !== "normal",
     support_breakdown: breakdown,
     support_debug: {
       ...supportDisplay.debug,
       fallbacks_used: supportDisplay.fallbacksUsed,
+      selected_price_calculation_source: selectedResolution.calculation_source,
+      application_selected_price_type:
+        selectedResolution.selected_price_type ||
+        resolveApplicationSelectedPriceType(application) ||
+        null,
     },
   };
 }
@@ -296,6 +326,7 @@ export function buildMatchedDriver(
   guestQuotes: AdminGuestQuoteCard[],
   application: Record<string, unknown>,
   sponsorConfirmed = false,
+  quoteRow?: Record<string, unknown> | null,
 ): AdminMatchedDriver | null {
   if (!finalQuoteId) return null;
 
@@ -319,6 +350,7 @@ export function buildMatchedDriver(
   const selected = resolveAdminSelectedQuoteDisplay({
     application,
     memberQuote: mq,
+    quoteRow: quoteRow ?? null,
     sponsorConfirmed,
   });
   return {

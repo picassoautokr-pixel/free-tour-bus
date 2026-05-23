@@ -1,6 +1,7 @@
 import type { PartnerCallLike } from "@/lib/partner-call-view-model";
 import {
   quoteBreakdownForCall,
+  quoteSupportDisplayModelForCall,
   sponsorStageConfirmed,
 } from "@/lib/partner-call-view-model";
 import { LABEL } from "@/lib/partner-dashboard-labels";
@@ -80,6 +81,13 @@ export function partnerMatchedListQuote(
   call: PartnerCallLike,
   breakdown: QuoteSupportBreakdown | null,
 ): { label: string; amount: number | null } {
+  const model = quoteSupportDisplayModelForCall(call);
+  if (model) {
+    return {
+      label: model.selected_price_label,
+      amount: model.selected_price,
+    };
+  }
   const compare = partnerPriceCompareFromCall(call, breakdown);
   const quoteFallback = call.my_quote
     ? {
