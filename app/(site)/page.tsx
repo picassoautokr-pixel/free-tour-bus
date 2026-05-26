@@ -1086,47 +1086,9 @@ export default function Home() {
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
-                  마감목표
+                  희망견적
                 </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                      일반견적
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.targetNormalPrice}
-                      onChange={(event) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          targetNormalPrice: event.target.value.replace(/[^\d]/g, ""),
-                        }))
-                      }
-                      placeholder="선택 입력"
-                      className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
-                      할인견적
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.targetMemberPrice}
-                      onChange={(event) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          targetMemberPrice: event.target.value.replace(/[^\d]/g, ""),
-                        }))
-                      }
-                      placeholder="선택 입력"
-                      className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
-                    />
-                  </label>
-                </div>
-                <div className="mt-4">
+                <div className="mt-3">
                   <p className="text-xs font-bold tracking-[-0.02em] text-slate-500">
                     희망견적유형
                   </p>
@@ -1163,6 +1125,48 @@ export default function Home() {
                   <p className="mt-2 text-[11px] font-semibold text-slate-500">
                     둘 다 선택 가능합니다. 최소 한 가지는 선택해 주세요.
                   </p>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {formData.preferredNormalQuote ? (
+                    <label className="block">
+                      <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
+                        일반견적
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.targetNormalPrice}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            targetNormalPrice: event.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                        placeholder="선택 입력"
+                        className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
+                      />
+                    </label>
+                  ) : null}
+                  {formData.preferredDiscountQuote ? (
+                    <label className="block">
+                      <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
+                        할인견적
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={formData.targetMemberPrice}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            targetMemberPrice: event.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                        placeholder="선택 입력"
+                        className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
+                      />
+                    </label>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1274,9 +1278,10 @@ export default function Home() {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
-                    마감목표
+                    희망견적
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {formData.preferredNormalQuote ? (
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
                         일반견적
@@ -1295,6 +1300,8 @@ export default function Home() {
                         className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
                       />
                     </label>
+                    ) : null}
+                    {formData.preferredDiscountQuote ? (
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
                         할인견적
@@ -1313,6 +1320,7 @@ export default function Home() {
                         className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
                       />
                     </label>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1610,9 +1618,10 @@ export default function Home() {
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
-                    마감목표
+                    희망견적
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {formData.preferredNormalQuote ? (
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
                         일반견적
@@ -1631,6 +1640,8 @@ export default function Home() {
                         className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
                       />
                     </label>
+                    ) : null}
+                    {formData.preferredDiscountQuote ? (
                     <label className="block">
                       <span className="text-xs font-bold tracking-[-0.02em] text-slate-500">
                         할인견적
@@ -1649,6 +1660,7 @@ export default function Home() {
                         className="mt-1 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-blue-500"
                       />
                     </label>
+                    ) : null}
                   </div>
                 </div>
               </div>
