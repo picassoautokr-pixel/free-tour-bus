@@ -82,7 +82,7 @@ async function resolveApplication(admin: ReturnType<typeof createServiceRoleSupa
     result = await admin
       .from("applications")
       .select(
-        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
+        `id, created_at, receipt_number, applicant_name, phone, organization_name, group_name, departure, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
       )
       .eq("receipt_number", receiptNumber)
       .maybeSingle();
@@ -157,7 +157,7 @@ async function loadPayload(admin: NonNullable<ReturnType<typeof createServiceRol
     latestResult = await admin
       .from("applications")
       .select(
-        `id, created_at, receipt_number, applicant_name, phone, departure, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
+        `id, created_at, receipt_number, applicant_name, phone, organization_name, group_name, departure, destination, stopovers, departure_date, departure_time, return_date, trip_type, bus_grade, passenger_count, request_message, ${quoteLifecycleSelectColumns()}, contact_revealed_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_pdf_generated_at, contract_pdf_url`,
       )
       .eq("id", applicationId)
       .maybeSingle();

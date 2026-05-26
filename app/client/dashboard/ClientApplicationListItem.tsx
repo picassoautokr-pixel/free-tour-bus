@@ -10,6 +10,7 @@ import {
   formatAutoCloseRemaining,
   formatAutoCloseRemainingCount,
   formatDepartureAt,
+  formatOrganizationName,
   formatQuoteCount,
   formatReturnDate,
   formatStopovers,
@@ -155,9 +156,7 @@ export function ClientApplicationListItem({
               </>
             ) : null}
             <DetailRow label={LABEL.groupName}>
-              {application.applicant_name?.trim() ||
-                application.organization_name?.trim() ||
-                LABEL.dash}
+              {formatOrganizationName(application)}
             </DetailRow>
             <DetailRow label={CLIENT_UI.groupType}>{resolveGroupTypeDisplay(application)}</DetailRow>
           </dl>

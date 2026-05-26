@@ -7,6 +7,7 @@ import {
   formatAutoCloseRemainingCount,
   formatDepartureAt,
   formatQuoteCount,
+  formatOrganizationName,
   formatReturnDate,
   formatWon,
   priceSelectionLabel,
@@ -51,6 +52,7 @@ export {
   formatAutoCloseRemainingCount,
   formatDepartureAt,
   formatQuoteCount,
+  formatOrganizationName,
   formatReturnDate,
   formatWon,
   priceSelectionLabel,
@@ -190,11 +192,15 @@ export function normalizeClientApplication(app: ClientApplication): ClientApplic
   const raw = app as ClientApplication & LooseRecord;
   return {
     ...app,
+    organization_name:
+      pickText(app.organization_name, raw.organization_name, raw.organizationName, raw.group_name, raw.groupName) ||
+      app.organization_name,
     organization_type: pickText(app.organization_type, raw.organizationType) || app.organization_type,
     group_type:
       pickText(app.group_type, raw.group_type, raw.groupType, app.organization_type) ||
       app.group_type,
-    applicant_name: pickText(app.applicant_name, raw.group_name, raw.groupName) || app.applicant_name,
+    applicant_name:
+      pickText(app.applicant_name, raw.applicant_name, raw.applicantName) || app.applicant_name,
     auto_final_confirm_at:
       pickText(app.auto_final_confirm_at, raw.autoFinalConfirmAt) || app.auto_final_confirm_at,
     final_price_selection_kind:

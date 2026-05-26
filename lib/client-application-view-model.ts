@@ -73,6 +73,7 @@ export type ClientApplication = {
   organization_type?: string;
   group_type?: string;
   organization_name?: string;
+  group_name?: string;
   quote_status: string;
   quote_deadline_at?: string;
   auto_final_confirm_at?: string;
@@ -187,12 +188,18 @@ export function formatGroupType(app: ClientApplication): string {
     raw.organizationType,
     raw.customer_group_type,
     raw.customerGroupType,
-    raw.group_name,
-    raw.groupName,
   ]
     .map((v) => (v == null ? "" : String(v).trim()))
     .find((t) => t !== "" && t !== "—");
   return value ? normalizeCustomerOrganizationType(value) : LABEL.dash;
+}
+
+export function formatOrganizationName(app: ClientApplication): string {
+  const raw = app as ClientApplication & Record<string, unknown>;
+  const value = [app.organization_name, raw.group_name, raw.groupName]
+    .map((v) => (v == null ? "" : String(v).trim()))
+    .find((t) => t !== "" && t !== "—");
+  return value || LABEL.dash;
 }
 
 export function formatAutoCloseRemaining(app: ClientApplication): string {
