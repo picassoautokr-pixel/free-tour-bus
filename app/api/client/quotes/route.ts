@@ -639,7 +639,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const defaultLabelByType: Record<
+    const canonicalLabelByType: Record<
       "normal" | "support_planned" | "support_confirmed",
       string
     > = {
@@ -647,15 +647,25 @@ export async function POST(request: Request) {
       support_planned: "지원금 할인 예상가",
       support_confirmed: "지원금 할인 적용가",
     };
+    const aliasLabelsByType: Record<
+      "normal" | "support_planned" | "support_confirmed",
+      readonly string[]
+    > = {
+      normal: ["일반견적가"],
+      support_planned: ["지원금 할인 예상가", "지원금 할인 예정가"],
+      support_confirmed: ["지원금 할인 적용가", "지원금 할인 확정가"],
+    };
     if (selectedPriceLabel === "") {
-      selectedPriceLabel = defaultLabelByType[selectedPriceType];
-    } else if (selectedPriceLabel !== defaultLabelByType[selectedPriceType]) {
+      selectedPriceLabel = canonicalLabelByType[selectedPriceType];
+    } else if (!aliasLabelsByType[selectedPriceType].includes(selectedPriceLabel)) {
       return NextResponse.json(
         {
-          error: `선택 라벨이 종류와 일치하지 않습니다. (${selectedPriceType} → ${defaultLabelByType[selectedPriceType]})`,
+          error: `선택 라벨이 종류와 일치하지 않습니다. (${selectedPriceType} → ${canonicalLabelByType[selectedPriceType]})`,
         },
         { status: 400 },
       );
+    } else {
+      selectedPriceLabel = canonicalLabelByType[selectedPriceType];
     }
 
     const now = new Date().toISOString();
