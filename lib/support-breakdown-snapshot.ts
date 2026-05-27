@@ -57,10 +57,27 @@ export type SupportBreakdownSnapshot = {
   confirmed_customer_support: number | null;
   confirmed_driver_support: number | null;
   confirmed_extension_support: number | null;
+  /** 지원금 할인 적용가 (normal_price - confirmed_customer_support) */
+  confirmed_discount_price?: number | null;
   final_discount_price: number | null;
 
   calculation_status: "ok" | "failed" | "incomplete";
   calculation_error?: string | null;
+
+  // 확정 메타데이터 (sponsor_confirm 단계에 저장)
+  confirmed_at?: string | null;
+  confirmed_source?: string | null;
+
+  // camelCase aliases — 파싱 없이 raw JSON 직접 접근 시 사용
+  totalConfirmedSupport?: number | null;
+  customerConfirmedSupport?: number | null;
+  partnerConfirmedSupport?: number | null;
+  confirmedExtensionSupport?: number | null;
+  supportDiscountAppliedPrice?: number | null;
+  finalDiscountAppliedPrice?: number | null;
+  isConfirmed?: boolean;
+  confirmedAt?: string | null;
+  confirmedSource?: string | null;
 };
 
 export function ruleToSnapshotMeta(rule: SponsorRuleRecord | null): Pick<
@@ -146,19 +163,34 @@ export function applyConfirmedToSupportBreakdownSnapshot(
     extensionSupport: number | null;
   },
 ): SupportBreakdownSnapshot {
+  const now = new Date().toISOString();
   return {
     ...snapshot,
-    captured_at: new Date().toISOString(),
+    captured_at: now,
     capture_phase: "sponsor_confirm",
     confirmed_total_support: confirmed.total,
     confirmed_customer_support: confirmed.customer,
     confirmed_driver_support: confirmed.driver,
     confirmed_extension_support: confirmed.extensionSupport,
+    confirmed_discount_price: confirmed.discountPrice,
     final_discount_price: confirmed.finalPrice,
     planned_discount_price:
       snapshot.planned_discount_price ?? confirmed.discountPrice,
     calculation_status: "ok",
     calculation_error: null,
+    // 확정 메타데이터
+    confirmed_at: now,
+    confirmed_source: "sponsor_confirm",
+    // camelCase aliases — raw JSON 직접 접근 및 QuoteSupportBreakdown 호환
+    totalConfirmedSupport: confirmed.total,
+    customerConfirmedSupport: confirmed.customer,
+    partnerConfirmedSupport: confirmed.driver,
+    confirmedExtensionSupport: confirmed.extensionSupport ?? null,
+    supportDiscountAppliedPrice: confirmed.discountPrice,
+    finalDiscountAppliedPrice: confirmed.finalPrice,
+    isConfirmed: true,
+    confirmedAt: now,
+    confirmedSource: "sponsor_confirm",
   };
 }
 
@@ -184,8 +216,22 @@ export function snapshotToQuoteSupportBreakdown(
   snapshot: SupportBreakdownSnapshot,
 ): QuoteSupportBreakdown {
   const isConfirmed =
-    snapshot.confirmed_total_support != null &&
-    snapshot.confirmed_total_support > 0;
+    snapshot.isConfirmed === true ||
+    (snapshot.confirmed_total_support != null &&
+      snapshot.confirmed_total_support > 0);
+
+  // confirmed_discount_price가 저장돼 있으면 우선 사용, 없으면 계산
+  const supportDiscountApplied =
+    snapshot.confirmed_discount_price != null
+      ? snapshot.confirmed_discount_price
+      : isConfirmed &&
+          snapshot.normal_price != null &&
+          snapshot.confirmed_customer_support != null
+        ? calculateSupportDiscountPrice(
+            snapshot.normal_price,
+            snapshot.confirmed_customer_support,
+          )
+        : null;
 
   return {
     calculationStatus: snapshot.calculation_status,
@@ -200,15 +246,7 @@ export function snapshotToQuoteSupportBreakdown(
     totalConfirmedSupport: snapshot.confirmed_total_support,
     customerConfirmedSupport: snapshot.confirmed_customer_support,
     partnerConfirmedSupport: snapshot.confirmed_driver_support,
-    supportDiscountAppliedPrice:
-      isConfirmed &&
-      snapshot.normal_price != null &&
-      snapshot.confirmed_customer_support != null
-        ? calculateSupportDiscountPrice(
-            snapshot.normal_price,
-            snapshot.confirmed_customer_support,
-          )
-        : null,
+    supportDiscountAppliedPrice: isConfirmed ? supportDiscountApplied : null,
     extensionSupport: isConfirmed
       ? snapshot.confirmed_extension_support
       : snapshot.planned_extension_support,
@@ -513,7 +551,53 @@ async function refreshDriverQuotesSupportBreakdownForApplication(
   }
 }
 
-/** 스폰서 확정 후 — 기존 스냅샷에 확정 필드만 병합 */
+/**
+ * old camelCase QuoteSupportBreakdown JSON에서 planned 값을 읽어
+ * SupportBreakdownSnapshot을 복원한다.
+ * parseSupportBreakdownSnapshot이 실패했을 때(버전 필드 없는 구형 포맷) fallback으로 사용.
+ */
+function snapshotFromOldCamelCaseBreakdown(
+  raw: unknown,
+  price: number | null,
+  settlementType: string | null,
+): SupportBreakdownSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+
+  const plannedTotal =
+    parseInteger(obj.totalPlannedSupport ?? obj.planned_total_support);
+  const plannedCustomer =
+    parseInteger(obj.customerPlannedSupport ?? obj.planned_customer_support);
+  const plannedDriver =
+    parseInteger(obj.partnerPlannedSupport ?? obj.planned_driver_support);
+  const plannedDiscount =
+    parseInteger(obj.supportDiscountPlannedPrice ?? obj.planned_discount_price);
+  const normalPrice = price ?? parseInteger(obj.normalPrice ?? obj.normal_price);
+
+  if (normalPrice == null || plannedTotal == null || plannedCustomer == null) {
+    return null;
+  }
+  const driver = plannedDriver ?? Math.max(plannedTotal - plannedCustomer, 0);
+  const discount = plannedDiscount ?? Math.max(normalPrice - plannedCustomer, 0);
+
+  return buildPlannedSupportBreakdownSnapshot({
+    phase: "quote_submit",
+    rule: null,
+    normalPrice,
+    planned: {
+      total: plannedTotal,
+      customer: plannedCustomer,
+      driver,
+      discountPrice: discount,
+      finalPrice: discount,
+    },
+    supportMode: resolveSettlementType(
+      settlementType ?? safeText(obj.settlementType ?? obj.support_mode),
+    ),
+  });
+}
+
+/** 스폰서 확정 후 — 기존 스냅샷에 확정 필드만 병합하고 DB에 저장 */
 export async function refreshQuoteSnapshotsAfterSponsorConfirm(
   admin: SupabaseClient,
   applicationId: string,
@@ -536,71 +620,98 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
     .eq("application_id", applicationId);
 
   for (const raw of Array.isArray(quotes) ? quotes : []) {
-    const row = raw as QuoteSupportRow & { id?: string; support_breakdown?: unknown };
+    const row = raw as QuoteSupportRow & {
+      id?: string;
+      support_breakdown?: unknown;
+      extension_applied?: unknown;
+    };
     const quoteId = safeText(row.id);
     if (!quoteId) continue;
 
-    let snapshot =
-      parseSupportBreakdownSnapshot(row.support_breakdown) ??
-      (() => {
-        const price = parseInteger(row.price);
-        const plannedTotal = parseInteger(row.planned_total_support);
-        if (price == null || plannedTotal == null) return null;
-        return buildPlannedSupportBreakdownSnapshot({
+    const rowPrice = parseInteger(row.price);
+    const rowSettlement = safeText(row.support_settlement_type) || null;
+
+    // --- Step 1: 신규 SupportBreakdownSnapshot 포맷 시도 ---
+    let snapshot = parseSupportBreakdownSnapshot(row.support_breakdown) ?? null;
+
+    // --- Step 2: planned_* 개별 컬럼으로 재건 시도 ---
+    if (!snapshot) {
+      const plannedTotal = parseInteger(row.planned_total_support);
+      if (rowPrice != null && plannedTotal != null) {
+        snapshot = buildPlannedSupportBreakdownSnapshot({
           phase: "quote_submit",
           rule: null,
-          normalPrice: price,
+          normalPrice: rowPrice,
           planned: {
             total: plannedTotal,
             customer: parseInteger(row.planned_customer_support) ?? 0,
             driver: parseInteger(row.planned_driver_support) ?? 0,
-            discountPrice: parseInteger(row.planned_discount_price) ?? price,
-            finalPrice: parseInteger(row.planned_discount_price) ?? price,
+            discountPrice: parseInteger(row.planned_discount_price) ?? rowPrice,
+            finalPrice: parseInteger(row.planned_discount_price) ?? rowPrice,
           },
-          supportMode: resolveSettlementType(row.support_settlement_type),
+          supportMode: resolveSettlementType(rowSettlement),
         });
-      })();
+        logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.rebuilt_from_columns", {
+          quote_id: quoteId,
+        });
+      }
+    }
 
+    // --- Step 3: 구형 camelCase QuoteSupportBreakdown JSON으로 재건 시도 ---
     if (!snapshot) {
-      const price = parseInteger(row.price);
-      if (price == null) {
+      snapshot = snapshotFromOldCamelCaseBreakdown(
+        row.support_breakdown,
+        rowPrice,
+        rowSettlement,
+      );
+      if (snapshot) {
+        logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.rebuilt_from_camel", {
+          quote_id: quoteId,
+        });
+      }
+    }
+
+    // --- Step 4: 가격만 있으면 최소 synthetic 스냅샷 생성 ---
+    if (!snapshot) {
+      if (rowPrice == null) {
         logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.skip", {
           quote_id: quoteId,
           reason: "no_snapshot_and_no_price",
-          row,
         });
         continue;
       }
-      const customerPlanned = Math.min(confirmedTotal, price);
+      const customerPlanned = Math.min(confirmedTotal, rowPrice);
       snapshot = buildPlannedSupportBreakdownSnapshot({
         phase: "sponsor_confirm",
         rule: null,
-        normalPrice: price,
+        normalPrice: rowPrice,
         planned: {
           total: confirmedTotal,
           customer: customerPlanned,
           driver: Math.max(confirmedTotal - customerPlanned, 0),
-          discountPrice: Math.max(price - customerPlanned, 0),
-          finalPrice: Math.max(price - customerPlanned, 0),
+          discountPrice: Math.max(rowPrice - customerPlanned, 0),
+          finalPrice: Math.max(rowPrice - customerPlanned, 0),
         },
-        supportMode: resolveSettlementType(row.support_settlement_type),
+        supportMode: resolveSettlementType(rowSettlement),
       });
       logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.synthetic_planned", {
         quote_id: quoteId,
         confirmed_total: confirmedTotal,
-        saved_snapshot: snapshot,
       });
     }
 
-    const rowFlags = row as QuoteSupportRow & { extension_applied?: unknown };
+    const extensionSupportAmount = parseInteger(row.extension_support_amount);
+
+    // --- 확정 스냅샷 계산 ---
     const updated = buildConfirmedSnapshotFromPlanned(snapshot, confirmedTotal, {
-      extensionApplied: rowFlags.extension_applied === true,
-      extensionSupportAmount: parseInteger(row.extension_support_amount),
+      extensionApplied: row.extension_applied === true,
+      extensionSupportAmount,
     });
     if (!updated) {
       logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.merge_failed", {
         quote_id: quoteId,
-        input_snapshot: snapshot,
+        snapshot_phase: snapshot.capture_phase,
+        planned_total: snapshot.planned_total_support,
         confirmed_total: confirmedTotal,
       });
       continue;
@@ -608,11 +719,19 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
 
     logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.saved", {
       quote_id: quoteId,
-      saved_snapshot: updated,
+      confirmed_total: updated.confirmed_total_support,
+      confirmed_customer: updated.confirmed_customer_support,
+      confirmed_driver: updated.confirmed_driver_support,
+      confirmed_discount: updated.confirmed_discount_price,
+      final_discount: updated.final_discount_price,
+      is_confirmed: updated.isConfirmed,
+      confirmed_at: updated.confirmed_at,
     });
 
+    // support_breakdown JSONB 저장 (camelCase aliases + snake_case 모두 포함)
     await persistQuoteSupportBreakdownSnapshot(admin, quoteId, updated);
 
+    // 개별 confirmed_* 컬럼도 동시 갱신
     const confirmed = computeConfirmedFromPlanned({
       normalPrice: snapshot.normal_price ?? 0,
       settlementType: snapshot.support_mode,
@@ -624,11 +743,14 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
         finalPrice: snapshot.planned_discount_price ?? 0,
       },
       confirmedTotal,
-      extensionApplied: rowFlags.extension_applied === true,
-      extensionSupportAmount: parseInteger(row.extension_support_amount),
+      extensionApplied: row.extension_applied === true,
+      extensionSupportAmount,
     });
     if (!("error" in confirmed)) {
-      await admin.from("driver_quotes").update(buildConfirmedDbPayload(confirmed)).eq("id", quoteId);
+      await admin
+        .from("driver_quotes")
+        .update(buildConfirmedDbPayload(confirmed))
+        .eq("id", quoteId);
     }
   }
 }
