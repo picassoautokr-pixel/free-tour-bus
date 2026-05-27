@@ -267,11 +267,27 @@ export function PartnerCallExpandPanel({
                     ) : null}
                   </label>
                   <Field label={LABEL.extensionRound}>{call.extension_round}</Field>
-                  <Field label={LABEL.partnerExpectedSupport}>
-                    {formatWon(formPlannedPreview.partnerPlannedSupport)}
+                  <Field
+                    label={
+                      sponsorConfirmed
+                        ? LABEL.partnerConfirmedSupportDisplay
+                        : LABEL.partnerExpectedSupport
+                    }
+                  >
+                    {sponsorConfirmed
+                      ? formatWon(supportModel?.confirmed_driver_support ?? null)
+                      : formatWon(formPlannedPreview.partnerPlannedSupport)}
                   </Field>
-                  <Field label={LABEL.plannedExtensionSupport}>
-                    {formatWon(formPlannedPreview.extensionSupport)}
+                  <Field
+                    label={
+                      sponsorConfirmed
+                        ? LABEL.confirmedExtensionSupport
+                        : LABEL.plannedExtensionSupport
+                    }
+                  >
+                    {sponsorConfirmed
+                      ? formatWon(supportModel?.confirmed_extension_support ?? null)
+                      : formatWon(formPlannedPreview.extensionSupport)}
                   </Field>
                   <Field label={discountLabel}>
                     {formatWon(formPlannedPreview.supportDiscountPlannedPrice)}

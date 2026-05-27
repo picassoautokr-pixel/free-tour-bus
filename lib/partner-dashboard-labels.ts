@@ -71,6 +71,7 @@ export const LABEL = {
   customerConfirmedSupportInput: "고객 확정 지원금",
   partnerConfirmedSupportDisplay: "기사 확정 지원금",
   plannedExtensionSupport: "예상 연장 지원금",
+  confirmedExtensionSupport: "확정 연장 지원금",
   contractNumber: "계약번호",
   customerName: "고객 이름",
   customerPhone: "전화번호",
