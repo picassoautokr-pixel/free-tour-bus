@@ -190,12 +190,18 @@ export function partnerSupportSummaryForCard(call: PartnerCallLike): {
 
   if (model) {
     const showConfirmed = model.support_stage === "지원확정";
+    // breakdown.isConfirmed은 stored snapshot 기반이라 모델 단계와 불일치할 수 있음.
+    // showConfirmed=true이면 isConfirmed를 강제 true로 동기화해 "미확정" 오표시를 방지.
+    const effectiveBreakdown =
+      breakdown && showConfirmed && !breakdown.isConfirmed
+        ? { ...breakdown, isConfirmed: true as const }
+        : breakdown;
     return {
       breakdown,
       showConfirmed,
       totalPlannedForForm: model.planned_total_support ?? 0,
       summaryFormatted: showConfirmed
-        ? fmt(model.confirmed_total_support, "confirmed", breakdown ?? undefined)
+        ? fmt(model.confirmed_total_support, "confirmed", effectiveBreakdown ?? undefined)
         : fmt(model.planned_total_support, "planned", breakdown ?? undefined),
     };
   }

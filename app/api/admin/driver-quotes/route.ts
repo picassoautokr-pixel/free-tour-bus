@@ -194,16 +194,49 @@ export async function GET(request: Request) {
     }
   }
 
-  const appApprovedTotal = parseInteger(
+  const appApprovedTotalFromSummary = parseInteger(
     (sponsorSummary as { sponsor_approved_support_amount?: unknown })
       .sponsor_approved_support_amount,
   );
+
+  // sponsor_preapprovals에서 확정 지원금을 직접 계산 (applications 컬럼 미생성 환경 fallback)
+  const { data: preapprovalRowsEarly } = await admin
+    .from("sponsor_preapprovals")
+    .select("status, approved_support_amount, estimated_support_amount")
+    .eq("application_id", applicationId);
+
+  let sponsorApprovedEarly = 0;
+  let sponsorEstimatedEarly = 0;
+  for (const raw of Array.isArray(preapprovalRowsEarly) ? preapprovalRowsEarly : []) {
+    const row = raw as Record<string, unknown>;
+    const status = safeText(row.status);
+    if (status === "approved") {
+      sponsorApprovedEarly +=
+        parseInteger(row.approved_support_amount) ??
+        parseInteger(row.estimated_support_amount) ??
+        0;
+    } else if (status === "preapproved" || status === "pending") {
+      sponsorEstimatedEarly += parseInteger(row.estimated_support_amount) ?? 0;
+    }
+  }
+
+  const appApprovedTotal =
+    (appApprovedTotalFromSummary != null && appApprovedTotalFromSummary > 0)
+      ? appApprovedTotalFromSummary
+      : sponsorApprovedEarly > 0
+        ? sponsorApprovedEarly
+        : null;
+  const appEstimatedTotal = sponsorEstimatedEarly > 0 ? sponsorEstimatedEarly : null;
+
   let normalized = quotes.map((raw) => {
     const row = raw as Record<string, unknown>;
     const partnerDriverId = safeText(row.partner_driver_id);
     const partner = partnerById.get(partnerDriverId);
     const supportFields = mapQuoteWithSupport(row, {
       applicationApprovedSupportTotal: appApprovedTotal,
+      applicationTotalPlannedSupport: appEstimatedTotal ?? appApprovedTotal,
+      sponsorEstimatedSupportAmount: appEstimatedTotal,
+      sponsorApprovedSupportAmount: appApprovedTotal,
     });
     return {
       id: safeText(row.id),

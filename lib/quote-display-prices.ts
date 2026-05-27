@@ -7,7 +7,10 @@ import {
   type QuoteSupportBreakdown,
   type QuoteSupportInput,
 } from "@/lib/support-calculation";
-import { buildQuoteSupportDisplayModel } from "@/lib/quote-support-display-model";
+import {
+  buildQuoteSupportDisplayModel,
+  type QuoteSupportDisplayModel,
+} from "@/lib/quote-support-display-model";
 
 export type QuoteDisplayPriceInput = QuoteSupportInput & {
   final_member_price?: unknown;
@@ -59,6 +62,50 @@ export function getQuoteDisplayPrices(
   };
 }
 
+/**
+ * DB에 저장된 raw breakdown에 모델이 계산한 확정값을 머지한다.
+ * - breakdown에 이미 totalConfirmedSupport가 있어도 isConfirmed가 false이면 동기화한다.
+ * - model의 confirmed_total_support가 null이면 금액은 그대로 두되 isConfirmed는 동기화한다.
+ * - 금액 추론이 아닌, sponsor_preapproval/application fallback으로 계산된 모델값을 사용한다.
+ * TODO: multi sponsor aggregation later
+ */
+function mergeModelConfirmedIntoBreakdown(
+  b: QuoteSupportBreakdown,
+  model: QuoteSupportDisplayModel,
+): QuoteSupportBreakdown {
+  const modelConfirmed = model.support_stage === "지원확정";
+
+  // 금액도 없고 단계도 "지원확정"이 아니면 그대로 반환
+  if (!modelConfirmed && model.confirmed_total_support == null) return b;
+
+  // 모델이 확정단계이지만 breakdown.isConfirmed가 false인 경우 동기화
+  if (modelConfirmed && !b.isConfirmed && model.confirmed_total_support == null) {
+    return { ...b, isConfirmed: true };
+  }
+
+  // 이미 확정 금액이 있으면 금액은 건드리지 않되 isConfirmed는 동기화
+  if (b.totalConfirmedSupport != null) {
+    if (modelConfirmed && !b.isConfirmed) {
+      return { ...b, isConfirmed: true };
+    }
+    return b;
+  }
+
+  // confirmed_total_support가 없으면 머지 불가
+  if (model.confirmed_total_support == null) return b;
+
+  return {
+    ...b,
+    totalConfirmedSupport: model.confirmed_total_support,
+    customerConfirmedSupport: model.confirmed_customer_support,
+    partnerConfirmedSupport: model.confirmed_driver_support,
+    supportDiscountAppliedPrice: model.final_discount_price ?? b.supportDiscountAppliedPrice,
+    finalDiscountAppliedPrice: model.final_discount_price ?? b.finalDiscountAppliedPrice,
+    extensionSupport: model.confirmed_extension_support,
+    isConfirmed: true,
+  };
+}
+
 /** API/대시보드 공통 응답 필드 */
 export function mapQuoteWithSupport(
   row: QuoteDisplayPriceInput,
@@ -84,7 +131,7 @@ export function mapQuoteWithSupport(
     support_breakdown: row.support_breakdown,
   });
   const display = getQuoteDisplayPrices(row, options);
-  const b = display.breakdown;
+  const b = mergeModelConfirmedIntoBreakdown(display.breakdown, model);
   return {
     price: model.normal_price,
     member_price: model.planned_discount_price,
