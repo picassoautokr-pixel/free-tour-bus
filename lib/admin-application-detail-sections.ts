@@ -53,14 +53,19 @@ const APPLICATION_SELECT_CANDIDATES = [
   `${quoteLifecycleSelectColumns()}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, is_hidden, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count, support_breakdown_snapshot`,
   `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, organization_name, organization_type, request_message, file_url, file_name, attachment_url, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, sponsor_support_status, sponsor_preapproved_count, sponsor_approved_count, sponsor_rejected_count`,
   `${APPLICATION_LIFECYCLE_CORE}, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status`,
-  "id, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, final_selected_quote_id, final_selected_quote_source, quote_status, extension_round",
+  "id, created_at, receipt_number, applicant_name, phone, selected_price_type, selected_price_label, selected_price, client_price_selection_kind, admin_memo, status, final_selected_quote_id, final_selected_quote_source, quote_status, extension_round, sponsor_support_status, sponsor_approved_count",
 ] as const;
 
 const GUEST_QUOTE_SELECT =
   "id, created_at, application_id, guest_company_name, guest_driver_name, guest_phone, price, vehicle_type, available_time, message, status";
 
-const PREAPPROVAL_SELECT =
-  "id, status, sponsor_company_id, sponsor_rule_id, estimated_support_amount, approved_support_amount, approved_at, support_kind, support_condition, support_type, assigned_staff_id";
+// support_condition은 sponsor_rules 조인에서 enrichPreapprovals가 추가하므로 여기서 제외
+// support_type은 sponsor_preapprovals 테이블에 없는 컬럼이므로 제외
+const PREAPPROVAL_SELECT_CANDIDATES = [
+  "id, status, sponsor_company_id, sponsor_rule_id, estimated_support_amount, approved_support_amount, approved_at, support_kind, assigned_staff_id",
+  "id, status, sponsor_company_id, sponsor_rule_id, estimated_support_amount, approved_support_amount, approved_at, assigned_staff_id",
+  "id, status, sponsor_company_id, sponsor_rule_id, estimated_support_amount, approved_at",
+] as const;
 
 async function loadApplicationRow(
   admin: SupabaseClient,
@@ -442,19 +447,17 @@ export async function fetchAdminDetailQuotes(
     console.error("[application-detail] quotes lifecycle", lifecycleErr);
   }
 
-  const [application, preRes] = await Promise.all([
+  const [application, sponsorResult] = await Promise.all([
     loadApplicationRow(admin, applicationId),
-    admin
-      .from("sponsor_preapprovals")
-      .select(PREAPPROVAL_SELECT)
-      .eq("application_id", applicationId)
-      .order("created_at", { ascending: false }),
+    fetchAdminDetailSponsorWithRows(admin, applicationId).catch((err) => {
+      console.error("[application-detail] quotes sponsor fetch", err);
+      return { rows: [] as Record<string, unknown>[] };
+    }),
   ]);
 
   if (!application) throw new Error("신청을 찾을 수 없습니다.");
 
-  const preRows = Array.isArray(preRes.data) ? (preRes.data as Record<string, unknown>[]) : [];
-  const enrichedPre = await enrichPreapprovals(admin, preRows);
+  const enrichedPre = sponsorResult.rows;
   const sponsor = pickPrimarySponsor(enrichedPre);
   const sponsorResolution = resolveAdminSponsorConfirmed({
     application,
@@ -556,15 +559,25 @@ async function fetchAdminDetailSponsorWithRows(
   admin: SupabaseClient,
   applicationId: string,
 ): Promise<{ rows: Record<string, unknown>[] }> {
-  const { data, error } = await admin
-    .from("sponsor_preapprovals")
-    .select(PREAPPROVAL_SELECT)
-    .eq("application_id", applicationId)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
+  let data: unknown[] | null = null;
+  let lastError = "";
+  for (const select of PREAPPROVAL_SELECT_CANDIDATES) {
+    const res = await admin
+      .from("sponsor_preapprovals")
+      .select(select)
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    if (!res.error) {
+      data = Array.isArray(res.data) ? res.data : [];
+      break;
+    }
+    lastError = res.error.message;
+    if (!isMissingColumnError(res.error)) throw new Error(lastError);
+  }
+  if (data === null) throw new Error(lastError || "sponsor_preapprovals 조회 실패");
   const rows = await enrichPreapprovals(
     admin,
-    Array.isArray(data) ? (data as Record<string, unknown>[]) : [],
+    data as Record<string, unknown>[],
   );
   return { rows };
 }
