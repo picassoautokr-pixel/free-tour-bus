@@ -29,7 +29,6 @@ import {
 import { roleLoginPath } from "@/lib/role-hosts";
 import { ApplicationDetailMatchedPanel } from "@/components/admin/ApplicationDetailMatchedPanel";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
-import { isApplicationMatchCompleted } from "@/lib/admin-application-detail-build";
 import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 import { SponsorCompaniesAdmin } from "@/components/admin/SponsorCompaniesAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
@@ -2072,10 +2071,6 @@ function DetailSlidePanel({
   onOpenSms: (row: ApplicationDetail) => void;
   onApplicationHidden?: () => void;
 }) {
-  const useMatchedLayout = isApplicationMatchCompleted({
-    final_selected_quote_id: row?.final_selected_quote_id ?? "",
-  });
-
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -2115,9 +2110,7 @@ function DetailSlidePanel({
       />
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl ring-1 ring-slate-200 ${
-          useMatchedLayout ? "max-w-2xl" : "max-w-lg"
-        }`}
+        className="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl ring-1 ring-slate-200 max-w-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="admin-detail-title"
@@ -2175,244 +2168,22 @@ function DetailSlidePanel({
             문자 발송
           </button>
 
-          {useMatchedLayout ? (
-            <ApplicationDetailMatchedPanel
-              row={row}
-              onOpenSms={onOpenSms}
-              onStatusSaved={onStatusSaved}
-              onApplicationHidden={onApplicationHidden}
-              lifecycleTools={
-                <details className="rounded-xl border border-slate-200 bg-slate-50 p-2">
-                  <summary className="cursor-pointer text-xs font-black text-slate-700">
-                    견적 운영 도구 (자동마감·비회원 매칭)
-                  </summary>
-                  <div className="mt-2 [&>section]:mt-0 [&>section]:border-0 [&>section]:bg-transparent [&>section]:p-0 [&>section]:shadow-none [&>section]:ring-0">
-                    <DriverQuotesSection applicationId={row.id} applicationDetail={row} />
-                  </div>
-                </details>
-              }
-            />
-          ) : (
-          <>
-          <dl>
-            <DetailField label="접수번호">
-              <span className="font-mono font-semibold tracking-tight">
-                {row.receipt_number}
-              </span>
-            </DetailField>
-            <DetailField label="신청 유형">
-              {displayApplicationTypeLabel(row.application_type)}
-            </DetailField>
-            <DetailField label="왕복 / 편도">{row.trip_type}</DetailField>
-            <DetailField label="버스 등급">{row.bus_grade}</DetailField>
-            <DetailField label="출발지">{row.departure}</DetailField>
-            <DetailField label="출발지역">
-              {row.departure_region.trim() === "" ? "—" : row.departure_region}
-            </DetailField>
-            <DetailField label="도착지">{row.destination}</DetailField>
-            {row.stopovers.length > 0 ? (
-              <div className="border-b border-slate-100 py-3 last:border-b-0">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  경유지
-                </dt>
-                <dd className="mt-1 text-sm font-medium text-slate-900">
-                  {row.stopovers.join(", ")}
-                </dd>
-              </div>
-            ) : null}
-            <DetailField label="출발일시">
-              {formatDepartureDateTimeLine(
-                row.departure_date,
-                row.departure_time,
-              )}
-            </DetailField>
-            <DetailField label="오는 날짜">
-              {formatDateOnly(row.return_date)}
-            </DetailField>
-            <DetailField label="인원수">
-              {row.passenger_count ?? "—"}
-            </DetailField>
-            <DetailField label="신청자명">{row.applicant_name}</DetailField>
-            <DetailField label="연락처">{row.phone}</DetailField>
-            <DetailField label="단체명">{row.organization_name}</DetailField>
-            <DetailField label="단체 유형">{row.organization_type}</DetailField>
-            <div className="border-b border-slate-100 py-3 last:border-b-0">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                요청사항
-              </dt>
-              <dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-slate-900">
-                {row.request_message === "—" ? (
-                  <span className="text-slate-400">—</span>
-                ) : (
-                  row.request_message
-                )}
-              </dd>
-            </div>
-            <div className="border-b border-slate-100 py-3 last:border-b-0">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                첨부파일
-              </dt>
-              <dd className="mt-1 break-all text-sm font-medium">
-                {fileUrl !== "" ? (
-                  <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-900">
-                          {fileName !== "" ? fileName : "첨부파일"}
-                        </div>
-                        <p className="mt-1 text-xs font-medium text-slate-500">
-                          업로드됨
-                        </p>
-                      </div>
-                      {isPdf ? (
-                        <span className="shrink-0 rounded-xl bg-white px-2.5 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200">
-                          PDF
-                        </span>
-                      ) : null}
-                    </div>
-
-                    {isImage ? (
-                      <a
-                        href={fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 block overflow-hidden rounded-xl ring-1 ring-slate-200 transition hover:ring-slate-300"
-                        title="클릭하여 원본 보기"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={fileUrl}
-                          alt={fileName !== "" ? fileName : "첨부 이미지"}
-                          className="h-40 w-full object-cover sm:h-48"
-                          loading="lazy"
-                        />
-                      </a>
-                    ) : isPdf ? (
-                      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-white p-3 ring-1 ring-slate-200">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600 ring-1 ring-red-100"
-                            aria-hidden
-                          >
-                            <svg
-                              className="h-5 w-5"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"
-                              />
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M14 3v6h6"
-                              />
-                            </svg>
-                          </div>
-                          <p className="text-sm font-semibold text-slate-800">
-                            PDF 문서
-                          </p>
-                        </div>
-                        <a
-                          href={fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
-                        >
-                          PDF 열기
-                        </a>
-                      </div>
-                    ) : fileHttpUrl ? (
-                      <div className="mt-3">
-                        <a
-                          href={fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-10 w-fit items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
-                        >
-                          첨부파일 보기
-                        </a>
-                        <p className="mt-2 break-all text-xs font-medium text-slate-500">
-                          {fileUrl}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="mt-3 break-all text-xs font-medium text-slate-500">
-                        {fileUrl}
-                      </div>
-                    )}
-                  </div>
-                ) : legacyUrl !== "" ? (
-                  legacyHttpUrl ? (
-                    <a
-                      href={legacyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 underline hover:text-blue-800"
-                    >
-                      {legacyUrl}
-                    </a>
-                  ) : (
-                    legacyUrl
-                  )
-                ) : (
-                  <div className="mt-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
-                    첨부파일 없음
-                  </div>
-                )}
-              </dd>
-            </div>
-            <div className="border-b border-slate-100 py-3 last:border-b-0">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                현재 상태
-              </dt>
-              <dd className="mt-1">
-                <StatusBadge status={row.status} />
-              </dd>
-            </div>
-            <div className="border-b border-slate-100 py-3 last:border-b-0">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                관리자 메모 (내부용)
-              </dt>
-              <dd className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-slate-900">
-                {row.admin_memo.trim() === "" ? (
-                  <span className="text-slate-400">—</span>
-                ) : (
-                  row.admin_memo
-                )}
-              </dd>
-            </div>
-          </dl>
-
-          <DriverQuotesSection applicationId={row.id} applicationDetail={row} />
-          <SponsorPreapprovalsSection applicationId={row.id} />
-
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => onOpenSms(row)}
-              className="inline-flex h-11 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-black text-slate-900 shadow-sm transition hover:bg-slate-50"
-            >
-              문자 발송
-            </button>
-          </div>
-
-          <StatusChangeSection
-            key={row.id}
-            rowId={row.id}
-            statusFromServer={row.status}
-            memoFromServer={row.admin_memo}
-            onSaved={(nextStatus, nextMemo) =>
-              onStatusSaved(row.id, nextStatus, nextMemo)
+          <ApplicationDetailMatchedPanel
+            row={row}
+            onOpenSms={onOpenSms}
+            onStatusSaved={onStatusSaved}
+            onApplicationHidden={onApplicationHidden}
+            lifecycleTools={
+              <details className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                <summary className="cursor-pointer text-xs font-black text-slate-700">
+                  견적 운영 도구 (자동마감·비회원 매칭)
+                </summary>
+                <div className="mt-2 [&>section]:mt-0 [&>section]:border-0 [&>section]:bg-transparent [&>section]:p-0 [&>section]:shadow-none [&>section]:ring-0">
+                  <DriverQuotesSection applicationId={row.id} applicationDetail={row} />
+                </div>
+              </details>
             }
           />
-          </>
-          )}
         </div>
       </aside>
     </>

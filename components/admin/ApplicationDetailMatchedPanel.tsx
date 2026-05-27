@@ -37,7 +37,6 @@ import type {
   AdminSmsLog,
   AdminSponsorDetail,
 } from "@/lib/admin-application-detail-build";
-import { isApplicationMatchCompleted } from "@/lib/admin-application-detail-build";
 
 type ListRow = {
   id: string;
@@ -619,14 +618,6 @@ export function ApplicationDetailMatchedPanel({
     );
   }
 
-  if (!loadingBasic && basic && !isApplicationMatchCompleted(lifecycle)) {
-    return (
-      <p className="text-sm text-slate-600">
-        매칭완료 레이아웃을 사용할 수 없습니다. 기존 상세 보기를 이용하세요.
-      </p>
-    );
-  }
-
   if (loadingBasic || !basic) {
     return <ApplicationDetailSkeleton />;
   }
@@ -818,38 +809,45 @@ export function ApplicationDetailMatchedPanel({
         </button>
       </SectionCard>
 
-      {matchedDriver ? (
-        <SectionCard title="4. 매칭기사" className="ring-2 ring-emerald-200">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <p className="text-base font-black text-slate-950">{matchedDriver.company_name}</p>
-              <p className="text-sm font-semibold text-slate-700">{matchedDriver.driver_name}</p>
-              <p className="mt-1 text-sm">{matchedDriver.phone}</p>
+      <SectionCard
+        title="4. 매칭기사"
+        className={matchedDriver ? "ring-2 ring-emerald-200" : ""}
+      >
+        {matchedDriver ? (
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-base font-black text-slate-950">{matchedDriver.company_name}</p>
+                <p className="text-sm font-semibold text-slate-700">{matchedDriver.driver_name}</p>
+                <p className="mt-1 text-sm">{matchedDriver.phone}</p>
+              </div>
+              <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-black text-white">
+                {matchedDriver.badge}
+              </span>
             </div>
-            <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-black text-white">
-              {matchedDriver.badge}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <a
-              href={phoneDialHref(matchedDriver.phone)}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
-            >
-              전화하기
-            </a>
-            <a
-              href={phoneSmsHref(matchedDriver.phone)}
-              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white"
-            >
-              문자하기
-            </a>
-          </div>
-          <p className="mt-3 text-sm font-bold text-emerald-900">
-            선택 견적: {matchedDriver.selected_price_label}{" "}
-            {formatAdminWon(matchedDriver.selected_price)}
-          </p>
-        </SectionCard>
-      ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a
+                href={phoneDialHref(matchedDriver.phone)}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+              >
+                전화하기
+              </a>
+              <a
+                href={phoneSmsHref(matchedDriver.phone)}
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white"
+              >
+                문자하기
+              </a>
+            </div>
+            <p className="mt-3 text-sm font-bold text-emerald-900">
+              선택 견적: {matchedDriver.selected_price_label}{" "}
+              {formatAdminWon(matchedDriver.selected_price)}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-slate-500">아직 매칭된 기사가 없습니다.</p>
+        )}
+      </SectionCard>
 
       <SectionCard title="5. 견적종합">
         <button
@@ -862,6 +860,10 @@ export function ApplicationDetailMatchedPanel({
         {quotesOpen ? (
           loadingQuotes || !quotesPayload ? (
             <QuotesSectionSkeleton />
+          ) : memberQuotes.length === 0 && guestQuotes.length === 0 ? (
+            <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              아직 제출된 견적이 없습니다.
+            </p>
           ) : (
           <div className="mt-4 space-y-4">
             {quoteWarning ? (
