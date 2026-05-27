@@ -284,6 +284,8 @@ function averageStatusLabel(call: PartnerCall): string {
   return "평균가 대비 상태 확인 중";
 }
 
+// TODO: 파트너 견적 제출 시 지원금 할인가 계산은 partner-call-view-model의
+//   buildQuoteFormPlannedPreview / calculatePlannedDiscountPrice로 통합 예정.
 function supportQuotePrice(quote: PartnerMyQuote): number | null {
   const storedPrice =
     quote.final_member_price ?? quote.member_price ?? quote.sponsor_discounted_price;
@@ -292,13 +294,6 @@ function supportQuotePrice(quote: PartnerMyQuote): number | null {
     quote.customer_support_amount ?? quote.support_discount_amount ?? null;
   if (quote.price == null || customerSupportAmount == null) return null;
   return Math.max(0, quote.price - customerSupportAmount);
-}
-
-function supportStatusLabel(status?: string): string {
-  if (status === "approved") return "확정 지원금";
-  if (status === "preapproved" || status === "pending" || status === "mixed") return "예상 지원금 검토중";
-  if (["rejected", "cancelled", "expired"].includes(status ?? "")) return "미승인";
-  return "일반/지원 없음";
 }
 
 function formatSubmittedAt(iso: string): string {

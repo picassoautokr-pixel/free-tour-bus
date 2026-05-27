@@ -152,6 +152,17 @@ function resolveStage(params: {
     }
   }
 
+  // sponsor_approved_count > 0: "mixed" 상태(approved + preapproved 공존) 포함하여 확정 처리
+  const appApprovedCount =
+    typeof app.sponsor_approved_count === "number"
+      ? app.sponsor_approved_count
+      : typeof app.sponsor_approved_count === "string"
+        ? Number.parseInt(app.sponsor_approved_count, 10)
+        : 0;
+  if (Number.isFinite(appApprovedCount) && appApprovedCount > 0) {
+    return { stage: "지원확정", source: "application.sponsor_approved_count" };
+  }
+
   // boolean 플래그 직접 확인 (status 문자열이 아닌 경우)
   if (params.breakdown?.isConfirmed === true) {
     return { stage: "지원확정", source: "support_breakdown.isConfirmed" };

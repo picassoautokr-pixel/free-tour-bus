@@ -1503,14 +1503,22 @@ function DriverQuotesSection({
                   {quote.price == null
                     ? "금액 미입력"
                     : `${quote.price.toLocaleString("ko-KR")}원`}
+                  {/* TODO: 어드민 견적 목록 미리보기도 buildQuoteSupportDisplayModel 기반으로 통합 예정.
+                      현재는 support_breakdown 직접 읽기 → 빠른 목록 렌더용 임시 처리. */}
                   {quote.support_breakdown?.sponsorQuoteEnabled ? (
                     <span className="mt-1 block text-xs font-bold text-blue-700">
-                      지원금 할인 예정가{" "}
-                      {formatSupportAmountFromBreakdown(
-                        quote.support_breakdown,
-                        quote.support_breakdown.supportDiscountPlannedPrice,
-                        "planned",
-                      )}
+                      {quote.support_breakdown.isConfirmed
+                        ? `지원금 할인 적용가 ${formatSupportAmountFromBreakdown(
+                            quote.support_breakdown,
+                            quote.support_breakdown.finalDiscountAppliedPrice ??
+                              quote.support_breakdown.supportDiscountAppliedPrice,
+                            "confirmed",
+                          )}`
+                        : `지원금 할인 예정가 ${formatSupportAmountFromBreakdown(
+                            quote.support_breakdown,
+                            quote.support_breakdown.supportDiscountPlannedPrice,
+                            "planned",
+                          )}`}
                     </span>
                   ) : quote.sponsor_quote_enabled ? (
                     <span className="mt-1 block text-xs font-bold text-blue-700">

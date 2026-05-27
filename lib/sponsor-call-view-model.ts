@@ -12,6 +12,7 @@ import {
   buildQuoteSupportDisplayModel,
   type QuoteSupportDisplayModel,
 } from "@/lib/quote-support-display-model";
+import { isSponsorConfirmed, normalizeSponsorStage } from "@/lib/status-normalizer";
 
 export type SponsorCallRow = {
   id: string;
@@ -81,21 +82,18 @@ export type SponsorCallRow = {
   matched_contact_debug?: SponsorMatchedContactDebug | null;
 };
 
-const REVIEW_STATUSES = new Set(["pending", "preapproved", "reviewing"]);
-
 export function isSupportRejectedCall(call: SponsorCallRow): boolean {
   return isSponsorSupportUnusedByNormalMatch(call);
 }
 
 export function isReviewCall(call: SponsorCallRow): boolean {
   if (isSupportRejectedCall(call)) return false;
-  const s = (call.status ?? "").trim().toLowerCase();
-  return REVIEW_STATUSES.has(s);
+  return normalizeSponsorStage(call.status) === "review";
 }
 
 export function isConfirmedCall(call: SponsorCallRow): boolean {
   if (isSupportRejectedCall(call)) return false;
-  return call.status === "approved";
+  return isSponsorConfirmed(call.status);
 }
 
 export function matchesPayoutFilter(

@@ -17,6 +17,7 @@ import { buildQuoteSupportDisplayModel } from "@/lib/quote-support-display-model
 import { resolveAdminSponsorConfirmed } from "@/lib/admin-sponsor-confirmed";
 import { resolveApplicationSelectedPriceType } from "@/lib/admin-selected-quote-price";
 import { safeText } from "@/lib/sponsor";
+import { normalizeSponsorStage } from "@/lib/status-normalizer";
 
 function parseInteger(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
@@ -169,7 +170,7 @@ export function buildAdminMemberQuoteSupportDisplay(
       application_final_selected_quote_id: safeText(ctx.application.final_selected_quote_id) || null,
       quote_price: model.normal_price,
       sponsor_status_resolution: model.debug.support_stage_source,
-      sponsor_confirmed_resolved: model.support_stage === "지원확정",
+      sponsor_confirmed_resolved: normalizeSponsorStage(model.support_stage) === "confirmed",
       selected_price_calculation_source: model.debug.discount_price_source,
       calculation_status: safeText(model.debug.support_breakdown_raw?.calculation_status) || "ok",
       calculation_error:
@@ -185,7 +186,7 @@ export function buildAdminMemberQuoteSupportDisplay(
       approved_support_amount: model.confirmed_total_support,
       estimated_support_amount: model.planned_total_support,
       resolved_discount_price:
-        model.support_stage === "지원확정"
+        normalizeSponsorStage(model.support_stage) === "confirmed"
           ? model.final_discount_price
           : model.planned_discount_price,
       confirmed_customer_support_source: model.debug.customer_support_source,

@@ -16,6 +16,15 @@ function statusConfirmed(status: string): boolean {
   return isSponsorStageConfirmed(status);
 }
 
+function parseInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number.parseInt(value, 10);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 /** approved · confirmed 이면 지원확정 */
 export function resolveAdminSponsorConfirmed(params: {
   application?: Record<string, unknown> | null;
@@ -39,6 +48,17 @@ export function resolveAdminSponsorConfirmed(params: {
       confirmed: true,
       badge: "지원확정",
       source: `application.status=${applicationStatus}`,
+    };
+  }
+
+  // sponsor_approved_count > 0이면 최소 1개의 preapproval이 approved 상태
+  // "mixed" (approved + preapproved 공존) 케이스 포함하여 확정 처리
+  const approvedCount = parseInteger(application.sponsor_approved_count) ?? 0;
+  if (approvedCount > 0) {
+    return {
+      confirmed: true,
+      badge: "지원확정",
+      source: `application.sponsor_approved_count=${approvedCount}`,
     };
   }
 

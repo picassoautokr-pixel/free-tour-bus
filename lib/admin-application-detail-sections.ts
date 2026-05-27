@@ -211,10 +211,13 @@ export async function fetchAdminDetailBasic(
 
   const warnings: string[] = [];
   let sponsorQuick: AdminSponsorDetail | null = null;
+  let preapprovalRows: Record<string, unknown>[] = [];
   let matched_driver: ReturnType<typeof buildMatchedDriver> = null;
 
   try {
-    sponsorQuick = await fetchAdminDetailSponsor(admin, applicationId);
+    const sponsorResult = await fetchAdminDetailSponsorWithRows(admin, applicationId);
+    preapprovalRows = sponsorResult.rows;
+    sponsorQuick = pickPrimarySponsor(preapprovalRows);
   } catch (sponsorErr) {
     const msg = sponsorErr instanceof Error ? sponsorErr.message : "후원 정보 조회 실패";
     console.error("[application-detail] sponsor", sponsorErr);
@@ -224,6 +227,7 @@ export async function fetchAdminDetailBasic(
   const sponsorResolution = resolveAdminSponsorConfirmed({
     application,
     sponsor: sponsorQuick,
+    preapprovalRows,
   });
   const sponsorConfirmedResolved = sponsorResolution.confirmed;
 
@@ -544,17 +548,25 @@ export async function fetchAdminDetailSponsor(
   admin: SupabaseClient,
   applicationId: string,
 ): Promise<AdminSponsorDetail | null> {
+  const { rows } = await fetchAdminDetailSponsorWithRows(admin, applicationId);
+  return pickPrimarySponsor(rows);
+}
+
+async function fetchAdminDetailSponsorWithRows(
+  admin: SupabaseClient,
+  applicationId: string,
+): Promise<{ rows: Record<string, unknown>[] }> {
   const { data, error } = await admin
     .from("sponsor_preapprovals")
     .select(PREAPPROVAL_SELECT)
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  const enriched = await enrichPreapprovals(
+  const rows = await enrichPreapprovals(
     admin,
     Array.isArray(data) ? (data as Record<string, unknown>[]) : [],
   );
-  return pickPrimarySponsor(enriched);
+  return { rows };
 }
 
 export async function fetchAdminDetailSms(

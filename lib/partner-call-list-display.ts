@@ -12,16 +12,26 @@ import {
   type SelectedPriceDisplayOptions,
 } from "@/lib/selected-price-display";
 import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
+import { isSponsorConfirmed, normalizeSponsorStage } from "@/lib/status-normalizer";
 
 export function partnerSupportStageShort(status?: string): string {
-  if (status === "approved") return LABEL.sponsorStageConfirmed;
-  return LABEL.sponsorStageReview;
+  return isSponsorConfirmed(status) ? LABEL.sponsorStageConfirmed : LABEL.sponsorStageReview;
 }
 
 export function partnerPriceCompareFromCall(
   call: PartnerCallLike,
   breakdown: QuoteSupportBreakdown | null,
 ): MatchedPriceCompare {
+  // display model 우선 사용 (buildQuoteSupportDisplayModel 기준)
+  const model = quoteSupportDisplayModelForCall(call);
+  if (model) {
+    return {
+      quoteNormalPrice: model.normal_price,
+      quoteSupportPlannedPrice: model.planned_discount_price,
+      quoteSupportAppliedPrice: model.final_discount_price,
+    };
+  }
+  // fallback: breakdown raw 필드
   const normalPrice = call.my_quote?.price ?? breakdown?.normalPrice ?? null;
   return {
     quoteNormalPrice: normalPrice,
@@ -38,12 +48,16 @@ export function partnerSelectedPriceOptions(
   breakdown: QuoteSupportBreakdown | null,
 ): SelectedPriceDisplayOptions {
   const compare = partnerPriceCompareFromCall(call, breakdown);
+  const model = quoteSupportDisplayModelForCall(call);
   return {
     normalPrice: compare.quoteNormalPrice,
     supportPlannedPrice: compare.quoteSupportPlannedPrice,
     supportAppliedPrice: compare.quoteSupportAppliedPrice,
+    // display model support_stage를 우선 사용, fallback으로 breakdown.isConfirmed / app status
     supportConfirmed:
-      breakdown?.isConfirmed === true || sponsorStageConfirmed(call.sponsor_support_status),
+      (model != null && normalizeSponsorStage(model.support_stage) === "confirmed") ||
+      breakdown?.isConfirmed === true ||
+      sponsorStageConfirmed(call.sponsor_support_status),
   };
 }
 

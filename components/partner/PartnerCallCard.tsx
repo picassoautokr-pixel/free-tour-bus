@@ -145,11 +145,10 @@ export function PartnerCallCard({
 
   const quotedNormal = call.my_quote?.price ?? null;
   const discountLabel = partnerListDiscountLabel(sponsorConfirmed);
-  const discountAmount =
-    supportModel?.support_stage === "지원확정"
-      ? supportModel.final_discount_price
-      : supportModel?.planned_discount_price ??
-        partnerListDiscountAmount(breakdown, sponsorConfirmed);
+  // sponsorConfirmed = supportSummary.showConfirmed (buildQuoteSupportDisplayModel 기준)
+  const discountAmount = sponsorConfirmed
+    ? (supportModel?.final_discount_price ?? partnerListDiscountAmount(breakdown, true))
+    : (supportModel?.planned_discount_price ?? partnerListDiscountAmount(breakdown, false));
   const matchedQuote = partnerMatchedListQuote(call, breakdown);
 
   const expandMode = formOpen ? "quote" : detailOpen ? "detail" : referralOpen ? "referral" : null;

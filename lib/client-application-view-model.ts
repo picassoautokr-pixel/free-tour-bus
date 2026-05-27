@@ -12,6 +12,12 @@ import {
 import { formatRemainingText } from "@/lib/quote-status";
 import { formatStopovers } from "@/lib/stopovers";
 import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
+import {
+  isSponsorConfirmed,
+  normalizeSponsorStage,
+  normalizeSelectedPriceType,
+  selectedPriceTypeLabel,
+} from "@/lib/status-normalizer";
 
 export type ClientQuote = {
   source: "member" | "guest";
@@ -316,9 +322,9 @@ export function clientQuotePrices(
     };
   }
   const breakdown = quoteBreakdownForClient(quote);
-  const appSponsorApproved = application?.sponsor_support_status === "approved";
+  const appSponsorApproved = isSponsorConfirmed(application?.sponsor_support_status);
   const sponsorConfirmed =
-    quote.sponsor_support_status === "approved" ||
+    isSponsorConfirmed(quote.sponsor_support_status) ||
     breakdown.isConfirmed ||
     appSponsorApproved;
   return {
@@ -375,10 +381,9 @@ export function fmtClientPrice(
 
 /** 지원금 상태 뱃지 — 확정·검토중만, '지원금 없음' 등은 표시하지 않음 */
 export function sponsorSupportBadge(status?: string): string | null {
-  if (status === "approved") return LABEL.supportConfirmed;
-  if (status === "preapproved" || status === "pending" || status === "mixed") {
-    return LABEL.supportReviewing;
-  }
+  const stage = normalizeSponsorStage(status);
+  if (stage === "confirmed") return LABEL.supportConfirmed;
+  if (stage === "review") return LABEL.supportReviewing;
   return null;
 }
 
@@ -395,13 +400,10 @@ export function priceSelectionLabel(
   selectedLabel?: string | null,
 ): string {
   if (selectedLabel?.trim()) return selectedLabel.trim();
-  if (kind === "normal_price_selected") return LABEL.normalPrice;
-  if (kind === "support_price_selected") return LABEL.supportDiscountApplied;
-  if (kind === "support_planned_selected") return LABEL.supportDiscountPlanned;
-  if (kind === "normal") return LABEL.normalPrice;
-  if (kind === "support_confirmed") return LABEL.supportDiscountApplied;
-  if (kind === "support_planned") return LABEL.supportDiscountPlanned;
-  return LABEL.unconfirmed;
+  if (!kind?.trim()) return LABEL.unconfirmed;
+  const normalized = normalizeSelectedPriceType(kind);
+  if (normalized === "unknown") return LABEL.unconfirmed;
+  return selectedPriceTypeLabel(normalized);
 }
 
 export function routeLabel(app: ClientApplication): string {

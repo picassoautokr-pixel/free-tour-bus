@@ -65,7 +65,8 @@ test("confirmed display: customer derived, not total fallback", () => {
   assert.equal(byLabel["고객 확정 지원금"], 200_000);
   assert.equal(byLabel["확정 연장 지원금"], 0);
   assert.equal(byLabel["지원금 할인 적용가"], 300_000);
-  assert.equal(byLabel["기사 확정 지원금"], undefined);
-  assert.equal(display.debug.confirmed_customer_support_source, "derived_from_price");
-  assert.ok(display.fallbacksUsed.some((s) => s.includes("derived_from_price")));
+  // 기사 확정 지원금 = 총 확정(250,000) - 고객 확정(200,000) = 50,000
+  assert.equal(byLabel["기사 확정 지원금"], 50_000);
+  assert.equal(display.debug.confirmed_customer_support_source, "derived:normal-final_discount-extension");
+  assert.ok(display.fallbacksUsed.some((s) => s.includes("derived:normal-final_discount-extension") || s.includes("derived_from_price")));
 });
