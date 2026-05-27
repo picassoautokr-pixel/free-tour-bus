@@ -14,6 +14,11 @@ import {
   buildQuoteSupportDisplayModel,
   type QuoteSupportDisplayModel,
 } from "@/lib/quote-support-display-model";
+import {
+  isSponsorConfirmed,
+  normalizeSponsorStage,
+  sponsorStageLabel as normalizerSponsorStageLabel,
+} from "@/lib/status-normalizer";
 
 export type PartnerSponsorOnCall = {
   id: string;
@@ -236,15 +241,11 @@ export function partnerSupportSummaryForCard(call: PartnerCallLike): {
 }
 
 export function sponsorStageLabel(status?: string): string {
-  if (status === "approved") return "지원확정";
-  if (status === "preapproved" || status === "mixed" || status === "pending") {
-    return "지원검토";
-  }
-  return "지원검토";
+  return normalizerSponsorStageLabel(normalizeSponsorStage(status));
 }
 
 export function sponsorStageConfirmed(status?: string): boolean {
-  return status === "approved";
+  return isSponsorConfirmed(status);
 }
 
 /** 앱 단위 총 예정/확정 (후원업체 목록 합산 전 요약) */
@@ -272,7 +273,7 @@ export function applicationSupportTotals(call: PartnerCallLike) {
     };
   }
   const isConfirmed =
-    call.sponsor_support_status === "approved" &&
+    isSponsorConfirmed(call.sponsor_support_status) &&
     (call.sponsor_approved_support_amount ?? 0) > 0;
   return {
     totalPlanned:

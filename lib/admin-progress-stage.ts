@@ -2,6 +2,12 @@
  * 어드민 신청 상세 — 고객/스폰서 단계 배지 (클라이언트 대시보드 기준, UTF-8)
  */
 
+import {
+  isSponsorConfirmed,
+  normalizeSponsorStage,
+  normalizeClientQuoteStage,
+} from "@/lib/status-normalizer";
+
 const AUTO_CLOSED_STATUSES = new Set([
   "auto_selected",
   "closed_by_time",
@@ -28,12 +34,16 @@ export function resolveCustomerStageBadge(params: {
   const finalId = (params.finalSelectedQuoteId ?? "").trim();
   const status = (params.quoteStatus ?? "").trim();
 
-  if (finalId !== "" || MATCHED_QUOTE_STATUSES.has(status)) {
-    return "매칭완료";
-  }
-  if (AUTO_CLOSED_STATUSES.has(status)) {
-    return "자동마감";
-  }
+  // finalSelectedQuoteId가 있으면 즉시 매칭완료
+  if (finalId !== "") return "매칭완료";
+
+  const normalized = normalizeClientQuoteStage(status);
+  if (normalized === "matched" || normalized === "completed") return "매칭완료";
+
+  // normalizer가 처리하지 못하는 레거시 AUTO_CLOSED_STATUSES 명시 지원
+  if (AUTO_CLOSED_STATUSES.has(status)) return "자동마감";
+  if (normalized === "auto_closed") return "자동마감";
+
   return "견적요청";
 }
 
@@ -45,13 +55,12 @@ export function isCustomerStageMatched(params: {
 }
 
 export function isSponsorStageConfirmed(status: string): boolean {
-  const s = status.trim().toLowerCase();
-  return s === "approved" || s === "confirmed";
+  return isSponsorConfirmed(status);
 }
 
 export function resolveSponsorStageBadge(status: string): SponsorStageBadge {
-  const s = status.trim().toLowerCase();
-  if (s === "") return "없음";
-  if (isSponsorStageConfirmed(status)) return "지원확정";
+  const stage = normalizeSponsorStage(status);
+  if (stage === "none") return "없음";
+  if (stage === "confirmed") return "지원확정";
   return "지원검토";
 }

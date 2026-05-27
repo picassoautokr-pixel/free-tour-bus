@@ -11,6 +11,7 @@ import {
   type SelectedPriceSource,
   type SelectedPriceType,
 } from "@/lib/selected-price-display";
+import { isSponsorConfirmed } from "@/lib/status-normalizer";
 
 export type QuoteSupportStage = "지원검토" | "지원확정";
 export type SelectedQuoteType = "일반견적" | "할인견적";
@@ -126,11 +127,6 @@ function settlementType(value: unknown): SupportSettlementType {
   return safeText(value) === "ratio" ? "ratio" : "client_priority";
 }
 
-function confirmedStatus(value: unknown): boolean {
-  const s = safeText(value).toLowerCase();
-  return s === "approved" || s === "confirmed";
-}
-
 function resolveStage(params: {
   input: QuoteSupportDisplayInput;
   breakdown: Record<string, unknown> | null;
@@ -141,21 +137,27 @@ function resolveStage(params: {
   const sponsor = params.input.sponsor_support ?? {};
   const preapproval = params.input.sponsor_preapproval ?? {};
 
-  const checks: Array<[string, unknown]> = [
+  const statusChecks: Array<[string, unknown]> = [
     ["application.sponsor_support_status", app.sponsor_support_status],
     ["application.status", app.status],
     ["quote.sponsor_support_status", quote.sponsor_support_status],
     ["quote.support_status", quote.support_status],
     ["sponsor_support.status", sponsor.status],
     ["sponsor_preapproval.status", preapproval.status],
-    ["support_breakdown.isConfirmed", params.breakdown?.isConfirmed],
-    ["support_breakdown.is_confirmed", params.breakdown?.is_confirmed],
   ];
 
-  for (const [source, raw] of checks) {
-    if (raw === true || confirmedStatus(raw)) {
+  for (const [source, raw] of statusChecks) {
+    if (isSponsorConfirmed(safeText(raw))) {
       return { stage: "지원확정", source };
     }
+  }
+
+  // boolean 플래그 직접 확인 (status 문자열이 아닌 경우)
+  if (params.breakdown?.isConfirmed === true) {
+    return { stage: "지원확정", source: "support_breakdown.isConfirmed" };
+  }
+  if (params.breakdown?.is_confirmed === true) {
+    return { stage: "지원확정", source: "support_breakdown.is_confirmed" };
   }
 
   if (params.confirmedTotal != null && params.confirmedTotal > 0) {

@@ -6,6 +6,11 @@ FILES = [
     r"d:\projects\free-tour-bus\sql\application_selected_price_fix.sql",
     r"d:\projects\free-tour-bus\lib\selected-price-display.ts",
     r"d:\projects\free-tour-bus\app\api\client\quotes\route.ts",
+    r"d:\projects\free-tour-bus\lib\status-normalizer.ts",
+    r"d:\projects\free-tour-bus\lib\status-normalizer.test.ts",
+    r"d:\projects\free-tour-bus\lib\quote-support-display-model.ts",
+    r"d:\projects\free-tour-bus\lib\partner-call-view-model.ts",
+    r"d:\projects\free-tour-bus\lib\admin-progress-stage.ts",
 ]
 
 for raw in FILES:

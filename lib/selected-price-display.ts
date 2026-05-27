@@ -2,7 +2,20 @@
  * 고객 매칭 견적가 선택 — 대시보드 공통 분기 (UTF-8)
  */
 
+import {
+  normalizeSelectedPriceType,
+  type NormalizedSelectedPriceType,
+} from "@/lib/status-normalizer";
+
 export type SelectedPriceType = "normal" | "support_planned" | "support_confirmed";
+
+/** status-normalizer의 NormalizedSelectedPriceType → SelectedPriceType 변환 (unknown 제외) */
+function fromNormalized(
+  n: NormalizedSelectedPriceType,
+): SelectedPriceType | null {
+  if (n === "unknown") return null;
+  return n;
+}
 
 export type SelectedPriceSource = {
   selected_price_type?: string | null;
@@ -42,12 +55,8 @@ function resolveLegacySelectedPriceType(
   source?: SelectedPriceSource | null,
 ): SelectedPriceType | null {
   const legacy = source?.client_price_selection_kind ?? source?.final_price_selection_kind;
-  if (legacy === "support_planned_selected") return "support_planned";
-  if (legacy === "support_confirmed_selected" || legacy === "support_price_selected") {
-    return "support_confirmed";
-  }
-  if (legacy === "normal_selected" || legacy === "normal_price_selected") return "normal";
-  return null;
+  if (!legacy) return null;
+  return fromNormalized(normalizeSelectedPriceType(legacy));
 }
 
 /** 금액 조합으로 매칭 전 추론 (저장된 type이 있으면 이 함수를 사용하지 않음) */
@@ -121,9 +130,10 @@ export function resolveSelectedPriceType(
   source?: SelectedPriceSource | null,
 ): SelectedPriceType | null {
   if (!source) return null;
-  const raw = (source.selected_price_type ?? "").trim().toLowerCase();
-  if (raw === "normal" || raw === "support_planned" || raw === "support_confirmed") {
-    return raw;
+  const typeRaw = (source.selected_price_type ?? "").trim();
+  if (typeRaw !== "") {
+    const normalized = fromNormalized(normalizeSelectedPriceType(typeRaw));
+    if (normalized) return normalized;
   }
   return resolveLegacySelectedPriceType(source);
 }
