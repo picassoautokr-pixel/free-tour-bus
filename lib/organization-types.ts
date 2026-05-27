@@ -18,9 +18,8 @@ const LEGACY_ORGANIZATION_TYPE_LABELS: Record<string, CustomerOrganizationType> 
   "회사/직장": "회사원/직장인",
   학교: "학생",
   "교회/종교단체": "종교",
-  공공기관: "협회",
-  "협회/단체": "동호회",
-  "기타 소속단체": "공공기관",
+  "협회/단체": "협회",
+  "기타 소속단체": "기타단체",
 };
 
 export function normalizeCustomerOrganizationType(value: unknown): string {
