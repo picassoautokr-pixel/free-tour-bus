@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
@@ -35,8 +35,132 @@ type GuestCall = {
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
-function departureLine(call: GuestCall) {
-  return [call.departure_date || "미정", call.departure_time].filter(Boolean).join(" ");
+function ListCell({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-0.5 truncate text-xs font-black text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function formatDeadline(deadlineAt: string | undefined | null): string {
+  if (!deadlineAt) return "—";
+  const diff = new Date(deadlineAt).getTime() - Date.now();
+  if (diff <= 0) return "마감";
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h >= 24) {
+    const d = Math.floor(h / 24);
+    return `${d}일 ${h % 24}시간`;
+  }
+  return `${h}시간 ${m}분`;
+}
+
+function GuestCallCard({ call, openId, setOpenId }: {
+  call: GuestCall;
+  openId: string | null;
+  setOpenId: (id: string | null) => void;
+}) {
+  const closed = Boolean(call.quote_closed_at);
+  const isOpen = openId === call.id;
+  const stopoverText = formatStopovers(call.stopovers) || "—";
+  const departureDate = call.departure_date.trim() || "미정";
+  const departureTime = call.departure_time.trim() || "—";
+  const region = call.departure_region.trim() || "—";
+
+  return (
+    <article
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100 transition"
+    >
+      <div className="p-4">
+        {/* 경로 제목 */}
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="min-w-0 flex-1 text-sm font-black leading-snug text-slate-900 sm:text-base">
+            {formatRouteWithStopovers(call.departure, call.stopovers, call.destination)}
+          </h2>
+          {region !== "—" ? (
+            <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black text-blue-700">
+              {region}
+            </span>
+          ) : null}
+        </div>
+
+        {/* 지원금 견적 현황 요약 */}
+        <div className="mt-3">
+          <QuoteStatusSummary
+            quoteStatus={call.quote_status ?? "collecting"}
+            quoteDeadlineAt={call.quote_deadline_at}
+            autoFinalConfirmAt={call.auto_final_confirm_at}
+            quoteCount={call.quote_count}
+            quoteLimitCount={call.quote_limit_count}
+            targetNormalPrice={call.target_normal_price}
+            targetMemberPrice={call.target_member_price}
+            compact
+          />
+        </div>
+
+        {/* 정보 그리드 — 파트너 카드 ListCell 스타일 */}
+        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+          <ListCell label="출발일" value={departureDate} />
+          <ListCell label="출발시간" value={departureTime} />
+          <ListCell label="출발지역" value={region} />
+          <ListCell label="출발지" value={call.departure || "—"} />
+          <ListCell label="경유지" value={stopoverText} />
+          <ListCell label="도착지" value={call.destination || "—"} />
+          <ListCell
+            label="인원수"
+            value={call.passenger_count != null ? `${call.passenger_count}명` : "미확정"}
+          />
+          <ListCell label="왕복/편도" value={call.trip_type || "—"} />
+          <ListCell label="차량등급" value={call.bus_grade || "—"} />
+          <ListCell
+            label="남은 마감시간"
+            value={closed ? "마감됨" : formatDeadline(call.quote_deadline_at)}
+          />
+          <ListCell
+            label="전적 진행현황"
+            value={
+              call.quote_limit_count != null
+                ? `${call.quote_count ?? 0} / ${call.quote_limit_count}건`
+                : `${call.quote_count ?? 0}건`
+            }
+          />
+        </div>
+
+        {/* 안내 문구 */}
+        <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
+          회원 등록 시 지원금 견적 제출 가능
+        </p>
+
+        {/* 버튼 */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={closed && !isOpen}
+            onClick={() => setOpenId(isOpen ? null : call.id)}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white disabled:bg-slate-300"
+            style={tapStyle}
+          >
+            {closed && !isOpen ? "마감됨" : isOpen ? "접기" : "견적 제출"}
+          </button>
+        </div>
+      </div>
+
+      {/* 견적 제출 폼 확장 */}
+      {isOpen ? (
+        <div className="border-t border-slate-100 bg-slate-50 p-4">
+          <GuestQuoteForm
+            applicationId={call.id}
+            compact
+            passengerCount={call.passenger_count}
+            registerHref="/partner/register"
+            quoteClosed={closed}
+          />
+        </div>
+      ) : null}
+    </article>
+  );
 }
 
 export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[] }) {
@@ -108,6 +232,8 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           {toastMessage}
         </div>
       ) : null}
+
+      {/* 지역 필터 */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -158,6 +284,7 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
         </div>
       </div>
 
+      {/* 카드 목록 */}
       <div className="mt-5 space-y-4">
         {filtered.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">
@@ -165,90 +292,12 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           </div>
         ) : (
           filtered.map((call) => (
-            <article key={call.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">
-                    {call.departure_region || "지역 미정"}
-                  </span>
-                  <h3 className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">
-                    {formatRouteWithStopovers(
-                      call.departure,
-                      call.stopovers,
-                      call.destination,
-                    )}
-                  </h3>
-                  <p className="mt-1 text-sm font-semibold text-slate-500">
-                    {departureLine(call)}
-                  </p>
-                  {formatStopovers(call.stopovers) ? (
-                    <p className="mt-1 text-sm font-semibold text-slate-600">
-                      경유지: {formatStopovers(call.stopovers)}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={call.quote_closed_at != null && call.quote_closed_at !== ""}
-                  onClick={() => setOpenId((prev) => (prev === call.id ? null : call.id))}
-                  className="min-h-10 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm disabled:bg-slate-300"
-                  style={tapStyle}
-                >
-                  {call.quote_closed_at ? "견적 마감됨" : "견적 제출"}
-                </button>
-              </div>
-              <div className="mt-4">
-                <QuoteStatusSummary
-                  quoteStatus={call.quote_status ?? "collecting"}
-                  quoteDeadlineAt={call.quote_deadline_at}
-                  autoFinalConfirmAt={call.auto_final_confirm_at}
-                  quoteCount={call.quote_count}
-                  quoteLimitCount={call.quote_limit_count}
-                  targetNormalPrice={call.target_normal_price}
-                  targetMemberPrice={call.target_member_price}
-                  compact
-                />
-              </div>
-              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-[11px] font-bold text-slate-400">인원수</dt>
-                  <dd className="mt-1 font-black text-slate-900">{call.passenger_count ?? "—"}</dd>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-[11px] font-bold text-slate-400">왕복/편도</dt>
-                  <dd className="mt-1 font-black text-slate-900">{call.trip_type}</dd>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-[11px] font-bold text-slate-400">등급</dt>
-                  <dd className="mt-1 font-black text-slate-900">{call.bus_grade}</dd>
-                </div>
-                {formatStopovers(call.stopovers) ? (
-                  <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
-                    <dt className="text-[11px] font-bold text-slate-400">경유지</dt>
-                    <dd className="mt-1 font-black text-slate-900">
-                      {formatStopovers(call.stopovers)}
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-              <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">
-                {call.request_message || "요청사항 없음"}
-              </p>
-              <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
-                회원 등록 시 지원금 견적 제출 가능
-              </p>
-              {openId === call.id ? (
-                <div className="mt-4">
-                  <GuestQuoteForm
-                    applicationId={call.id}
-                    compact
-                    passengerCount={call.passenger_count}
-                    registerHref="/partner/register"
-                    quoteClosed={call.quote_closed_at != null && call.quote_closed_at !== ""}
-                  />
-                </div>
-              ) : null}
-            </article>
+            <GuestCallCard
+              key={call.id}
+              call={call}
+              openId={openId}
+              setOpenId={setOpenId}
+            />
           ))
         )}
       </div>
