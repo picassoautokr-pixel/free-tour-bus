@@ -17,6 +17,8 @@ import {
 } from "@/lib/driver-quote-select";
 import { sanitizeOperationalError } from "@/lib/operational-error-message";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
+import { logAdminAction } from "@/lib/admin-action-log";
+import { refreshQuoteSnapshotsAfterSponsorConfirm } from "@/lib/support-breakdown-snapshot";
 
 export const runtime = "nodejs";
 
@@ -687,20 +689,77 @@ export async function PATCH(request: Request) {
         { status: 503 },
       );
     }
-    const table = quoteKind === "guest" ? "guest_driver_quotes" : "driver_quotes";
+    const isMember = quoteKind !== "guest";
+    const table = isMember ? "driver_quotes" : "guest_driver_quotes";
+
+    // 수정 전 값 스냅샷 (감사 로그용)
+    const { data: beforeRow } = await admin
+      .from(table)
+      .select(isMember ? "price, support_settlement_type, message, status, application_id" : "price, message, status, application_id")
+      .eq("id", quoteId)
+      .maybeSingle();
+    const beforeRec = (beforeRow as Record<string, unknown> | null) ?? {};
+
     const patch: Record<string, unknown> = {};
     if (quotePatch.price !== undefined) patch.price = parseInteger(quotePatch.price);
     if (quotePatch.vehicle_type !== undefined) patch.vehicle_type = safeText(quotePatch.vehicle_type);
     if (quotePatch.available_time !== undefined) patch.available_time = safeText(quotePatch.available_time);
     if (quotePatch.message !== undefined) patch.message = safeText(quotePatch.message);
     if (quotePatch.status !== undefined) patch.status = safeText(quotePatch.status);
+
+    if (isMember) {
+      if (quotePatch.support_settlement_type !== undefined) {
+        patch.support_settlement_type = safeText(quotePatch.support_settlement_type);
+      }
+      const customerSupport = parseInteger(quotePatch.customer_support_amount);
+      if (customerSupport !== null) {
+        // 먼저 컬럼이 존재하는지 fallback 처리로 시도
+        patch.planned_customer_support = customerSupport;
+      }
+    }
+
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "수정할 필드가 없습니다." }, { status: 400 });
     }
-    const { error: updateError } = await admin.from(table).update(patch).eq("id", quoteId);
+
+    let { error: updateError } = await admin.from(table).update(patch).eq("id", quoteId);
+
+    // planned_customer_support 컬럼 없는 레거시 DB 대응
+    if (
+      updateError &&
+      isMember &&
+      /planned_customer_support|does not exist|42703/i.test(updateError.message)
+    ) {
+      const fallback = { ...patch };
+      delete fallback.planned_customer_support;
+      const retry = await admin.from(table).update(fallback).eq("id", quoteId);
+      updateError = retry.error;
+    }
+
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 502 });
     }
+
+    const applicationId = safeText(beforeRec.application_id ?? "");
+
+    // 제휴기사 견적인 경우 support_breakdown 재계산
+    if (isMember && applicationId) {
+      try {
+        await refreshQuoteSnapshotsAfterSponsorConfirm(admin, applicationId);
+      } catch (e) {
+        console.warn("[admin quote edit] refreshQuoteSnapshotsAfterSponsorConfirm 실패:", e);
+      }
+    }
+
+    await logAdminAction(admin, {
+      adminEmail: user.email ?? null,
+      actionType: "quote_edit",
+      targetTable: table,
+      targetId: quoteId,
+      beforeJson: beforeRec,
+      afterJson: patch,
+    });
+
     return NextResponse.json({ ok: true });
   }
 
@@ -735,9 +794,10 @@ export async function PATCH(request: Request) {
         { status: 400 },
       );
     }
+    const hiddenAt = new Date().toISOString();
     const { error: hideError } = await admin
       .from("applications")
-      .update({ is_hidden: true, hidden_at: new Date().toISOString() })
+      .update({ is_hidden: true, hidden_at: hiddenAt })
       .eq("id", hideApplicationId);
     if (hideError) {
       if (/is_hidden|hidden_at|does not exist|42703/i.test(hideError.message)) {
@@ -751,6 +811,14 @@ export async function PATCH(request: Request) {
       }
       return NextResponse.json({ error: hideError.message }, { status: 502 });
     }
+    await logAdminAction(admin, {
+      adminEmail: user.email ?? null,
+      actionType: "hide_application",
+      targetTable: "applications",
+      targetId: hideApplicationId,
+      beforeJson: { is_hidden: false },
+      afterJson: { is_hidden: true, hidden_at: hiddenAt },
+    });
     return NextResponse.json({ ok: true });
   }
 

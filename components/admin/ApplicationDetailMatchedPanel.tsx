@@ -408,6 +408,8 @@ export function ApplicationDetailMatchedPanel({
   const [quotesOpen, setQuotesOpen] = useState(false);
   const [smsLogOpen, setSmsLogOpen] = useState(false);
   const [sponsorInfoOpen, setSponsorInfoOpen] = useState(false);
+  const [sponsorEditMode, setSponsorEditMode] = useState(false);
+  const [sponsorEditBusy, setSponsorEditBusy] = useState(false);
   const [editQuote, setEditQuote] = useState<AdminMemberQuoteCard | AdminGuestQuoteCard | null>(
     null,
   );
@@ -577,6 +579,37 @@ export function ApplicationDetailMatchedPanel({
       setError("견적 숨김 처리에 실패했습니다.");
     } finally {
       setHideBusy(false);
+    }
+  };
+
+  const saveSponsorPatch = async (patch: Record<string, unknown>) => {
+    if (!sponsorDetail?.preapproval_id) return;
+    setSponsorEditBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/sponsor-preapprovals/edit", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preapproval_id: sponsorDetail.preapproval_id,
+          ...patch,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(json.error ?? "스폰서 정보 저장에 실패했습니다.");
+        return;
+      }
+      setSponsorEditMode(false);
+      setSponsorDetail(undefined);
+      refreshAdminDetailCache(row.id);
+      void loadBasic(true);
+      if (quotesOpen) void loadQuotes(true);
+    } catch {
+      setError("스폰서 정보 저장에 실패했습니다.");
+    } finally {
+      setSponsorEditBusy(false);
     }
   };
 
@@ -971,33 +1004,58 @@ export function ApplicationDetailMatchedPanel({
         </SectionCard>
       ) : null}
 
-      <ModalShell title="후원업체 정보" open={sponsorInfoOpen} onClose={() => setSponsorInfoOpen(false)}>
+      <ModalShell
+        title="후원업체 정보"
+        open={sponsorInfoOpen}
+        onClose={() => {
+          setSponsorInfoOpen(false);
+          setSponsorEditMode(false);
+        }}
+      >
         {loadingSponsor ? (
           <p className="text-sm text-slate-500">불러오는 중…</p>
         ) : sponsorDetail ? (
-          <InfoGrid
-            items={[
-              { label: "업체명", value: sponsorDetail.sponsor_company_name },
-              { label: "지원단계", value: sponsorDetail.support_stage_badge },
-              { label: "지원종류", value: sponsorDetail.support_kind || "—" },
-              { label: "지원조건", value: sponsorDetail.support_condition || "—" },
-              { label: "지원유형", value: sponsorDetail.support_type || "—" },
-              {
-                label: "예상 지원금",
-                value: formatAdminWon(sponsorDetail.estimated_support_amount),
-              },
-              {
-                label: "확정 지원금",
-                value: formatAdminWon(sponsorDetail.approved_support_amount),
-              },
-              {
-                label: "확정 지원금 결정일시",
-                value: formatAdminCreatedAt(sponsorDetail.approved_at || null),
-              },
-              { label: "담당자", value: sponsorDetail.assigned_staff_name || "—" },
-              { label: "담당자 전화", value: sponsorDetail.assigned_staff_phone || "—" },
-            ]}
-          />
+          sponsorEditMode ? (
+            <SponsorEditForm
+              detail={sponsorDetail}
+              busy={sponsorEditBusy}
+              onSave={(patch) => void saveSponsorPatch(patch)}
+              onCancel={() => setSponsorEditMode(false)}
+            />
+          ) : (
+            <>
+              <InfoGrid
+                items={[
+                  { label: "업체명", value: sponsorDetail.sponsor_company_name },
+                  { label: "지원단계", value: sponsorDetail.support_stage_badge },
+                  { label: "지원종류", value: sponsorDetail.support_kind || "—" },
+                  { label: "지원조건", value: sponsorDetail.support_condition || "—" },
+                  { label: "지원유형", value: sponsorDetail.support_type || "—" },
+                  {
+                    label: "예상 지원금",
+                    value: formatAdminWon(sponsorDetail.estimated_support_amount),
+                  },
+                  {
+                    label: "확정 지원금",
+                    value: formatAdminWon(sponsorDetail.approved_support_amount),
+                  },
+                  {
+                    label: "확정 지원금 결정일시",
+                    value: formatAdminCreatedAt(sponsorDetail.approved_at || null),
+                  },
+                  { label: "담당자", value: sponsorDetail.assigned_staff_name || "—" },
+                  { label: "담당자 전화", value: sponsorDetail.assigned_staff_phone || "—" },
+                ]}
+              />
+              <button
+                type="button"
+                onClick={() => setSponsorEditMode(true)}
+                className="mt-4 w-full rounded-xl border border-violet-300 bg-violet-50 py-2 text-sm font-black text-violet-900"
+              >
+                스폰서 정보 수정
+              </button>
+            </>
+          )
         ) : (
           <p className="text-sm text-slate-500">연결된 스폰서 후원이 없습니다.</p>
         )}
@@ -1063,6 +1121,19 @@ function QuoteEditForm({
   const [message, setMessage] = useState(quote.message);
   const [hidden, setHidden] = useState(quote.status === "admin_hidden");
 
+  const memberQuote = kind === "member" ? (quote as AdminMemberQuoteCard) : null;
+  const initialCustomerSupport = memberQuote?.support_rows.find((r) =>
+    r.label.includes("고객") && r.label.includes("지원금"),
+  )?.value;
+  const [customerSupport, setCustomerSupport] = useState(
+    String(initialCustomerSupport != null ? initialCustomerSupport : ""),
+  );
+  const [settlementType, setSettlementType] = useState(
+    memberQuote?.support_settlement_label === "기사 우선" ? "driver_priority"
+      : memberQuote?.support_settlement_label === "고객 우선" ? "client_priority"
+      : "client_priority",
+  );
+
   return (
     <div className="space-y-3">
       <label className="block text-xs font-bold text-slate-600">
@@ -1074,6 +1145,31 @@ function QuoteEditForm({
           className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
         />
       </label>
+      {kind === "member" ? (
+        <>
+          <label className="block text-xs font-bold text-slate-600">
+            고객 예상 지원금
+            <input
+              type="number"
+              value={customerSupport}
+              onChange={(e) => setCustomerSupport(e.target.value)}
+              placeholder="비어 있으면 유지"
+              className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+            />
+          </label>
+          <label className="block text-xs font-bold text-slate-600">
+            정산모드
+            <select
+              value={settlementType}
+              onChange={(e) => setSettlementType(e.target.value)}
+              className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+            >
+              <option value="client_priority">고객 우선</option>
+              <option value="driver_priority">기사 우선</option>
+            </select>
+          </label>
+        </>
+      ) : null}
       <label className="block text-xs font-bold text-slate-600">
         차량유형
         <input
@@ -1110,20 +1206,127 @@ function QuoteEditForm({
       <button
         type="button"
         disabled={busy}
-        onClick={() =>
-          onSave({
+        onClick={() => {
+          const patch: Record<string, unknown> = {
             price: price === "" ? null : Number.parseInt(price, 10),
             vehicle_type: vehicle,
             available_time: time,
             message,
             status: hidden ? "admin_hidden" : "submitted",
             quote_kind: kind,
-          })
-        }
+          };
+          if (kind === "member") {
+            patch.support_settlement_type = settlementType;
+            if (customerSupport.trim() !== "") {
+              patch.customer_support_amount = Number.parseInt(customerSupport, 10);
+            }
+          }
+          onSave(patch);
+        }}
         className="h-10 w-full rounded-xl bg-slate-900 text-sm font-black text-white disabled:opacity-50"
       >
         저장
       </button>
+    </div>
+  );
+}
+
+function SponsorEditForm({
+  detail,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  detail: AdminSponsorDetail;
+  busy: boolean;
+  onSave: (patch: Record<string, unknown>) => void;
+  onCancel: () => void;
+}) {
+  const [estimated, setEstimated] = useState(
+    String(detail.estimated_support_amount ?? ""),
+  );
+  const [approved, setApproved] = useState(
+    String(detail.approved_support_amount ?? ""),
+  );
+  const [supportKind, setSupportKind] = useState(detail.support_kind ?? "");
+  const [supportCondition, setSupportCondition] = useState(detail.support_condition ?? "");
+  const [supportType, setSupportType] = useState(detail.support_type ?? "");
+
+  return (
+    <div className="space-y-3">
+      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">
+        수정 후 파트너 견적의 확정 지원금 스냅샷이 자동 재계산됩니다.
+      </p>
+      <label className="block text-xs font-bold text-slate-600">
+        예상 지원금
+        <input
+          type="number"
+          value={estimated}
+          onChange={(e) => setEstimated(e.target.value)}
+          className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+        />
+      </label>
+      <label className="block text-xs font-bold text-slate-600">
+        확정 지원금
+        <input
+          type="number"
+          value={approved}
+          onChange={(e) => setApproved(e.target.value)}
+          className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+        />
+      </label>
+      <label className="block text-xs font-bold text-slate-600">
+        지원종류
+        <input
+          value={supportKind}
+          onChange={(e) => setSupportKind(e.target.value)}
+          className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+        />
+      </label>
+      <label className="block text-xs font-bold text-slate-600">
+        지원조건
+        <input
+          value={supportCondition}
+          onChange={(e) => setSupportCondition(e.target.value)}
+          className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+        />
+      </label>
+      <label className="block text-xs font-bold text-slate-600">
+        지원유형
+        <input
+          value={supportType}
+          onChange={(e) => setSupportType(e.target.value)}
+          className="mt-1 w-full rounded-lg border px-2 py-2 text-sm"
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            onSave({
+              estimated_support_amount:
+                estimated.trim() !== "" ? Number.parseInt(estimated, 10) : undefined,
+              approved_support_amount:
+                approved.trim() !== "" ? Number.parseInt(approved, 10) : undefined,
+              support_kind: supportKind,
+              support_condition: supportCondition,
+              support_type: supportType,
+            })
+          }
+          className="h-10 flex-1 rounded-xl bg-violet-700 text-sm font-black text-white disabled:opacity-50"
+        >
+          {busy ? "저장 중…" : "저장"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onCancel}
+          className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-50"
+        >
+          취소
+        </button>
+      </div>
     </div>
   );
 }

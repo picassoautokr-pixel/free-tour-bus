@@ -65,6 +65,7 @@ type ApplicationDetail = {
   status: string;
   final_selected_quote_id: string;
   quote_status: string;
+  is_hidden?: boolean;
 };
 
 type DriverQuoteDetail = {
@@ -517,13 +518,14 @@ function isPdfExt(ext: string) {
   return ext === "pdf";
 }
 
-function normalizeRows(data: unknown): ApplicationDetail[] {
+function normalizeRows(data: unknown, includeHidden = false): ApplicationDetail[] {
   if (data == null) return [];
   if (!Array.isArray(data)) return [];
 
-  return filterVisibleApplicationRows(
-    data as Record<string, unknown>[],
-  ).map((raw, index) => {
+  const allRows = data as Record<string, unknown>[];
+  const visible = includeHidden ? allRows : filterVisibleApplicationRows(allRows);
+
+  return visible.map((raw, index) => {
     const r = raw as Record<string, unknown>;
     const idRaw = r.id;
     const id =
@@ -592,6 +594,7 @@ function normalizeRows(data: unknown): ApplicationDetail[] {
       status: safeText(r.status, ""),
       final_selected_quote_id: safeText(r.final_selected_quote_id, ""),
       quote_status: safeText(r.quote_status, ""),
+      is_hidden: r.is_hidden === true,
     };
   });
 }
@@ -2300,6 +2303,7 @@ export default function AdminApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [showHidden, setShowHidden] = useState(false);
   const [adminSectionTab, setAdminSectionTab] = useState<"bus" | "partner" | "sponsor">(
     "bus",
   );
@@ -2481,7 +2485,7 @@ export default function AdminApplicationsPage() {
     [],
   );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (includeHidden = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -2497,7 +2501,7 @@ export default function AdminApplicationsPage() {
         return;
       }
 
-      setRows(normalizeRows(data));
+      setRows(normalizeRows(data, includeHidden));
     } catch (e) {
       const message =
         e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
@@ -2510,9 +2514,9 @@ export default function AdminApplicationsPage() {
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- 초기 목록 로드 */
-    void load();
+    void load(showHidden);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [load]);
+  }, [load, showHidden]);
 
   const adminRealtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "admin-dashboard-live-refresh",
@@ -2526,7 +2530,7 @@ export default function AdminApplicationsPage() {
     ],
     debounceMs: 800,
     onRefresh: () => {
-      void load();
+      void load(showHidden);
       window.dispatchEvent(new CustomEvent("partner-admin-refresh"));
       window.dispatchEvent(new CustomEvent("sponsor-admin-refresh"));
     },
@@ -3316,9 +3320,22 @@ export default function AdminApplicationsPage() {
                 <option value="rejected">반려</option>
               </select>
             </label>
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className={`h-11 rounded-xl border px-4 text-sm font-black transition sm:w-auto ${
+                showHidden
+                  ? "border-slate-700 bg-slate-800 text-white"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {showHidden ? "숨김 포함 중" : "숨김 보기"}
+            </button>
           </div>
           <p className="mt-3 text-xs font-medium text-slate-500">
-            총 {rows.length}건 중 {filteredAndSortedRows.length}건 표시
+            {showHidden
+              ? `전체 (숨김 포함) ${rows.length}건 중 ${filteredAndSortedRows.length}건 표시`
+              : `총 ${rows.length}건 중 ${filteredAndSortedRows.length}건 표시`}
           </p>
         </div>
 
@@ -3380,13 +3397,24 @@ export default function AdminApplicationsPage() {
                   <button
                     type="button"
                     onClick={() => openDetail(row)}
-                    className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 active:bg-slate-50"
+                    className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
+                      row.is_hidden
+                        ? "border-slate-300 bg-slate-50 opacity-60 hover:opacity-80"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80 active:bg-slate-50"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-xs font-medium text-slate-500">
                         {formatCreatedAt(row.created_at)}
                       </p>
-                      <QuoteStageBadge quoteStatus={row.quote_status} finalId={row.final_selected_quote_id} />
+                      <div className="flex flex-wrap gap-1">
+                        {row.is_hidden ? (
+                          <span className="rounded-full bg-slate-400 px-2 py-0.5 text-[10px] font-black text-white">
+                            숨김
+                          </span>
+                        ) : null}
+                        <QuoteStageBadge quoteStatus={row.quote_status} finalId={row.final_selected_quote_id} />
+                      </div>
                     </div>
                     <p className="mt-2 text-xs font-semibold text-slate-700">
                       접수번호{" "}
@@ -3645,8 +3673,10 @@ export default function AdminApplicationsPage() {
         onStatusSaved={handleStatusSaved}
         onOpenSms={openSms}
         onApplicationHidden={() => {
-          closeDetail();
-          void load();
+          if (!showHidden) {
+            closeDetail();
+          }
+          void load(showHidden);
         }}
       />
 
