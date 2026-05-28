@@ -56,6 +56,18 @@ function clipRequestMessage(value: unknown): string {
   return text.length > 120 ? `${text.slice(0, 120)}...` : text;
 }
 
+/** 매칭완료·진행완료 상태는 전국 견적요청 페이지에 표시하지 않음 */
+function isMatchedOrCompleted(quoteStatus: string): boolean {
+  const HIDDEN = new Set([
+    "auto_selected",
+    "final_selected",
+    "contract_pending",
+    "completed",
+    "matched",
+  ]);
+  return HIDDEN.has(quoteStatus.trim().toLowerCase());
+}
+
 export async function GET(request: Request) {
   const admin = createServiceRoleSupabase();
   if (!admin) {
@@ -71,7 +83,7 @@ export async function GET(request: Request) {
   let query = admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
+      "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, request_message, quote_status, sponsor_support_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -84,18 +96,35 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 502 });
   }
 
-  const visibleRows = filterVisibleApplicationRows(
+  const allRows = filterVisibleApplicationRows(
     (Array.isArray(data) ? data : []) as Record<string, unknown>[],
   );
-  const ids = visibleRows
-    .map((raw) => safeText(raw.id))
-    .filter(Boolean);
+
+  // 매칭완료·진행완료 제외
+  const visibleRows = allRows.filter(
+    (raw) => !isMatchedOrCompleted(safeText(raw.quote_status)),
+  );
+
+  const ids = visibleRows.map((raw) => safeText(raw.id)).filter(Boolean);
+
   const quoteCountByApplication = new Map<string, number>();
+  const sponsorByApp = new Map<
+    string,
+    { status: string; estimated: number | null; approved: number | null }
+  >();
+
   if (ids.length > 0) {
-    const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
-      admin.from("driver_quotes").select("application_id").in("application_id", ids),
-      admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
-    ]);
+    const [{ data: memberRows }, { data: guestRows }, { data: sponsorRows }] =
+      await Promise.all([
+        admin.from("driver_quotes").select("application_id").in("application_id", ids),
+        admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
+        admin
+          .from("sponsor_preapprovals")
+          .select("application_id, status, estimated_support_amount, approved_support_amount")
+          .in("application_id", ids)
+          .order("created_at", { ascending: false }),
+      ]);
+
     for (const raw of Array.isArray(memberRows) ? memberRows : []) {
       const id = safeText((raw as { application_id?: unknown }).application_id);
       quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
@@ -104,13 +133,27 @@ export async function GET(request: Request) {
       const id = safeText((raw as { application_id?: unknown }).application_id);
       quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
     }
+    // 스폰서 정보: 앱별로 가장 최신 레코드 1건 (created_at DESC)
+    for (const raw of Array.isArray(sponsorRows) ? sponsorRows : []) {
+      const r = raw as Record<string, unknown>;
+      const appId = safeText(r.application_id);
+      if (!sponsorByApp.has(appId)) {
+        sponsorByApp.set(appId, {
+          status: safeText(r.status),
+          estimated: parseInteger(r.estimated_support_amount),
+          approved: parseInteger(r.approved_support_amount),
+        });
+      }
+    }
   }
 
   const quotes = visibleRows.map((raw) => {
     const row = raw as Record<string, unknown>;
-    if (!isApplicationQuoteAccepting(row)) return null;
+    const id = safeText(row.id);
+    const sponsor = sponsorByApp.get(id);
+    const sponsorStatus = safeText(row.sponsor_support_status) || (sponsor?.status ?? "");
     return {
-      id: safeText(row.id),
+      id,
       created_at: safeText(row.created_at),
       receipt_number: safeText(row.receipt_number),
       departure_region: safeText(row.departure_region),
@@ -126,13 +169,16 @@ export async function GET(request: Request) {
       quote_status: safeText(row.quote_status, "collecting"),
       quote_deadline_at: safeText(row.quote_deadline_at, ""),
       quote_limit_count: parseInteger(row.quote_limit_count),
-      quote_count: quoteCountByApplication.get(safeText(row.id)) ?? 0,
+      quote_count: quoteCountByApplication.get(id) ?? 0,
       target_normal_price: parseInteger(row.target_normal_price),
       target_member_price: parseInteger(row.target_member_price),
       quote_closed_at: safeText(row.quote_closed_at, ""),
       auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
+      sponsor_support_status: sponsorStatus,
+      sponsor_estimated_amount: sponsor?.estimated ?? null,
+      sponsor_confirmed_amount: sponsor?.approved ?? null,
     };
-  }).filter((quote): quote is NonNullable<typeof quote> => quote != null);
+  });
 
   return NextResponse.json({ ok: true, regions: SERVICE_REGIONS, quotes });
 }

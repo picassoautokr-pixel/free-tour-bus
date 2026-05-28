@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
 import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
-import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
 } from "@/hooks/useSupabaseRealtimeRefresh";
 import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
+import { normalizeSponsorStage } from "@/lib/status-normalizer";
 
 type GuestCall = {
   id: string;
@@ -31,6 +31,9 @@ type GuestCall = {
   target_member_price?: number | null;
   quote_closed_at?: string;
   auto_final_confirm_at?: string;
+  sponsor_support_status?: string;
+  sponsor_estimated_amount?: number | null;
+  sponsor_confirmed_amount?: number | null;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
@@ -42,6 +45,11 @@ function ListCell({ label, value }: { label: string; value: ReactNode }) {
       <p className="mt-0.5 truncate text-xs font-black text-slate-900">{value}</p>
     </div>
   );
+}
+
+function formatWon(amount: number | null | undefined): string {
+  if (amount == null) return "—";
+  return `${amount.toLocaleString("ko-KR")}원`;
 }
 
 function formatDeadline(deadlineAt: string | undefined | null): string {
@@ -57,7 +65,63 @@ function formatDeadline(deadlineAt: string | undefined | null): string {
   return `${h}시간 ${m}분`;
 }
 
-function GuestCallCard({ call, openId, setOpenId }: {
+/** 스폰서 단계 정보 박스 */
+function SponsorInfoBox({ call }: { call: GuestCall }) {
+  const stage = normalizeSponsorStage(call.sponsor_support_status);
+  const isConfirmed = stage === "confirmed";
+  const isReview = stage === "review";
+  const hasSupport = isConfirmed || isReview;
+
+  const sponsorAmount = isConfirmed
+    ? call.sponsor_confirmed_amount
+    : call.sponsor_estimated_amount;
+  const amountLabel = isConfirmed ? "확정 지원금" : "예상 지원금";
+  const badgeLabel = isConfirmed ? "지원확정" : "지원검토";
+  const badgeTone = isConfirmed
+    ? "bg-emerald-600 text-white"
+    : "bg-blue-600 text-white";
+
+  return (
+    <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 ring-1 ring-slate-100">
+      {/* 스폰서 단계 배지 + 금액 */}
+      <div className="flex flex-wrap items-center gap-2">
+        {hasSupport ? (
+          <span className={`inline-flex rounded-full px-3 py-0.5 text-xs font-black ${badgeTone}`}>
+            {badgeLabel}
+          </span>
+        ) : null}
+        {hasSupport && sponsorAmount != null ? (
+          <span className="text-sm font-black text-slate-900">
+            {amountLabel} : {formatWon(sponsorAmount)}
+          </span>
+        ) : hasSupport ? (
+          <span className="text-xs font-semibold text-slate-500">{amountLabel} : 미확정</span>
+        ) : null}
+      </div>
+
+      {/* 희망 견적가 */}
+      <div className="mt-2 flex flex-wrap gap-3 text-xs font-bold text-slate-600">
+        {call.target_normal_price != null ? (
+          <span>희망견적가 : {formatWon(call.target_normal_price)}</span>
+        ) : null}
+        {call.target_member_price != null ? (
+          <span>할인견적가 : {formatWon(call.target_member_price)}</span>
+        ) : null}
+      </div>
+
+      {/* 제휴기사 안내 */}
+      <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+        제휴기사 가입시 : 지원금을 직접 확인하고, 지원금 할인 견적을 제출할 수 있습니다.
+      </p>
+    </div>
+  );
+}
+
+function GuestCallCard({
+  call,
+  openId,
+  setOpenId,
+}: {
   call: GuestCall;
   openId: string | null;
   setOpenId: (id: string | null) => void;
@@ -70,9 +134,7 @@ function GuestCallCard({ call, openId, setOpenId }: {
   const region = call.departure_region.trim() || "—";
 
   return (
-    <article
-      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100 transition"
-    >
+    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100 transition">
       <div className="p-4">
         {/* 경로 제목 */}
         <div className="flex items-start justify-between gap-2">
@@ -86,19 +148,8 @@ function GuestCallCard({ call, openId, setOpenId }: {
           ) : null}
         </div>
 
-        {/* 지원금 견적 현황 요약 */}
-        <div className="mt-3">
-          <QuoteStatusSummary
-            quoteStatus={call.quote_status ?? "collecting"}
-            quoteDeadlineAt={call.quote_deadline_at}
-            autoFinalConfirmAt={call.auto_final_confirm_at}
-            quoteCount={call.quote_count}
-            quoteLimitCount={call.quote_limit_count}
-            targetNormalPrice={call.target_normal_price}
-            targetMemberPrice={call.target_member_price}
-            compact
-          />
-        </div>
+        {/* 스폰서 정보 박스 */}
+        <SponsorInfoBox call={call} />
 
         {/* 정보 그리드 — 파트너 카드 ListCell 스타일 */}
         <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -127,11 +178,6 @@ function GuestCallCard({ call, openId, setOpenId }: {
             }
           />
         </div>
-
-        {/* 안내 문구 */}
-        <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
-          회원 등록 시 지원금 견적 제출 가능
-        </p>
 
         {/* 버튼 */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
