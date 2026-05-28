@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ClientApplicationListItem } from "@/app/client/dashboard/ClientApplicationListItem";
 import { normalizeClientApplication } from "@/app/client/dashboard/client-display";
@@ -87,6 +87,58 @@ export default function ClientDashboardPage() {
     },
     [],
   );
+
+  // /login 페이지에서 클라이언트 인증 후 리다이렉트 시 sessionStorage 자동 로그인
+  useEffect(() => {
+    let stored: { phone: string; password: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem("clientAuth");
+      if (raw) {
+        stored = JSON.parse(raw) as { phone: string; password: string };
+        sessionStorage.removeItem("clientAuth");
+      }
+    } catch {
+      /* sessionStorage 미지원 환경 무시 */
+    }
+    if (!stored?.phone || !stored?.password) return;
+
+    const { phone: storedPhone, password: storedPw } = stored;
+    setLookupPhone(storedPhone);
+    setLookupPassword(storedPw);
+
+    void (async () => {
+      setLoading(true);
+      setMessage(null);
+      try {
+        const query = new URLSearchParams({
+          phone: storedPhone,
+          lookup_password: storedPw,
+        });
+        const res = await fetch(`/api/client/quotes?${query.toString()}`);
+        const json = (await res.json()) as {
+          error?: string;
+          applications?: ClientApplication[];
+        };
+        if (!res.ok) {
+          setMessage(json.error ?? "견적요청을 찾을 수 없습니다.");
+          setApplications([]);
+          return;
+        }
+        const next = (Array.isArray(json.applications) ? json.applications : []).map(
+          normalizeClientApplicationFromApi,
+        );
+        mergeApplications(next, true);
+        if (next.length === 0) {
+          setMessage("등록된 견적요청이 없습니다.");
+        }
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadByReceipt = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {

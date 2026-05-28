@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
-import { resolvePartnerLoginEmail } from "@/lib/partner-phone-login";
+import {
+  digitsOnlyKoreanMobile,
+  resolvePartnerLoginEmail,
+} from "@/lib/partner-phone-login";
 import { fetchProfileForAuthUser } from "@/lib/profile";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import {
@@ -76,6 +79,32 @@ export default function LoginPage() {
         password,
       });
       if (signError) {
+        // Supabase auth 실패 → 클라이언트(고객) 조회용 비밀번호로 재시도
+        const phoneDigits = digitsOnlyKoreanMobile(loginId.trim());
+        if (phoneDigits) {
+          try {
+            const clientRes = await fetch(
+              `/api/client/quotes?phone=${encodeURIComponent(phoneDigits)}&lookup_password=${encodeURIComponent(password)}`,
+            );
+            if (clientRes.ok) {
+              const json = (await clientRes.json()) as { applications?: unknown[] };
+              if (Array.isArray(json.applications) && json.applications.length > 0) {
+                try {
+                  sessionStorage.setItem(
+                    "clientAuth",
+                    JSON.stringify({ phone: phoneDigits, password }),
+                  );
+                } catch {
+                  /* sessionStorage 사용 불가 환경 무시 */
+                }
+                router.replace("/client/dashboard");
+                return;
+              }
+            }
+          } catch {
+            /* 네트워크 오류 무시 */
+          }
+        }
         setError("로그인 정보가 올바르지 않습니다.");
         return;
       }
