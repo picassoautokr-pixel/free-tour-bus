@@ -16,7 +16,10 @@ import {
   DRIVER_QUOTE_MINIMAL_SELECT,
   DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
 } from "@/lib/driver-quote-select";
-import { freezeQuotePlannedSupportBreakdown } from "@/lib/support-breakdown-snapshot";
+import {
+  freezeQuotePlannedSupportBreakdown,
+  refreshQuoteSnapshotsAfterSponsorConfirm,
+} from "@/lib/support-breakdown-snapshot";
 import { resolveSettlementType } from "@/lib/support-calculation";
 import type { SponsorRuleRecord } from "@/lib/sponsor-rule-helpers";
 import { getApprovedSponsorSupport, supportPlannedLimitForQuote } from "@/lib/sponsor-support";
@@ -832,6 +835,18 @@ export async function PATCH(request: Request) {
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 502 });
+  }
+
+  // support_breakdown JSONB를 갱신해 loadCalls() 후 화면에 반영
+  await freezeQuotePlannedSupportBreakdown(admin, quoteId, {
+    rule: null,
+    normalPrice: price,
+    planned: plannedSnapshot,
+    supportMode: resolveSettlementType(supportSettlementType),
+    extensionRound: patchExtensionRound,
+  });
+  if (confirmedTotal > 0) {
+    await refreshQuoteSnapshotsAfterSponsorConfirm(admin, applicationId);
   }
 
   await processApplicationQuoteLifecycle(admin, applicationId);
