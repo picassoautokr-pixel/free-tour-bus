@@ -22,6 +22,7 @@ import {
   parseSponsorSupportType,
   safeText,
 } from "@/lib/sponsor";
+import { matchSponsorPreapprovals } from "@/lib/sponsor-preapproval";
 
 const APPLICATION_TRIP_SELECT_PHONE =
   "id, created_at, receipt_number, application_type, organization_type, organization_name, applicant_name, name, phone, customer_phone, contact_phone, user_phone, applicant_phone, mobile, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, quote_status, quote_closed_at, quote_deadline_at, quote_limit_count, final_selected_quote_id, final_selected_quote_source, contact_revealed_at, client_price_selection_kind, selected_price_type, selected_price_label, selected_price";
@@ -94,6 +95,54 @@ function isMissingColumnError(error: { message?: string; code?: string } | null 
 }
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
+
+const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
+const OPEN_QUOTE_STATUSES = [
+  "collecting",
+  "submitted",
+  "extended_no_quotes",
+  "견적요청중",
+];
+
+async function rematchOpenApplicationsForSponsor(
+  admin: NonNullable<ReturnType<typeof createServiceRoleSupabase>>,
+  sponsorCompanyId: string,
+) {
+  try {
+    const { data: openApps } = await admin
+      .from("applications")
+      .select("id")
+      .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
+      .in("quote_status", OPEN_QUOTE_STATUSES)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!Array.isArray(openApps) || openApps.length === 0) return;
+
+    const openIds = openApps
+      .map((row) => safeText((row as Record<string, unknown>).id))
+      .filter(Boolean);
+
+    const { data: existingRows } = await admin
+      .from("sponsor_preapprovals")
+      .select("application_id")
+      .eq("sponsor_company_id", sponsorCompanyId)
+      .in("application_id", openIds);
+
+    const alreadyMatchedIds = new Set(
+      (Array.isArray(existingRows) ? existingRows : []).map((row) =>
+        safeText((row as Record<string, unknown>).application_id),
+      ),
+    );
+
+    const toMatch = openIds.filter((id) => !alreadyMatchedIds.has(id));
+    for (const appId of toMatch) {
+      await matchSponsorPreapprovals(admin, appId);
+    }
+  } catch {
+    /* 재매칭 실패는 규칙 저장 결과에 영향 없음 */
+  }
+}
 
 export const runtime = "nodejs";
 
@@ -415,6 +464,7 @@ export async function POST(request: Request) {
       ({ error } = await query);
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+    await rematchOpenApplicationsForSponsor(admin, company.id);
     return NextResponse.json({ ok: true });
   }
 
