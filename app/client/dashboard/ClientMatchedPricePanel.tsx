@@ -71,6 +71,11 @@ export function ClientMatchedPricePanel({
       <p className="text-sm font-black text-emerald-950">
         {LABEL.selectedQuoteLine}: {selectedQuoteText || LABEL.unconfirmed}
       </p>
+      {!sponsorConfirmed && selectedQuote.source === "member" ? (
+        <p className="text-[10px] font-semibold text-slate-500">
+          후원사의 지원금 확정금액에 따라 최종 할인 적용가는 변동될 수 있습니다.
+        </p>
+      ) : null}
     </div>
   );
 }
