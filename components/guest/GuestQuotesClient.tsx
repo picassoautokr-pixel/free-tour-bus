@@ -202,6 +202,9 @@ function GuestCallCard({
             passengerCount={call.passenger_count}
             registerHref="/partner/register"
             quoteClosed={closed}
+            sponsorStatus={call.sponsor_support_status}
+            sponsorEstimatedAmount={call.sponsor_estimated_amount}
+            sponsorConfirmedAmount={call.sponsor_confirmed_amount}
           />
         </div>
       ) : null}
