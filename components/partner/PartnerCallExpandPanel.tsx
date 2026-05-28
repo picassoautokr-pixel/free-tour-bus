@@ -14,6 +14,7 @@ import {
   quoteFormPlannedAmounts,
   settlementLabel,
   sponsorStageLabel,
+  applicationSupportTotals,
   type PartnerCallLike,
 } from "@/lib/partner-call-view-model";
 import {
@@ -113,11 +114,17 @@ export function PartnerCallExpandPanel({
   const quotePriceValue = parsePriceInput(quoteForm.price);
   const customerPlannedInput = parsePriceInput(quoteForm.supportDiscountAmount);
 
+  // 지원확정 총지원금: my_quote 유무와 관계없이 call 레벨 데이터에서 직접 읽음
+  const appTotals = applicationSupportTotals(call);
+  const confirmedTotal =
+    supportModel?.confirmed_total_support ??
+    appTotals.totalConfirmed ??
+    null;
+
   // 지원확정 상태에서는 확정 총지원금 기준, 그 외에는 예상 총지원금 기준
-  const confirmedTotalFromModel = supportModel?.confirmed_total_support ?? null;
   const totalPlannedForForm = (() => {
-    if (sponsorConfirmed && confirmedTotalFromModel != null && confirmedTotalFromModel > 0) {
-      return confirmedTotalFromModel;
+    if (sponsorConfirmed && confirmedTotal != null && confirmedTotal > 0) {
+      return confirmedTotal;
     }
     return supportSummary.totalPlannedForForm > 0
       ? supportSummary.totalPlannedForForm
@@ -133,10 +140,10 @@ export function PartnerCallExpandPanel({
 
   // 지원확정 상태에서 폼 입력값으로 확정 수치를 동적 계산 (DB 저장 전 미리보기)
   const formConfirmedPreview = (() => {
-    if (!sponsorConfirmed || confirmedTotalFromModel == null || customerPlannedInput == null) {
+    if (!sponsorConfirmed || confirmedTotal == null || customerPlannedInput == null) {
       return null;
     }
-    const driverBase = Math.max(confirmedTotalFromModel - customerPlannedInput, 0);
+    const driverBase = Math.max(confirmedTotal - customerPlannedInput, 0);
     const extensionRound = call.extension_round;
     const extension =
       extensionRound > 0 && driverBase > 0
@@ -334,35 +341,37 @@ export function PartnerCallExpandPanel({
                         : formPlannedPreview.supportDiscountPlannedPrice,
                     )}
                   </Field>
-                  <div>
-                    <p className="text-xs font-bold text-slate-500">{LABEL.settlementMode}</p>
-                    <div className="mt-2 grid gap-2">
-                      {SETTLEMENT_OPTIONS.map((opt) => (
-                        <label
-                          key={opt.value}
-                          className="flex gap-3 rounded-xl border border-slate-100 bg-white p-3"
-                        >
-                          <input
-                            type="radio"
-                            name={`settlement-${call.id}`}
-                            checked={quoteForm.supportSettlementType === opt.value}
-                            onChange={() =>
-                              setQuoteForm((p) => ({
-                                ...p,
-                                supportSettlementType: opt.value,
-                              }))
-                            }
-                          />
-                          <span>
-                            <span className="block text-sm font-black">{opt.title}</span>
-                            <span className="mt-1 block text-[11px] text-slate-500">
-                              {opt.description}
+                  {!sponsorConfirmed ? (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500">{LABEL.settlementMode}</p>
+                      <div className="mt-2 grid gap-2">
+                        {SETTLEMENT_OPTIONS.map((opt) => (
+                          <label
+                            key={opt.value}
+                            className="flex gap-3 rounded-xl border border-slate-100 bg-white p-3"
+                          >
+                            <input
+                              type="radio"
+                              name={`settlement-${call.id}`}
+                              checked={quoteForm.supportSettlementType === opt.value}
+                              onChange={() =>
+                                setQuoteForm((p) => ({
+                                  ...p,
+                                  supportSettlementType: opt.value,
+                                }))
+                              }
+                            />
+                            <span>
+                              <span className="block text-sm font-black">{opt.title}</span>
+                              <span className="mt-1 block text-[11px] text-slate-500">
+                                {opt.description}
+                              </span>
                             </span>
-                          </span>
-                        </label>
-                      ))}
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </>
               ) : null}
               <label className="block">
