@@ -162,16 +162,18 @@ export function buildPlannedDbPayload(planned: PlannedSupportSnapshot) {
 
 /** 확정 필드만 갱신 — planned_* / customer_support_amount 등 예정 컬럼 미포함 */
 export function buildConfirmedDbPayload(confirmed: ConfirmedSupportSnapshot) {
+  // confirmed_discount_price / final_member_price 모두 extension까지 차감한 최종 적용가로 저장
+  // (extension이 없으면 finalPrice === discountPrice)
   return {
     confirmed_total_support: confirmed.total,
     confirmed_customer_support: confirmed.customer,
     confirmed_driver_support: confirmed.driver,
-    confirmed_discount_price: confirmed.discountPrice,
+    confirmed_discount_price: confirmed.finalPrice,
     confirmed_final_price: confirmed.finalPrice,
     approved_support_amount: confirmed.total,
     final_customer_support_amount: confirmed.customer,
     final_driver_support_amount: confirmed.driver,
-    final_member_price: confirmed.discountPrice,
+    final_member_price: confirmed.finalPrice,
     extension_support_amount: confirmed.extensionSupport,
     support_recalculated_at: new Date().toISOString(),
   };

@@ -281,6 +281,7 @@ export async function POST(request: Request) {
     sponsorSummary.status === "none" && totalPlannedSupport > 0
       ? "preapproved"
       : sponsorSummary.status;
+  const extensionRound = parsePrice(activeApplication.extension_round) ?? 0;
   const confirmedPayload =
     confirmedTotal > 0
       ? (() => {
@@ -289,6 +290,7 @@ export async function POST(request: Request) {
             settlementType: resolveSettlementType(supportSettlementType),
             planned: plannedSnapshot,
             confirmedTotal,
+            extensionApplied: extensionRound > 0,
           });
           return "error" in computed ? null : buildConfirmedDbPayload(computed);
         })()
@@ -790,6 +792,10 @@ export async function PATCH(request: Request) {
     sponsorSummary.status === "none" && totalPlannedSupport > 0
       ? "preapproved"
       : sponsorSummary.status;
+  const patchExtensionRound =
+    parsePrice(
+      (application as unknown as Record<string, unknown> | null)?.extension_round,
+    ) ?? 0;
   const confirmedPayload =
     confirmedTotal > 0
       ? (() => {
@@ -798,6 +804,7 @@ export async function PATCH(request: Request) {
             settlementType: resolveSettlementType(supportSettlementType),
             planned: plannedSnapshot,
             confirmedTotal,
+            extensionApplied: patchExtensionRound > 0,
           });
           return "error" in computed ? null : buildConfirmedDbPayload(computed);
         })()
