@@ -10,6 +10,7 @@ import {
   parseRuleTargetGroups,
 } from "@/lib/sponsor-rule-helpers";
 import { SPONSOR_SUPPORT_TYPES, safeText } from "@/lib/sponsor";
+import { SERVICE_REGIONS, normalizeServiceRegions } from "@/lib/regions";
 
 export type SponsorRuleFormState = {
   id: string;
@@ -19,6 +20,7 @@ export type SponsorRuleFormState = {
   max_support_amount: string;
   min_passenger_count: string;
   target_groups: string[];
+  service_regions: string[];
   support_type: string;
   support_condition: string;
 };
@@ -31,6 +33,7 @@ const emptyRuleForm = (): SponsorRuleFormState => ({
   max_support_amount: "",
   min_passenger_count: "",
   target_groups: [],
+  service_regions: [],
   support_type: "cash",
   support_condition: "홍보시",
 });
@@ -44,6 +47,7 @@ function ruleToForm(rule: Record<string, unknown>): SponsorRuleFormState {
     max_support_amount: String(rule.max_support_amount ?? ""),
     min_passenger_count: String(rule.min_passenger_count ?? ""),
     target_groups: parseRuleTargetGroups(rule),
+    service_regions: normalizeServiceRegions(rule.service_regions),
     support_type: safeText(rule.support_type, "cash"),
     support_condition: safeText(rule.support_condition, "홍보시"),
   };
@@ -152,6 +156,58 @@ export function SponsorSettingsRulePanel({
                 }`}
               >
                 {group}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-slate-500">지원지역</p>
+          <button
+            type="button"
+            onClick={() =>
+              setForm((p) => ({
+                ...p,
+                service_regions:
+                  p.service_regions.length === SERVICE_REGIONS.length
+                    ? []
+                    : [...SERVICE_REGIONS],
+              }))
+            }
+            className="text-xs font-bold text-blue-600 hover:text-blue-700"
+          >
+            {form.service_regions.length === SERVICE_REGIONS.length
+              ? "전체해제"
+              : "전체선택"}
+          </button>
+        </div>
+        <p className="mt-0.5 text-[11px] text-slate-400">
+          선택하지 않으면 전체 지역 허용
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {SERVICE_REGIONS.map((region) => {
+            const selected = form.service_regions.includes(region);
+            return (
+              <button
+                key={region}
+                type="button"
+                onClick={() =>
+                  setForm((p) => ({
+                    ...p,
+                    service_regions: selected
+                      ? p.service_regions.filter((r) => r !== region)
+                      : [...p.service_regions, region],
+                  }))
+                }
+                className={`min-h-9 rounded-full border px-3 text-xs font-black transition ${
+                  selected
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {region}
               </button>
             );
           })}

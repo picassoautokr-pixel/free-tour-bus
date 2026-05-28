@@ -1207,25 +1207,43 @@ export default function PartnerDashboardPage() {
                 {serviceRegionBusy ? "저장 중…" : "수신지역 저장"}
               </button>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {SERVICE_REGIONS.map((region) => {
-                const selected = serviceRegions.includes(region);
-                return (
-                  <button
-                    key={region}
-                    type="button"
-                    onClick={() => toggleServiceRegion(region)}
-                    className={`min-h-9 rounded-full border px-3 text-xs font-black transition ${
-                      selected
-                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                    style={tapStyle}
-                  >
-                    {region}
-                  </button>
-                );
-              })}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (serviceRegions.length === SERVICE_REGIONS.length) {
+                    setServiceRegions([]);
+                  } else {
+                    setServiceRegions([...SERVICE_REGIONS]);
+                  }
+                }}
+                className="mb-3 text-xs font-bold text-blue-600 hover:text-blue-700"
+                style={tapStyle}
+              >
+                {serviceRegions.length === SERVICE_REGIONS.length
+                  ? "전체해제"
+                  : "전체선택"}
+              </button>
+              <div className="flex flex-wrap gap-2">
+                {SERVICE_REGIONS.map((region) => {
+                  const selected = serviceRegions.includes(region);
+                  return (
+                    <button
+                      key={region}
+                      type="button"
+                      onClick={() => toggleServiceRegion(region)}
+                      className={`min-h-9 rounded-full border px-3 text-xs font-black transition ${
+                        selected
+                          ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                      style={tapStyle}
+                    >
+                      {region}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             {serviceRegions.length === 0 ? (
               <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100">

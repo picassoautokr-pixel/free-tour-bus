@@ -29,6 +29,7 @@ import {
 import { roleLoginPath } from "@/lib/role-hosts";
 import { ApplicationDetailMatchedPanel } from "@/components/admin/ApplicationDetailMatchedPanel";
 import { PartnerDriversAdmin } from "@/components/admin/PartnerDriversAdmin";
+import { normalizeClientQuoteStage } from "@/lib/status-normalizer";
 import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 import { SponsorCompaniesAdmin } from "@/components/admin/SponsorCompaniesAdmin";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
@@ -234,6 +235,7 @@ type SortKey =
   | "destination"
   | "passenger_count"
   | "status"
+  | "quote_status"
   | "admin_memo";
 
 type SortDirection = "asc" | "desc";
@@ -704,6 +706,54 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function QuoteStageBadge({
+  quoteStatus,
+  finalId,
+}: {
+  quoteStatus: string;
+  finalId?: string;
+}) {
+  const effectiveStatus =
+    finalId && finalId.trim() !== "" ? "final_selected" : quoteStatus;
+  const stage = normalizeClientQuoteStage(effectiveStatus);
+
+  const config: Record<string, { label: string; className: string }> = {
+    requesting: {
+      label: "견적요청중",
+      className:
+        "border-blue-200 bg-blue-50 text-blue-800 ring-blue-100",
+    },
+    auto_closed: {
+      label: "자동마감",
+      className:
+        "border-amber-300 bg-amber-50 text-amber-950 ring-amber-100",
+    },
+    matched: {
+      label: "매칭완료",
+      className:
+        "border-emerald-300 bg-emerald-50 text-emerald-900 ring-emerald-100",
+    },
+    completed: {
+      label: "진행완료",
+      className:
+        "border-violet-200 bg-violet-50 text-violet-800 ring-violet-100",
+    },
+    hidden: {
+      label: "숨김",
+      className:
+        "border-slate-200 bg-slate-50 text-slate-600 ring-slate-100",
+    },
+  };
+  const { label, className } = config[stage] ?? config.requesting;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ring-1 ${className}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 function statusLabelForSms(rawStatus: string): string {
   const trimmed = rawStatus.trim();
   const known = parseKnownApplicationStatus(trimmed);
@@ -836,15 +886,12 @@ function SmsModal({
                 {displayApplicationTypeLabel(row.application_type)}
               </p>
             </div>
-            <div className="sm:col-span-2">
+              <div className="sm:col-span-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                현재 상태
+                진행 단계
               </p>
               <div className="mt-1 flex items-center gap-2">
-                <StatusBadge status={row.status} />
-                <span className="text-xs font-semibold text-slate-600">
-                  {statusLabelForSms(row.status)}
-                </span>
+                <QuoteStageBadge quoteStatus={row.quote_status} finalId={row.final_selected_quote_id} />
               </div>
             </div>
           </div>
@@ -3339,7 +3386,7 @@ export default function AdminApplicationsPage() {
                       <p className="text-xs font-medium text-slate-500">
                         {formatCreatedAt(row.created_at)}
                       </p>
-                      <StatusBadge status={row.status} />
+                      <QuoteStageBadge quoteStatus={row.quote_status} finalId={row.final_selected_quote_id} />
                     </div>
                     <p className="mt-2 text-xs font-semibold text-slate-700">
                       접수번호{" "}
@@ -3496,10 +3543,10 @@ export default function AdminApplicationsPage() {
                     <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
                       <button
                         type="button"
-                        onClick={() => handleSortClick("status")}
+                        onClick={() => handleSortClick("quote_status")}
                         className="flex w-full items-center gap-1 py-3 hover:text-slate-900"
                       >
-                        상태{sortIndicator("status")}
+                        단계{sortIndicator("quote_status")}
                       </button>
                     </th>
                     <th className="whitespace-nowrap px-4 py-0 font-semibold text-slate-700">
@@ -3564,7 +3611,7 @@ export default function AdminApplicationsPage() {
                         {row.passenger_count ?? "—"}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <StatusBadge status={row.status} />
+                        <QuoteStageBadge quoteStatus={row.quote_status} finalId={row.final_selected_quote_id} />
                       </td>
                       <td className="px-4 py-3 text-slate-700">
                         <div className="flex min-w-0 items-center gap-2">

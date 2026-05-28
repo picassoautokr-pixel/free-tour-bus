@@ -112,6 +112,7 @@ export default function SponsorDashboardPage() {
     max_support_amount: "",
     min_passenger_count: "",
     target_groups: [],
+    service_regions: [],
     support_type: "cash",
     support_condition: "홍보시",
   });
@@ -383,6 +384,7 @@ export default function SponsorDashboardPage() {
         max_support_amount: "",
         min_passenger_count: "",
         target_groups: [],
+        service_regions: [],
         support_type: "cash",
         support_condition: "홍보시",
       });
