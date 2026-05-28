@@ -311,9 +311,12 @@ export function PartnerCallExpandPanel({
                   >
                     {sponsorConfirmed
                       ? formatWon(
-                          supportModel?.confirmed_driver_support ??
-                            formConfirmedPreview?.driver ??
-                            null,
+                          // 편집 중에는 폼 입력 기반 실시간 계산값 우선
+                          isEditMode
+                            ? (formConfirmedPreview?.driver ?? null)
+                            : (supportModel?.confirmed_driver_support ??
+                                formConfirmedPreview?.driver ??
+                                null),
                         )
                       : formatWon(formPlannedPreview.partnerPlannedSupport)}
                   </Field>
@@ -326,18 +329,23 @@ export function PartnerCallExpandPanel({
                   >
                     {sponsorConfirmed
                       ? formatWon(
-                          supportModel?.confirmed_extension_support != null
-                            ? supportModel.confirmed_extension_support
-                            : (formConfirmedPreview?.extension ?? null),
+                          isEditMode
+                            ? (formConfirmedPreview?.extension ?? null)
+                            : (supportModel?.confirmed_extension_support != null
+                                ? supportModel.confirmed_extension_support
+                                : (formConfirmedPreview?.extension ?? null)),
                         )
                       : formatWon(formPlannedPreview.extensionSupport)}
                   </Field>
                   <Field label={discountLabel}>
                     {formatWon(
                       sponsorConfirmed
-                        ? (supportModel?.final_discount_price ??
-                            formConfirmedPreview?.discountPrice ??
-                            formPlannedPreview.supportDiscountPlannedPrice)
+                        ? (isEditMode
+                            ? (formConfirmedPreview?.discountPrice ??
+                                formPlannedPreview.supportDiscountPlannedPrice)
+                            : (supportModel?.final_discount_price ??
+                                formConfirmedPreview?.discountPrice ??
+                                formPlannedPreview.supportDiscountPlannedPrice))
                         : formPlannedPreview.supportDiscountPlannedPrice,
                     )}
                   </Field>
