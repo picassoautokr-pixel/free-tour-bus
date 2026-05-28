@@ -813,7 +813,7 @@ export async function PATCH(request: Request) {
         })()
       : null;
 
-  const updatePayload = {
+  const updatePayload: Record<string, unknown> = {
     price,
     vehicle_type: vehicleType,
     available_time: availableTime,
@@ -826,12 +826,60 @@ export async function PATCH(request: Request) {
     ...(confirmedPayload ?? {}),
   };
 
-  const { data: updated, error: updateError } = await admin
+  let { data: updated, error: updateError } = await admin
     .from("driver_quotes")
     .update(updatePayload)
     .eq("id", quoteId)
     .select("id, price")
     .single();
+
+  // 존재하지 않는 컬럼이 포함된 경우 해당 컬럼 제거 후 재시도
+  if (
+    updateError &&
+    /does not exist|column .* does not exist|schema cache|42703/i.test(updateError.message)
+  ) {
+    const OPTIONAL_PATCH_COLUMNS = [
+      "sponsor_approved_support_amount",
+      "sponsor_support_status",
+      "sponsor_quote_enabled",
+      "support_settlement_type",
+      "planned_total_support",
+      "planned_customer_support",
+      "planned_driver_support",
+      "planned_discount_price",
+      "planned_final_price",
+      "preapproved_support_amount",
+      "confirmed_total_support",
+      "confirmed_customer_support",
+      "confirmed_driver_support",
+      "confirmed_discount_price",
+      "confirmed_final_price",
+      "approved_support_amount",
+      "final_customer_support_amount",
+      "final_driver_support_amount",
+      "final_member_price",
+      "extension_support_amount",
+      "support_recalculated_at",
+    ];
+    const fallbackPayload: Record<string, unknown> = { ...updatePayload };
+    // 에러 메시지에서 문제 컬럼명을 추출해 제거, 안 되면 선택적 컬럼 전체 제거
+    const colMatch = /column ['"]?(\w+)['"]? (does not exist|of ')/i.exec(updateError.message);
+    if (colMatch?.[1]) {
+      delete fallbackPayload[colMatch[1]];
+    } else {
+      for (const col of OPTIONAL_PATCH_COLUMNS) {
+        delete fallbackPayload[col];
+      }
+    }
+    const retry = await admin
+      .from("driver_quotes")
+      .update(fallbackPayload)
+      .eq("id", quoteId)
+      .select("id, price")
+      .single();
+    updated = retry.data;
+    updateError = retry.error;
+  }
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 502 });
