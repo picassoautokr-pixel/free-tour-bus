@@ -41,9 +41,16 @@ export function QuoteMatchButtonGroup({
           {CLIENT_UI.normalPrice}: {formatQuotePriceForScreen(lines.normalPrice)}
         </span>
         {showSupportRow ? (
-          <span className={lines.supportConfirmed ? "text-emerald-800" : "text-blue-800"}>
-            {lines.supportLabel}: {formatQuotePriceForScreen(lines.supportPrice)}
-          </span>
+          <>
+            <span className={lines.supportConfirmed ? "text-emerald-800" : "text-blue-800"}>
+              {lines.supportLabel}: {formatQuotePriceForScreen(lines.supportPrice)}
+            </span>
+            {!lines.supportConfirmed ? (
+              <span className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                후원사의 지원금 확정금액에 따라 최종 할인 적용가는 변동될 수 있습니다.
+              </span>
+            ) : null}
+          </>
         ) : null}
       </div>
       <div className="flex flex-col gap-2">

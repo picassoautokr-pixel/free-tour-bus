@@ -38,6 +38,16 @@ export async function recalculateDriverQuoteSupport(
   const sponsorSummary = await getApprovedSponsorSupport(admin, safeApplicationId);
   const confirmedTotal = Math.max(0, sponsorSummary.approved_support_amount_total);
 
+  // 신청서의 extension_round를 읽어 확정 재계산 시 연장 지원금 포함 여부 결정
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("extension_round")
+    .eq("id", safeApplicationId)
+    .maybeSingle();
+  const extensionRound =
+    parseSupportInteger((appRow as Record<string, unknown> | null)?.extension_round) ?? 0;
+  const extensionAppliedFromApp = options?.extensionApplied ?? extensionRound > 0;
+
   const result = await admin
     .from("driver_quotes")
     .select(DRIVER_QUOTE_SUPPORT_SELECT)
@@ -78,13 +88,15 @@ export async function recalculateDriverQuoteSupport(
       continue;
     }
 
+    const storedExtension = parseSupportInteger(row.extension_support_amount);
     const computed = computeConfirmedFromPlanned({
       normalPrice: price,
       settlementType,
       planned,
       confirmedTotal,
-      extensionApplied: options?.extensionApplied,
-      extensionSupportAmount: parseSupportInteger(row.extension_support_amount),
+      extensionApplied: extensionAppliedFromApp,
+      // 이미 저장된 extension 금액이 있으면 우선 사용, 없으면 extensionApplied 기반 재계산
+      extensionSupportAmount: storedExtension != null ? storedExtension : undefined,
     });
 
     if ("error" in computed) {

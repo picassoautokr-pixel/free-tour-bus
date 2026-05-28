@@ -342,6 +342,11 @@ export function PartnerCallExpandPanel({
                     )}
                   </Field>
                   {!sponsorConfirmed ? (
+                    <p className="col-span-2 text-[10px] font-semibold text-slate-500">
+                      후원사의 지원금 확정금액에 따라 최종 할인 적용가는 변동될 수 있습니다.
+                    </p>
+                  ) : null}
+                  {!sponsorConfirmed ? (
                     <div>
                       <p className="text-xs font-bold text-slate-500">{LABEL.settlementMode}</p>
                       <div className="mt-2 grid gap-2">
