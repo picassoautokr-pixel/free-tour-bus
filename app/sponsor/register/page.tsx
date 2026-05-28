@@ -52,7 +52,22 @@ export default function SponsorRegisterPage() {
     "mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold outline-none focus:border-blue-500";
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] px-5 py-10">
+    <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] pb-16">
+      <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] px-6 text-white shadow-lg shadow-blue-900/25 ring-1 ring-white/20">
+        <Link
+          href="/"
+          className="rounded-2xl bg-white px-4 py-2.5 text-lg font-black tracking-[-0.04em] text-blue-900 shadow-sm ring-1 ring-white/60 transition hover:bg-blue-50"
+        >
+          무료관광버스
+        </Link>
+        <Link
+          href="/sponsor/login"
+          className="rounded-full px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+        >
+          후원업체 로그인
+        </Link>
+      </header>
+      <div className="px-5 py-10">
       <section className="mx-auto max-w-xl rounded-[2rem] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.12)] ring-1 ring-slate-100 sm:p-8">
         <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600">
           무료전세버스
@@ -152,6 +167,7 @@ export default function SponsorRegisterPage() {
           이미 신청하셨나요? 로그인
         </Link>
       </section>
+      </div>
     </main>
   );
 }

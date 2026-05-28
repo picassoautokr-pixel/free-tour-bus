@@ -559,7 +559,7 @@ export default function Home() {
           무료전세버스
         </h1>
         <Link
-          href="/login"
+          href="/client/dashboard"
           className="rounded-full px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/15 hover:text-white"
         >
           로그인

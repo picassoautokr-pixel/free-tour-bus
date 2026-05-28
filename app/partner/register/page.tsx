@@ -300,6 +300,12 @@ export default function PartnerRegisterPage() {
         >
           무료관광버스
         </Link>
+        <Link
+          href="/partner/login"
+          className="rounded-full px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+        >
+          기사 로그인
+        </Link>
       </header>
 
       <section className="relative bg-gradient-to-b from-sky-50 via-cyan-50 to-[#f3f8fb] px-6 pb-10 pt-10 text-center">
