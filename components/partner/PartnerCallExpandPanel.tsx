@@ -112,16 +112,44 @@ export function PartnerCallExpandPanel({
 
   const quotePriceValue = parsePriceInput(quoteForm.price);
   const customerPlannedInput = parsePriceInput(quoteForm.supportDiscountAmount);
-  const totalPlannedForForm =
-    supportSummary.totalPlannedForForm > 0
+
+  // 지원확정 상태에서는 확정 총지원금 기준, 그 외에는 예상 총지원금 기준
+  const confirmedTotalFromModel = supportModel?.confirmed_total_support ?? null;
+  const totalPlannedForForm = (() => {
+    if (sponsorConfirmed && confirmedTotalFromModel != null && confirmedTotalFromModel > 0) {
+      return confirmedTotalFromModel;
+    }
+    return supportSummary.totalPlannedForForm > 0
       ? supportSummary.totalPlannedForForm
       : customerPlannedInput ?? 0;
+  })();
+
   const formPlannedPreview = quoteFormPlannedAmounts({
     normalPrice: quotePriceValue,
     customerPlanned: customerPlannedInput,
     totalPlanned: totalPlannedForForm > 0 ? totalPlannedForForm : null,
     extensionRound: call.extension_round,
   });
+
+  // 지원확정 상태에서 폼 입력값으로 확정 수치를 동적 계산 (DB 저장 전 미리보기)
+  const formConfirmedPreview = (() => {
+    if (!sponsorConfirmed || confirmedTotalFromModel == null || customerPlannedInput == null) {
+      return null;
+    }
+    const driverBase = Math.max(confirmedTotalFromModel - customerPlannedInput, 0);
+    const extensionRound = call.extension_round;
+    const extension =
+      extensionRound > 0 && driverBase > 0
+        ? Math.min(Math.round(driverBase * extensionRound * 0.2), driverBase)
+        : 0;
+    const driver = Math.max(driverBase - extension, 0);
+    const discountPrice =
+      quotePriceValue != null
+        ? Math.max(quotePriceValue - customerPlannedInput - extension, 0)
+        : null;
+    return { driver, extension, discountPrice };
+  })();
+
   const supportInputLimit =
     quotePriceValue == null
       ? totalPlannedForForm
@@ -275,7 +303,11 @@ export function PartnerCallExpandPanel({
                     }
                   >
                     {sponsorConfirmed
-                      ? formatWon(supportModel?.confirmed_driver_support ?? null)
+                      ? formatWon(
+                          supportModel?.confirmed_driver_support ??
+                            formConfirmedPreview?.driver ??
+                            null,
+                        )
                       : formatWon(formPlannedPreview.partnerPlannedSupport)}
                   </Field>
                   <Field
@@ -286,11 +318,21 @@ export function PartnerCallExpandPanel({
                     }
                   >
                     {sponsorConfirmed
-                      ? formatWon(supportModel?.confirmed_extension_support ?? null)
+                      ? formatWon(
+                          supportModel?.confirmed_extension_support != null
+                            ? supportModel.confirmed_extension_support
+                            : (formConfirmedPreview?.extension ?? null),
+                        )
                       : formatWon(formPlannedPreview.extensionSupport)}
                   </Field>
                   <Field label={discountLabel}>
-                    {formatWon(formPlannedPreview.supportDiscountPlannedPrice)}
+                    {formatWon(
+                      sponsorConfirmed
+                        ? (supportModel?.final_discount_price ??
+                            formConfirmedPreview?.discountPrice ??
+                            formPlannedPreview.supportDiscountPlannedPrice)
+                        : formPlannedPreview.supportDiscountPlannedPrice,
+                    )}
                   </Field>
                   <div>
                     <p className="text-xs font-bold text-slate-500">{LABEL.settlementMode}</p>
