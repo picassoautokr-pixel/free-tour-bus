@@ -5,18 +5,14 @@ import {
   parseSponsorSupportType,
   safeText,
 } from "@/lib/sponsor";
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
 
 async function requireAdmin() {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
-  if (!sessionClient) return { error: "서버 설정 오류입니다.", status: 500 } as const;
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user?.id) return { error: "로그인이 필요합니다.", status: 401 } as const;
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) return { error: auth.error, status: auth.status } as const;
   const admin = createServiceRoleSupabase();
   if (!admin) return { error: "서비스 설정 오류입니다.", status: 503 } as const;
   return { admin } as const;

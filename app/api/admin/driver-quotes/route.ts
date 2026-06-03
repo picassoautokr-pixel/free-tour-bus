@@ -10,7 +10,7 @@ import {
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { buildAdminApplicationDetailPayload } from "@/lib/admin-application-detail-build";
 import { mapQuoteWithSupport } from "@/lib/quote-display-prices";
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 import {
   DRIVER_QUOTE_MINIMAL_SELECT,
   DRIVER_QUOTE_MINIMAL_SELECT_NO_BREAKDOWN,
@@ -63,19 +63,9 @@ function hyphenKoreanMobile(digits: string): string {
 }
 
 export async function GET(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
-  if (!sessionClient) {
-    return NextResponse.json(
-      { error: "서버 설정 오류(Supabase)입니다." },
-      { status: 500 },
-    );
-  }
-
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user?.id) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const { searchParams } = new URL(request.url);
@@ -645,19 +635,11 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
-  if (!sessionClient) {
-    return NextResponse.json(
-      { error: "서버 설정 오류(Supabase)입니다." },
-      { status: 500 },
-    );
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user?.id) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  }
+  const adminEmail = auth.email;
 
   let body: {
     guest_quote_id?: unknown;
@@ -752,7 +734,7 @@ export async function PATCH(request: Request) {
     }
 
     await logAdminAction(admin, {
-      adminEmail: user.email ?? null,
+      adminEmail: adminEmail ?? null,
       actionType: "quote_edit",
       targetTable: table,
       targetId: quoteId,
@@ -812,7 +794,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: hideError.message }, { status: 502 });
     }
     await logAdminAction(admin, {
-      adminEmail: user.email ?? null,
+      adminEmail: adminEmail ?? null,
       actionType: "hide_application",
       targetTable: "applications",
       targetId: hideApplicationId,

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { SolapiMessageService } from "solapi";
 
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
-
-/** STEP 2+: `resolveAdminRoleAccess` / `fetchProfileForAuthUser` 로 admin 검증 강화 가능. 현재는 세션만 검증. */
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 
 export const runtime = "nodejs";
 
@@ -20,23 +18,10 @@ type SendBody = {
 };
 
 export async function POST(request: Request) {
-  const supabase = await createSupabaseRouteHandlerClient("admin");
-  if (!supabase) {
-    return NextResponse.json(
-      { error: "서버 설정 오류(Supabase)입니다." },
-      { status: 500 },
-    );
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json(
-      { error: "로그인이 필요합니다." },
-      { status: 401 },
-    );
+  // 세션 + profiles.role === 'admin' 검증
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   let body: SendBody;

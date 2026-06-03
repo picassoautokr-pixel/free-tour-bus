@@ -4,8 +4,8 @@ import {
   getPartnerSetPasswordRedirectTo,
   withExpectedEmail,
 } from "@/lib/partner-login-redirect";
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
 export const runtime = "nodejs";
 
@@ -25,19 +25,9 @@ function isNonEmptyString(v: unknown): v is string {
  * Supabase Auth recovery 이메일을 보내고 redirectTo 를 /partner/set-password 로 고정합니다.
  */
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
-  if (!sessionClient) {
-    return NextResponse.json(
-      { error: "서버 설정 오류(Supabase)입니다." },
-      { status: 500 },
-    );
-  }
-
-  const {
-    data: { user: sessionUser },
-  } = await sessionClient.auth.getUser();
-  if (!sessionUser?.id) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const admin = createServiceRoleSupabase();
@@ -123,4 +113,3 @@ export async function POST(request: Request) {
     message: "비밀번호 설정메일 발송을 요청했습니다.",
   });
 }
-

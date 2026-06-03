@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { logAdminAction } from "@/lib/admin-action-log";
 import { safeText } from "@/lib/sponsor";
 import { refreshQuoteSnapshotsAfterSponsorConfirm } from "@/lib/support-breakdown-snapshot";
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -18,17 +18,14 @@ function parseInteger(value: unknown): number | null {
 }
 
 export async function PATCH(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
-  const admin = createServiceRoleSupabase();
-  if (!sessionClient || !admin) {
-    return NextResponse.json({ error: "서버 설정 오류입니다." }, { status: 500 });
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user?.id) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const admin = createServiceRoleSupabase();
+  if (!admin) {
+    return NextResponse.json({ error: "서버 설정 오류입니다." }, { status: 500 });
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -90,7 +87,7 @@ export async function PATCH(request: Request) {
   }
 
   await logAdminAction(admin, {
-    adminEmail: user.email ?? null,
+    adminEmail: auth.email ?? null,
     actionType: "sponsor_edit",
     targetTable: "sponsor_preapprovals",
     targetId: preapprovalId,

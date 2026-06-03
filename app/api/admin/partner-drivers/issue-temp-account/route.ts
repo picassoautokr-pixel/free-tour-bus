@@ -8,8 +8,8 @@ import {
 } from "@/lib/partner-phone-login";
 import { normalizePartnerDrivers } from "@/lib/partner-drivers-admin";
 import { USER_ROLES } from "@/lib/roles";
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SolapiMessageService } from "solapi";
 
@@ -143,19 +143,9 @@ async function sendSolapiSms(toDigits: string, text: string): Promise<{
 }
 
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
-  if (!sessionClient) {
-    return NextResponse.json(
-      { error: "서버 설정 오류(Supabase)입니다." },
-      { status: 500 },
-    );
-  }
-
-  const {
-    data: { user: sessionUser },
-  } = await sessionClient.auth.getUser();
-  if (!sessionUser?.id) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const admin = createServiceRoleSupabase();

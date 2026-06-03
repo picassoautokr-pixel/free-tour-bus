@@ -2,21 +2,21 @@ import { NextResponse } from "next/server";
 
 import { assignSponsorPreapprovalStaff } from "@/lib/sponsor-preapproval-actions";
 import { safeText } from "@/lib/sponsor";
-import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { assertAdminApiAccess } from "@/lib/admin-api-auth";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const sessionClient = await createSupabaseRouteHandlerClient("admin");
+  const auth = await assertAdminApiAccess({ strictProfileAdmin: true });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   const admin = createServiceRoleSupabase();
-  if (!sessionClient || !admin) {
+  if (!admin) {
     return NextResponse.json({ error: "서버 설정 오류입니다." }, { status: 500 });
   }
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser();
-  if (!user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const preapprovalId = safeText(body?.preapproval_id);
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       await assignSponsorPreapprovalStaff(admin, {
         preapprovalId,
         assignedStaffId: body?.assigned_staff_id,
-        actor: { userId: user.id, admin: true },
+        actor: { userId: auth.userId, admin: true },
       }),
     );
   } catch (e) {
