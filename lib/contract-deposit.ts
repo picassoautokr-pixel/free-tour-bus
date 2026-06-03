@@ -1,8 +1,7 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { logNotification, type NotificationType } from "@/lib/notification-service";
 
-type SupabaseLike = {
-  from: (table: string) => any;
-};
+type SupabaseLike = SupabaseClient;
 
 export type QuoteSource = "member" | "guest";
 

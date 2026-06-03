@@ -699,7 +699,7 @@ export async function POST(request: Request) {
       client_price_selection_kind: legacyKind,
     };
 
-    let coreUpdate = await admin
+    const coreUpdate = await admin
       .from("applications")
       .update({ ...corePatch, ...selectedPricePatch })
       .eq("id", applicationId);

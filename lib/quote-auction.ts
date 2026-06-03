@@ -1,4 +1,5 @@
 import { estimateSponsorSupport } from "@/lib/support-estimate";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   formatWon,
   sendNotificationSms,
@@ -31,9 +32,7 @@ export type QuoteStatus =
 
 export type QuoteSource = "member" | "guest";
 
-type SupabaseLike = {
-  from: (table: string) => any;
-};
+type SupabaseLike = SupabaseClient;
 
 export type QuoteAutomationSettings = {
   business_start_time: string;
@@ -388,16 +387,20 @@ async function fetchQuoteCandidates(
     .select(DRIVER_QUOTE_AUCTION_SELECT)
     .eq("application_id", applicationId);
   if (isMissingColumnError(memberResult.error)) {
-    memberResult = await admin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fallback1 = await admin
       .from("driver_quotes")
       .select(DRIVER_QUOTE_AUCTION_SELECT_LEGACY)
       .eq("application_id", applicationId);
+    memberResult = fallback1 as typeof memberResult;
   }
   if (isMissingColumnError(memberResult.error)) {
-    memberResult = await admin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fallback2 = await admin
       .from("driver_quotes")
       .select("id, price")
       .eq("application_id", applicationId);
+    memberResult = fallback2 as typeof memberResult;
   }
   const [{ data: guestRows }] = await Promise.all([
     admin.from("guest_driver_quotes").select("id, price").eq("application_id", applicationId),

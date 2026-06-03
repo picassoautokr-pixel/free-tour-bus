@@ -1,8 +1,7 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { SolapiMessageService } from "solapi";
 
-type SupabaseLike = {
-  from: (table: string) => any;
-};
+type SupabaseLike = SupabaseClient;
 
 export type NotificationType =
   | "new_application"

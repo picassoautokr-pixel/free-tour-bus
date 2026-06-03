@@ -545,7 +545,7 @@ export async function POST(request: Request) {
         monthly_budget: parseInteger(payload.monthly_budget),
       },
     };
-    let { error } = await admin
+    const { error } = await admin
       .from("sponsor_companies")
       .update(patch)
       .eq("id", company.id);
