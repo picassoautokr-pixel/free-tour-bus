@@ -23,6 +23,7 @@ export type SelectedPriceSource = {
   selected_price?: number | null;
   client_price_selection_kind?: string | null;
   final_price_selection_kind?: string | null;
+  final_selected_quote_id?: string | null;
 };
 
 export const NORMAL_MATCH_SPONSOR_REASON = "고객이 일반견적가로 매칭완료";

@@ -5,18 +5,41 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PartnerCallCard } from "@/components/partner/PartnerCallCard";
+import { PartnerCustomerDetailModal } from "@/components/partner/PartnerCustomerDetailModal";
+import { PartnerDashboardHeader } from "@/components/partner/PartnerDashboardHeader";
+import { PartnerServiceRegionSection } from "@/components/partner/PartnerServiceRegionSection";
 import {
-  LABEL,
+  APPLICATION_TYPE_NEW_BOOKING,
+  PARTNER_NOTIFICATION_SOUND_PREF_KEY,
+  buildReferralPreview,
+  canRevealCustomerInfo,
+  discountedPriceFor,
+  emptyQuoteForm,
+  emptyReferralForm,
+  isMatchedCall,
+  isNewCall,
+  isQuoteClosed,
+  isQuotedCall,
+  logRealtime,
+  parseInteger,
+  parseReferralPhones,
+  safeText,
+  supportDiscountFor,
+  type PartnerCall,
+  type PartnerDriverInfo,
+  type QuoteForm,
+  type ReferralForm,
+  type ReferralResult,
+} from "@/components/partner/partner-dashboard-types";
+import {
   MATCHED_RUN_FILTERS,
   PARTNER_DASHBOARD_TABS,
-  PARTNER_DASHBOARD_TITLE,
   type MatchedRunFilter,
   type PartnerDashboardTab,
 } from "@/lib/partner-dashboard-labels";
 import { matchedRunStatus } from "@/lib/partner-call-view-model";
-import type { QuoteSupportBreakdown } from "@/lib/support-calculation";
 import {
-  realtimeStatusLabel,
+  realtimeStatusLabel as _realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
 } from "@/hooks/useSupabaseRealtimeRefresh";
 import { isPartnerDriverLoginAllowed } from "@/lib/partner-driver-access";
@@ -29,367 +52,17 @@ import {
 } from "@/lib/regions";
 import { USER_ROLES, parseUserRole } from "@/lib/roles";
 import { isRoleHost, roleLoginPath } from "@/lib/role-hosts";
-import {
-  formatRouteWithStopovers,
-  formatStopovers,
-  parseStopovers,
-} from "@/lib/stopovers";
+import { parseStopovers } from "@/lib/stopovers";
 import { createPartnerBrowserClient } from "@/lib/supabase";
 import { estimateSponsorSupport } from "@/lib/support-estimate";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
-/** 콜 목록에 포함된 내 견적(회원 제출 또는 동일 번호 비회원 제출) */
-type PartnerMyQuote = {
-  source: "member" | "guest";
-  id: string;
-  price: number | null;
-  support_settlement_type?: "client_priority" | "ratio" | string;
-  preapproved_support_amount?: number | null;
-  approved_support_amount?: number | null;
-  estimated_support_amount?: number | null;
-  support_discount_amount?: number | null;
-  customer_support_amount?: number | null;
-  member_price?: number | null;
-  final_customer_support_amount?: number | null;
-  final_driver_support_amount?: number | null;
-  final_member_price?: number | null;
-  support_recalculated_at?: string;
-  is_member_quote?: boolean;
-  converted_from_guest_quote_id?: string;
-  sponsor_support_amount?: number | null;
-  sponsor_support_status?: string;
-  sponsor_approved_support_amount?: number | null;
-  sponsor_discounted_price?: number | null;
-  sponsor_quote_enabled?: boolean;
-  driver_support_amount?: number | null;
-  client_reward_amount?: number | null;
-  support_breakdown?: QuoteSupportBreakdown | null;
-  support_discount_planned_price?: number | null;
-  support_discount_applied_price?: number | null;
-  final_discount_applied_price?: number | null;
-  vehicle_type: string;
-  available_time: string;
-  message: string;
-  status: string;
-  created_at: string;
-  match_result?: string;
-};
-
-type PartnerCall = {
-  id: string;
-  created_at: string;
-  receipt_number: string;
-  contract_number: string;
-  contract_pdf_generated_at: string;
-  contract_pdf_url: string;
-  application_type: string;
-  trip_type: string;
-  bus_grade: string;
-  departure: string;
-  departure_region: string;
-  destination: string;
-  stopovers?: string[];
-  departure_date: string;
-  departure_time: string;
-  return_date: string;
-  passenger_count: number | null;
-  request_message?: string;
-  estimated_support_amount: number;
-  quote_status: string;
-  quote_deadline_at: string;
-  quote_limit_count: number | null;
-  quote_count: number;
-  call_category: "new" | "quoted" | "matched";
-  target_normal_price: number | null;
-  target_member_price: number | null;
-  quote_closed_at: string;
-  extension_round: number;
-  support_client_reward_ratio: number;
-  support_driver_ratio: number;
-  auto_selected_quote_id: string;
-  auto_selected_quote_source: string;
-  final_selected_quote_id: string;
-  final_selected_quote_source: string;
-  client_price_selection_kind?: string | null;
-  selected_price_type?: string | null;
-  selected_price_label?: string | null;
-  selected_price?: number | null;
-  auto_final_confirm_at: string;
-  contact_revealed_at: string;
-  contract_status: string;
-  contract_started_at: string;
-  client_contract_confirmed_at: string;
-  driver_contract_confirmed_at: string;
-  deposit_amount: number;
-  deposit_status: string;
-  deposit_confirmed_at: string;
-  contract_memo: string;
-  customer_name?: string;
-  customer_phone?: string;
-  sponsor_support_status?: string;
-  sponsor_approved_support_amount?: number | null;
-  sponsor_estimated_support_amount?: number | null;
-  sponsors?: Array<{
-    id: string;
-    company_name: string;
-    status: string;
-    estimated_support_amount: number | null;
-    approved_support_amount: number | null;
-  }>;
-  my_quote: PartnerMyQuote | null;
-};
-
-type PartnerDriverInfo = {
-  company_name: string;
-  manager_name: string;
-  phone: string;
-};
-
-type QuoteForm = {
-  price: string;
-  supportDiscountAmount: string;
-  supportSettlementType: "client_priority" | "ratio";
-  vehicleType: string;
-  availableTime: string;
-  message: string;
-};
-
-type ReferralForm = {
-  phones: string;
-};
-
-type ReferralResult = {
-  phone: string;
-  status: "sent" | "skipped_duplicate" | "invalid_phone" | "send_failed";
-  error?: string;
-};
-
-const emptyQuoteForm: QuoteForm = {
-  price: "",
-  supportDiscountAmount: "",
-  supportSettlementType: "client_priority",
-  vehicleType: "",
-  availableTime: "",
-  message: "",
-};
-
-const emptyReferralForm: ReferralForm = {
-  phones: "",
-};
-
-const PARTNER_NOTIFICATION_SOUND_PREF_KEY = "partnerDashboardSoundEnabled";
-const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
-
-function formatDate(value: string): string {
-  const t = value.trim();
-  if (t === "") return "미정";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
-  const d = new Date(t);
-  if (Number.isNaN(d.getTime())) return t;
-  return d.toISOString().slice(0, 10);
-}
-
-function formatDeparture(call: PartnerCall): string {
-  const date = formatDate(call.departure_date);
-  const time = call.departure_time.trim();
-  if (time === "" || time === "—") return date;
-  return `${date} ${time}`;
-}
-
-function formatPrice(value: number | null): string {
-  if (value == null) return "제출 완료";
-  return `${value.toLocaleString("ko-KR")}원`;
-}
-
-function formatRemaining(deadline: string): string {
-  const time = new Date(deadline).getTime();
-  if (!Number.isFinite(time)) return "마감시간 미정";
-  const diff = time - Date.now();
-  if (diff <= 0) return "마감 임박";
-  const hours = Math.floor(diff / (60 * 60 * 1000));
-  const minutes = Math.ceil((diff % (60 * 60 * 1000)) / (60 * 1000));
-  if (hours <= 0) return `마감까지 ${minutes}분`;
-  return `마감까지 ${hours}시간`;
-}
-
-function isQuoteClosed(call: PartnerCall): boolean {
-  const closedStatuses = new Set([
-    "closed_by_time",
-    "closed_by_quote_count",
-    "closed_by_price",
-    "auto_selected",
-    "final_selected",
-    "completed",
-    "contract_pending",
-    "manually_closed",
-  ]);
-  return (
-    call.quote_closed_at.trim() !== "" ||
-    call.final_selected_quote_id.trim() !== "" ||
-    closedStatuses.has(call.quote_status)
-  );
-}
-
-function isMatchedCall(call: PartnerCall): boolean {
-  if (call.call_category === "matched") return true;
-  if (call.my_quote == null) return false;
-  const selectedQuoteId =
-    call.final_selected_quote_id.trim() || call.auto_selected_quote_id.trim();
-  return selectedQuoteId !== "" && call.my_quote.id === selectedQuoteId;
-}
-
-function isNewCall(call: PartnerCall): boolean {
-  return call.call_category === "new" && call.my_quote == null && !isQuoteClosed(call);
-}
-
-function isQuotedCall(call: PartnerCall): boolean {
-  return (
-    call.call_category === "quoted" &&
-    call.my_quote != null &&
-    call.final_selected_quote_id.trim() === "" &&
-    !isMatchedCall(call)
-  );
-}
-
-function canRevealCustomerInfo(call: PartnerCall): boolean {
-  if (call.my_quote == null) return false;
-  const revealStatuses = new Set(["final_selected", "contract_pending", "completed"]);
-  return (
-    call.contact_revealed_at.trim() !== "" &&
-    call.final_selected_quote_id.trim() !== "" &&
-    call.my_quote.id === call.final_selected_quote_id &&
-    revealStatuses.has(call.quote_status)
-  );
-}
-
-function quoteStatusLabel(call: PartnerCall): string {
-  if (isMatchedCall(call)) {
-    return call.final_selected_quote_id.trim() !== ""
-      ? "매칭 성공"
-      : "예상 지원금 후보";
-  }
-  if (call.my_quote != null) return "견적 검토중";
-  return "제출 전";
-}
-
-function averageStatusLabel(call: PartnerCall): string {
-  const myPrice =
-    call.my_quote?.final_member_price ??
-    call.my_quote?.member_price ??
-    call.my_quote?.sponsor_discounted_price ??
-    call.my_quote?.price ??
-    null;
-  if (myPrice == null || call.quote_count <= 1) return "평균가 산정 전";
-  return "평균가 대비 상태 확인 중";
-}
-
-// TODO: 파트너 견적 제출 시 지원금 할인가 계산은 partner-call-view-model의
-//   buildQuoteFormPlannedPreview / calculatePlannedDiscountPrice로 통합 예정.
-function supportQuotePrice(quote: PartnerMyQuote): number | null {
-  const storedPrice =
-    quote.final_member_price ?? quote.member_price ?? quote.sponsor_discounted_price;
-  if (storedPrice != null) return storedPrice;
-  const customerSupportAmount =
-    quote.customer_support_amount ?? quote.support_discount_amount ?? null;
-  if (quote.price == null || customerSupportAmount == null) return null;
-  return Math.max(0, quote.price - customerSupportAmount);
-}
-
-function formatSubmittedAt(iso: string): string {
-  const t = iso.trim();
-  if (t === "" || t === "—") return "—";
-  const d = new Date(t);
-  if (Number.isNaN(d.getTime())) return t;
-  return d.toLocaleString("ko-KR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
-function parsePriceInput(value: string): number | null {
-  const digits = value.replace(/[^\d]/g, "");
-  if (digits === "") return null;
-  const n = Number.parseInt(digits, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-function safeText(value: unknown, emptyLabel = ""): string {
-  if (value == null) return emptyLabel;
-  const text = String(value).trim();
-  return text === "" ? emptyLabel : text;
-}
-
-function parseInteger(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.trunc(value);
-  }
-  if (typeof value === "string") {
-    const digits = value.replace(/[^\d-]/g, "");
-    if (digits !== "") {
-      const parsed = Number.parseInt(digits, 10);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return null;
-}
-
-function supportDiscountFor(call: PartnerCall, value: string): number {
-  const parsed = parsePriceInput(value);
-  return parsed ?? call.estimated_support_amount;
-}
-
-function discountedPriceFor(
-  call: PartnerCall,
-  priceText: string,
-  supportDiscountText: string,
-): number | null {
-  const price = parsePriceInput(priceText);
-  if (price == null) return null;
-  return Math.max(price - supportDiscountFor(call, supportDiscountText), 0);
-}
-
-function parseReferralPhones(value: string): string[] {
-  return value
-    .split(/[\s,;]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function referralStatusLabel(status: ReferralResult["status"]): string {
-  if (status === "sent") return "발송 완료";
-  if (status === "skipped_duplicate") return "중복 건너뜀";
-  if (status === "invalid_phone") return "번호 오류";
-  return "발송 실패";
-}
-
-function buildReferralPreview(call: PartnerCall): string {
-  const stopoverText = formatStopovers(call.stopovers);
-  return `[지원금 전세버스]
-전세버스 견적요청이 전달되었습니다.
-
-출발: ${call.departure}
-${stopoverText ? `경유: ${stopoverText}\n` : ""}도착: ${call.destination}
-일시: ${formatDeparture(call)}
-인원: ${call.passenger_count ?? "미정"}
-
-견적 확인:
-https://www.free-bus.co.kr/shared-quote/{전달 후 생성}
-
-제휴기사 등록:
-https://www.free-bus.co.kr/partner/register?ref={전달 후 생성}`;
-}
-
-function logRealtime(message: string, payload?: unknown) {
-  if (process.env.NODE_ENV !== "development") return;
-  if (payload === undefined) console.log(message);
-  else console.log(message, payload);
-}
-
 function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
   const id = safeText(row.id);
   if (id === "") return null;
-  if (safeText(row.application_type) !== APPLICATION_TYPE_NEW_BOOKING) return null;
+  if (safeText(row.application_type) !== APPLICATION_TYPE_NEW_BOOKING)
+    return null;
 
   const passengerCount = parseInteger(row.passenger_count);
   const estimatedSupportAmount = estimateSponsorSupport({
@@ -425,13 +98,15 @@ function buildOptimisticCall(row: Record<string, unknown>): PartnerCall | null {
     target_member_price: parseInteger(row.target_member_price),
     quote_closed_at: safeText(row.quote_closed_at),
     extension_round: parseInteger(row.extension_round) ?? 0,
-    support_client_reward_ratio: parseInteger(row.support_client_reward_ratio) ?? 0,
+    support_client_reward_ratio:
+      parseInteger(row.support_client_reward_ratio) ?? 0,
     support_driver_ratio: parseInteger(row.support_driver_ratio) ?? 100,
     auto_selected_quote_id: safeText(row.auto_selected_quote_id),
     auto_selected_quote_source: safeText(row.auto_selected_quote_source),
     final_selected_quote_id: safeText(row.final_selected_quote_id),
     final_selected_quote_source: safeText(row.final_selected_quote_source),
-    client_price_selection_kind: safeText(row.client_price_selection_kind) || null,
+    client_price_selection_kind:
+      safeText(row.client_price_selection_kind) || null,
     selected_price_type: safeText(row.selected_price_type) || null,
     selected_price_label: safeText(row.selected_price_label) || null,
     selected_price: parseInteger(row.selected_price),
@@ -455,33 +130,43 @@ export default function PartnerDashboardPage() {
   const [calls, setCalls] = useState<PartnerCall[]>([]);
   const [driverInfo, setDriverInfo] = useState<PartnerDriverInfo | null>(null);
   const [activeTab, setActiveTab] = useState<PartnerDashboardTab>("new");
-  const [matchedSubTab, setMatchedSubTab] = useState<MatchedRunFilter>("in_progress");
-  const [detailExpandedCallId, setDetailExpandedCallId] = useState<string | null>(null);
+  const [matchedSubTab, setMatchedSubTab] =
+    useState<MatchedRunFilter>("in_progress");
+  const [detailExpandedCallId, setDetailExpandedCallId] = useState<
+    string | null
+  >(null);
   const [editingQuote, setEditingQuote] = useState(false);
   const [callsLoading, setCallsLoading] = useState(false);
   const [callsError, setCallsError] = useState<string | null>(null);
-  const [activeQuoteCallId, setActiveQuoteCallId] = useState<string | null>(null);
+  const [activeQuoteCallId, setActiveQuoteCallId] = useState<string | null>(
+    null,
+  );
   const [quoteForm, setQuoteForm] = useState<QuoteForm>(emptyQuoteForm);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
-  const [customerDetailCall, setCustomerDetailCall] = useState<PartnerCall | null>(
-    null,
-  );
-  const [activeReferralCallId, setActiveReferralCallId] = useState<string | null>(null);
+  const [customerDetailCall, setCustomerDetailCall] =
+    useState<PartnerCall | null>(null);
+  const [activeReferralCallId, setActiveReferralCallId] = useState<
+    string | null
+  >(null);
   const [referralForm, setReferralForm] =
     useState<ReferralForm>(emptyReferralForm);
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralMessage, setReferralMessage] = useState<string | null>(null);
   const [referralResults, setReferralResults] = useState<ReferralResult[]>([]);
   const [serviceRegions, setServiceRegions] = useState<ServiceRegion[]>([]);
-  const [savedServiceRegions, setSavedServiceRegions] = useState<ServiceRegion[]>([]);
+  const [savedServiceRegions, setSavedServiceRegions] = useState<
+    ServiceRegion[]
+  >([]);
   const [serviceRegionBusy, setServiceRegionBusy] = useState(false);
-  const [serviceRegionMessage, setServiceRegionMessage] = useState<string | null>(null);
+  const [serviceRegionMessage, setServiceRegionMessage] = useState<
+    string | null
+  >(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [newCallNoticeId, setNewCallNoticeId] = useState<string | null>(null);
-  const [highlightedNewCallIds, setHighlightedNewCallIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [highlightedNewCallIds, setHighlightedNewCallIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >("unsupported");
@@ -549,11 +234,7 @@ export default function PartnerDashboardPage() {
     if (typeof window === "undefined" || !("Notification" in window)) return;
     if (window.Notification.permission !== "granted") return;
 
-    const title = `🔔 ${formatRouteWithStopovers(
-      call.departure,
-      call.stopovers,
-      call.destination,
-    )} 신규 견적`;
+    const title = `🔔 ${call.departure} → ${call.destination} 신규 견적`;
     const body = `${call.passenger_count ?? "미정"}인 / ${call.trip_type || "미정"} / ${
       call.bus_grade || "미정"
     }`;
@@ -609,10 +290,13 @@ export default function PartnerDashboardPage() {
         const pendingInsertId = pendingApplicationInsertIdRef.current;
         const newCall =
           (pendingInsertId
-            ? nextCalls.find((call) => call.id === pendingInsertId && isNewCall(call))
+            ? nextCalls.find(
+                (call) => call.id === pendingInsertId && isNewCall(call),
+              )
             : undefined) ??
           nextCalls.find(
-            (call) => !knownCallIdsRef.current.has(call.id) && isNewCall(call),
+            (call) =>
+              !knownCallIdsRef.current.has(call.id) && isNewCall(call),
           );
         if (newCall) {
           handleNewCallArrived(newCall);
@@ -688,7 +372,11 @@ export default function PartnerDashboardPage() {
               row.password_changed_at != null &&
               String(row.password_changed_at).trim() !== "";
             if (issued && !changed) {
-              router.replace(isRoleHost("partner") ? "/change-password" : "/partner/change-password");
+              router.replace(
+                isRoleHost("partner")
+                  ? "/change-password"
+                  : "/partner/change-password",
+              );
               return;
             }
           }
@@ -714,7 +402,6 @@ export default function PartnerDashboardPage() {
 
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "partner-dashboard-live",
-    // Supabase Realtime 수신을 위해 public.applications도 supabase_realtime publication에 포함되어야 합니다.
     tables: ["applications", "driver_quotes", "guest_driver_quotes"],
     enabled: !checking,
     debounceMs: 800,
@@ -727,7 +414,9 @@ export default function PartnerDashboardPage() {
         const insertedId =
           typeof payload.new?.id === "string" ? payload.new.id : null;
         pendingApplicationInsertIdRef.current = insertedId;
-        const optimisticCall = payload.new ? buildOptimisticCall(payload.new) : null;
+        const optimisticCall = payload.new
+          ? buildOptimisticCall(payload.new)
+          : null;
         if (optimisticCall && isNewCall(optimisticCall)) {
           const selectedRegions = savedServiceRegionsRef.current;
           const callRegion = normalizeRegion(optimisticCall.departure_region);
@@ -736,7 +425,8 @@ export default function PartnerDashboardPage() {
             (callRegion !== "" && selectedRegions.includes(callRegion))
           ) {
             setCalls((prev) => {
-              if (prev.some((call) => call.id === optimisticCall.id)) return prev;
+              if (prev.some((call) => call.id === optimisticCall.id))
+                return prev;
               return [optimisticCall, ...prev];
             });
             knownCallIdsRef.current.add(optimisticCall.id);
@@ -755,7 +445,11 @@ export default function PartnerDashboardPage() {
   });
 
   useEffect(() => {
-    if (realtimeStatus !== "connected" || realtimeSubscribedLoggedRef.current) return;
+    if (
+      realtimeStatus !== "connected" ||
+      realtimeSubscribedLoggedRef.current
+    )
+      return;
     realtimeSubscribedLoggedRef.current = true;
     logRealtime("[realtime] partner-dashboard subscribed");
   }, [realtimeStatus]);
@@ -767,10 +461,13 @@ export default function PartnerDashboardPage() {
   useEffect(() => {
     try {
       setSoundEnabled(
-        window.localStorage.getItem(PARTNER_NOTIFICATION_SOUND_PREF_KEY) === "1",
+        window.localStorage.getItem(PARTNER_NOTIFICATION_SOUND_PREF_KEY) ===
+          "1",
       );
       setNotificationPermission(
-        "Notification" in window ? window.Notification.permission : "unsupported",
+        "Notification" in window
+          ? window.Notification.permission
+          : "unsupported",
       );
     } catch {
       /* ignore */
@@ -791,8 +488,11 @@ export default function PartnerDashboardPage() {
     if (next) {
       const AudioContextCtor =
         window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
+        (
+          window as typeof window & {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext;
       if (AudioContextCtor && !audioContextRef.current) {
         audioContextRef.current = new AudioContextCtor();
       }
@@ -837,9 +537,6 @@ export default function PartnerDashboardPage() {
         : [...prev, region],
     );
   };
-
-  const serviceRegionsChanged =
-    serviceRegions.join("|") !== savedServiceRegions.join("|");
 
   const newCalls = calls.filter(isNewCall);
   const quotedCalls = calls.filter(isQuotedCall);
@@ -900,7 +597,9 @@ export default function PartnerDashboardPage() {
     setActiveReferralCallId(null);
     setDetailExpandedCallId(null);
     const defaultCustomerSupport =
-      call.sponsor_estimated_support_amount ?? call.estimated_support_amount ?? 0;
+      call.sponsor_estimated_support_amount ??
+      call.estimated_support_amount ??
+      0;
     if (edit && call.my_quote?.source === "member") {
       const mq = call.my_quote;
       setQuoteForm({
@@ -926,8 +625,11 @@ export default function PartnerDashboardPage() {
         vehicleType:
           call.my_quote?.source === "guest" ? call.my_quote.vehicle_type : "",
         availableTime:
-          call.my_quote?.source === "guest" ? call.my_quote.available_time : "",
-        message: call.my_quote?.source === "guest" ? call.my_quote.message : "",
+          call.my_quote?.source === "guest"
+            ? call.my_quote.available_time
+            : "",
+        message:
+          call.my_quote?.source === "guest" ? call.my_quote.message : "",
         supportDiscountAmount: String(defaultCustomerSupport),
       });
     }
@@ -1088,85 +790,19 @@ export default function PartnerDashboardPage() {
       `}</style>
       <div className="mx-auto max-w-3xl">
         <div className="rounded-[2rem] border border-slate-200/90 bg-white px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.1)] sm:px-7">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-600">
-                제휴 기사
-              </p>
-              <h1 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-900">
-                {PARTNER_DASHBOARD_TITLE}
-              </h1>
-              <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-500">
-                신규 견적 · 제출 견적 · 매칭 성공 단계별로 관리합니다. 매칭 전까지 고객
-                연락처는 공개되지 않습니다.
-              </p>
-              {driverInfo ? (
-                <div className="mt-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-950 ring-1 ring-blue-100">
-                  <p className="text-xs font-black text-blue-600">로그인한 제휴기사</p>
-                  <p className="mt-1">
-                    {driverInfo.company_name || "업체명 미등록"} · {driverInfo.manager_name || "담당자 미등록"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-blue-800">
-                    {driverInfo.phone || "전화번호 미등록"}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600">
-                {realtimeStatusLabel(realtimeStatus)}
-              </span>
-              <button
-                type="button"
-                onClick={() => void toggleSound()}
-                className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 text-sm font-black shadow-sm transition ${
-                  soundEnabled
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
-                    : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
-                }`}
-                style={tapStyle}
-              >
-                {soundEnabled ? "알림음 끄기" : "알림음 켜기"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void requestBrowserNotifications()}
-                disabled={
-                  notificationPermission === "granted" ||
-                  notificationPermission === "unsupported"
-                }
-                className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 text-sm font-black shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  notificationPermission === "granted"
-                    ? "border-blue-200 bg-blue-50 text-blue-900"
-                    : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
-                }`}
-                style={tapStyle}
-              >
-                {notificationPermission === "granted"
-                  ? "브라우저 알림 켜짐"
-                  : notificationPermission === "unsupported"
-                    ? "브라우저 알림 미지원"
-                    : "브라우저 알림 켜기"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void loadCalls()}
-                disabled={callsLoading}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
-                style={tapStyle}
-              >
-                {callsLoading ? "새로고침 중…" : "새로고침"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900"
-                style={tapStyle}
-              >
-                로그아웃
-              </button>
-            </div>
-          </div>
+          <PartnerDashboardHeader
+            driverInfo={driverInfo}
+            realtimeStatus={realtimeStatus}
+            soundEnabled={soundEnabled}
+            notificationPermission={notificationPermission}
+            callsLoading={callsLoading}
+            onToggleSound={() => void toggleSound()}
+            onRequestBrowserNotifications={() =>
+              void requestBrowserNotifications()
+            }
+            onRefresh={() => void loadCalls()}
+            onLogout={() => void handleLogout()}
+          />
 
           {newCallNoticeId ? (
             <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-950">
@@ -1187,75 +823,15 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-sm font-black text-slate-900">
-                  견적요청 수신지역 설정
-                </h2>
-                <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-                  선택한 지역의 출발 콜만 표시됩니다. 비워두면 모든 지역 콜을 표시합니다.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void saveServiceRegions()}
-                disabled={serviceRegionBusy || !serviceRegionsChanged}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-sm transition hover:bg-slate-900 disabled:opacity-50"
-                style={tapStyle}
-              >
-                {serviceRegionBusy ? "저장 중…" : "수신지역 저장"}
-              </button>
-            </div>
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  if (serviceRegions.length === SERVICE_REGIONS.length) {
-                    setServiceRegions([]);
-                  } else {
-                    setServiceRegions([...SERVICE_REGIONS]);
-                  }
-                }}
-                className="mb-3 text-xs font-bold text-blue-600 hover:text-blue-700"
-                style={tapStyle}
-              >
-                {serviceRegions.length === SERVICE_REGIONS.length
-                  ? "전체해제"
-                  : "전체선택"}
-              </button>
-              <div className="flex flex-wrap gap-2">
-                {SERVICE_REGIONS.map((region) => {
-                  const selected = serviceRegions.includes(region);
-                  return (
-                    <button
-                      key={region}
-                      type="button"
-                      onClick={() => toggleServiceRegion(region)}
-                      className={`min-h-9 rounded-full border px-3 text-xs font-black transition ${
-                        selected
-                          ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                      style={tapStyle}
-                    >
-                      {region}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {serviceRegions.length === 0 ? (
-              <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-900 ring-1 ring-amber-100">
-                수신지역이 설정되지 않아 모든 지역 콜이 표시됩니다.
-              </p>
-            ) : null}
-            {serviceRegionMessage ? (
-              <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-bold leading-5 text-slate-700 ring-1 ring-slate-200">
-                {serviceRegionMessage}
-              </p>
-            ) : null}
-          </section>
+          <PartnerServiceRegionSection
+            serviceRegions={serviceRegions}
+            savedServiceRegions={savedServiceRegions}
+            serviceRegionBusy={serviceRegionBusy}
+            serviceRegionMessage={serviceRegionMessage}
+            onToggle={toggleServiceRegion}
+            onSave={() => void saveServiceRegions()}
+            onSetAll={setServiceRegions}
+          />
 
           {callsError ? (
             <div
@@ -1284,89 +860,10 @@ export default function PartnerDashboardPage() {
             </div>
           ) : null}
 
-          {customerDetailCall ? (
-            <div
-              className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="partner-customer-detail-title"
-            >
-              <button
-                type="button"
-                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
-                aria-label="닫기"
-                onClick={() => setCustomerDetailCall(null)}
-              />
-              <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200 sm:p-8">
-                <h2
-                  id="partner-customer-detail-title"
-                  className="text-lg font-black tracking-[-0.04em] text-slate-950"
-                >
-                  {LABEL.customerInfo}
-                </h2>
-                <dl className="mt-4 space-y-3 text-sm">
-                  <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
-                    <dt className="text-[11px] font-bold text-slate-400">
-                      {LABEL.contractNumber}
-                    </dt>
-                    <dd className="mt-1 font-black text-slate-900">
-                      {customerDetailCall.contract_number?.trim() ||
-                        customerDetailCall.receipt_number ||
-                        "—"}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                    <dt className="text-[11px] font-bold text-emerald-600">
-                      {LABEL.customerName}
-                    </dt>
-                    <dd className="mt-1 font-black text-emerald-950">
-                      {customerDetailCall.customer_name || "—"}
-                    </dd>
-                  </div>
-                  <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                    <dt className="text-[11px] font-bold text-emerald-600">
-                      {LABEL.customerPhone}
-                    </dt>
-                    <dd className="mt-2">
-                      {customerDetailCall.customer_phone ? (
-                        <div className="flex flex-col gap-2">
-                          <p className="font-black text-emerald-950">
-                            {customerDetailCall.customer_phone}
-                          </p>
-                          <div className="flex gap-2">
-                            <a
-                              href={`tel:${customerDetailCall.customer_phone}`}
-                              className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-emerald-600 px-3 text-sm font-black text-white"
-                              style={tapStyle}
-                            >
-                              {LABEL.callCustomer}
-                            </a>
-                            <a
-                              href={`sms:${customerDetailCall.customer_phone}`}
-                              className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border border-emerald-200 bg-white px-3 text-sm font-black text-emerald-900"
-                              style={tapStyle}
-                            >
-                              {LABEL.smsCustomer}
-                            </a>
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="font-semibold text-slate-400">—</span>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-                <button
-                  type="button"
-                  className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-black text-white shadow-sm"
-                  style={tapStyle}
-                  onClick={() => setCustomerDetailCall(null)}
-                >
-                  닫기
-                </button>
-              </div>
-            </div>
-          ) : null}
+          <PartnerCustomerDetailModal
+            call={customerDetailCall}
+            onClose={() => setCustomerDetailCall(null)}
+          />
 
           <div className="mt-6">
             <div className="-mx-1 overflow-x-auto px-1 pb-2">
@@ -1453,7 +950,8 @@ export default function PartnerDashboardPage() {
                   onOpenQuoteForm={() =>
                     openQuoteForm(
                       call,
-                      activeTab === "quoted" && call.my_quote?.source === "member",
+                      activeTab === "quoted" &&
+                        call.my_quote?.source === "member",
                     )
                   }
                   onCloseQuoteForm={closeQuoteForm}
