@@ -613,28 +613,11 @@ function quoteMetrics(candidates: QuoteCandidate[]): {
 }
 
 async function notifyQuoteClosed(
-  admin: SupabaseLike,
-  applicationId: string,
-  candidates: QuoteCandidate[],
+  _admin: SupabaseLike,
+  _applicationId: string,
+  _candidates: QuoteCandidate[],
 ) {
-  const app = await getApplicationNotificationContext(admin, applicationId);
-  if (!app) return;
-  const metrics = quoteMetrics(candidates);
-  await sendNotificationSms(admin, {
-    target_type: "customer",
-    target_phone: app.phone,
-    target_name: app.applicantName,
-    notification_type: "quote_closed",
-    application_id: applicationId,
-    message: `[무료관광버스]
-견적 접수가 마감되었습니다.
-
-총 접수 견적: ${metrics.quoteCount}건
-최저 견적: ${formatWon(metrics.lowestPrice)}
-
-견적 확인:
-${siteBaseUrl()}/client/dashboard`,
-  });
+  // 고객 견적 마감 알림 비활성 (불필요)
 }
 
 async function notifyAutoSelected(
@@ -715,22 +698,7 @@ async function notifyFinalSelected(
 ${siteBaseUrl()}/partner/dashboard`,
     });
   }
-  await sendNotificationSms(admin, {
-    target_type: "customer",
-    target_phone: app.phone,
-    target_name: app.applicantName,
-    notification_type: "final_selected_customer",
-    application_id: applicationId,
-    quote_id: selected.id,
-    quote_source: selected.source,
-    message: `[무료관광버스]
-전세버스 매칭이 최종확정되었습니다.
-
-예약금 및 전자계약 절차를 진행해주세요.
-
-확인:
-${siteBaseUrl()}/client/dashboard`,
-  });
+  // 고객 최종확정 알림 비활성 (불필요)
 }
 
 async function notifyGuestNotSelected(

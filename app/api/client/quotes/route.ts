@@ -787,30 +787,19 @@ export async function POST(request: Request) {
       driverPhone = safeText(partnerRow.phone);
       driverName = safeText(partnerRow.manager_name, safeText(partnerRow.company_name, "기사님"));
     }
-    await Promise.all([
-      sendNotificationSms(admin, {
-        target_type: "customer",
-        target_phone: safeText(app.phone),
-        target_name: safeText(app.applicant_name),
-        notification_type: "final_selected_customer",
+    // 고객 알림(#8) 비활성 — 불필요
+    if (driverPhone) {
+      await sendNotificationSms(admin, {
+        target_type: selectedSource === "guest" ? "guest_driver" : "driver",
+        target_phone: driverPhone,
+        target_name: driverName,
+        notification_type: "final_selected_driver",
         application_id: applicationId,
         quote_id: selectedId,
         quote_source: selectedSource,
-        message: `[무료전세버스] 최종 견적 선택이 완료되었습니다. 선택한 기사 연락처를 대시보드에서 확인해 주세요.`,
-      }),
-      driverPhone
-        ? sendNotificationSms(admin, {
-            target_type: selectedSource === "guest" ? "guest_driver" : "driver",
-            target_phone: driverPhone,
-            target_name: driverName,
-            notification_type: "final_selected_driver",
-            application_id: applicationId,
-            quote_id: selectedId,
-            quote_source: selectedSource,
-            message: `[무료전세버스] 고객이 견적을 최종 선택했습니다. 대시보드에서 고객 연락처를 확인해 주세요.`,
-          })
-        : Promise.resolve(),
-    ]);
+        message: `[무료관광버스] 고객이 견적을 최종 선택했습니다. 대시보드에서 고객 연락처를 확인해 주세요.\n\n파트너 대시보드:\nhttps://partner.free-bus.co.kr/dashboard`,
+      });
+    }
     return NextResponse.json({ ok: true, ...(await loadPayload(admin, app)) });
   }
 

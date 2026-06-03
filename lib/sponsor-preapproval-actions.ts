@@ -460,17 +460,7 @@ export async function rejectSponsorPreapproval(
   await refreshApplicationSponsorSupportSummary(admin, applicationId);
   await recalculateDriverQuoteSupport(admin, applicationId);
 
-  await sendNotificationSms(admin, {
-    target_type: "admin",
-    target_phone: "admin",
-    target_name: "관리자",
-    notification_type: "sponsor_preapproval_rejected",
-    application_id: applicationId,
-    quote_id: params.preapprovalId,
-    quote_source: "sponsor_preapproval",
-    message: `후원업체 지원이 취소되었습니다: ${safeText(params.decisionMemo, "사유 없음")}`,
-    allowDuplicate: true,
-  });
+  // 지원반려 관리자 알림 비활성 — 수신번호 오류 + 불필요
 
   return { ok: true };
 }
