@@ -67,7 +67,9 @@ export function getQuoteDisplayPrices(
  * - breakdown에 이미 totalConfirmedSupport가 있어도 isConfirmed가 false이면 동기화한다.
  * - model의 confirmed_total_support가 null이면 금액은 그대로 두되 isConfirmed는 동기화한다.
  * - 금액 추론이 아닌, sponsor_preapproval/application fallback으로 계산된 모델값을 사용한다.
- * TODO: multi sponsor aggregation later
+ * NOTE: 현재 단일 sponsor 지원금 집계 구조로 운영 중입니다.
+ * 복수 후원업체 지원금 합산이 필요한 경우 getApprovedSponsorSupport(lib/sponsor-support.ts)와
+ * 연동하여 aggregation 로직을 추가합니다.
  */
 function mergeModelConfirmedIntoBreakdown(
   b: QuoteSupportBreakdown,

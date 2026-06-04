@@ -457,7 +457,9 @@ export function AdminDriverQuotesSection({
                       {quote.price == null
                         ? "금액 미입력"
                         : `${quote.price.toLocaleString("ko-KR")}원`}
-                      {/* TODO: 어드민 견적 목록 미리보기도 buildQuoteSupportDisplayModel 기반으로 통합 예정. */}
+                      {/* NOTE: 어드민 견적 목록 미리보기는 support_breakdown 직접 렌더링 방식을 사용합니다.
+                           buildQuoteSupportDisplayModel 기반 통합은 ApplicationDetailMatchedPanel과
+                           인터페이스를 맞춘 후 별도 PR로 진행합니다. */}
                       {quote.support_breakdown?.sponsorQuoteEnabled ? (
                         <span className="mt-1 block text-xs font-bold text-blue-700">
                           {quote.support_breakdown.isConfirmed

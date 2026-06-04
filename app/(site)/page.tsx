@@ -26,6 +26,7 @@ import { inferDepartureRegion } from "@/lib/regions";
 import { normalizeCustomerOrganizationType } from "@/lib/organization-types";
 import { parseStopovers } from "@/lib/stopovers";
 import { createSupabaseClient } from "@/lib/supabase";
+import { hashLookupPassword } from "@/lib/lookup-password";
 
 export default function Home() {
   const [formData, setFormData] = useState<FormData>(() => ({
@@ -227,8 +228,8 @@ export default function Home() {
         extension_round: 0,
         support_client_reward_ratio: 0,
         support_driver_ratio: 100,
-        // TODO: 운영 보안 강화를 위해 hash 저장으로 전환 필요.
-        client_lookup_password: lookupPassword,
+        // hash(SHA-256 + salt)로 저장. 검증은 verifyLookupPassword 참고.
+        client_lookup_password: await hashLookupPassword(lookupPassword),
         client_lookup_password_set_at: new Date().toISOString(),
       };
 

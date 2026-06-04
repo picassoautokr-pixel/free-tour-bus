@@ -21,6 +21,7 @@ import {
   isApplicationHidden,
 } from "@/lib/application-visibility";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
+import { verifyLookupPassword } from "@/lib/lookup-password";
 
 type Admin = NonNullable<ReturnType<typeof createServiceRoleSupabase>>;
 
@@ -122,13 +123,16 @@ export async function resolveApplicationsByLookupPassword(
   if (lookupPassword.length < 4) {
     return { error: "간단 비밀번호는 4자리 이상 입력해 주세요.", status: 400 } as const;
   }
+  // hash 비교를 위해 phone 기반으로 후보를 먼저 조회한 뒤 verifyLookupPassword로 검증합니다.
+  // (평문 저장 레거시 레코드도 verifyLookupPassword 내부 fallback으로 처리됩니다.)
+  const phoneFormatted = phoneDigits.replace(/^(\d{3})(\d{4})(\d{4})$/, "$1-$2-$3");
   const result: {
     data: unknown[] | null;
     error: { message: string; code?: string } | null;
   } = await admin
     .from("applications")
     .select("id, phone, client_lookup_password")
-    .eq("client_lookup_password", lookupPassword)
+    .or(`phone.eq.${phoneDigits},phone.eq.${phoneFormatted}`)
     .order("created_at", { ascending: false });
   if (isMissingColumnError(result.error)) {
     return {
@@ -137,13 +141,22 @@ export async function resolveApplicationsByLookupPassword(
     } as const;
   }
   if (result.error) return { error: result.error.message, status: 502 } as const;
-  const rows = filterVisibleApplicationRows(
+  const candidates = filterVisibleApplicationRows(
     (Array.isArray(result.data) ? result.data : []) as Record<string, unknown>[],
   ).filter((row) => digits(row.phone) === phoneDigits);
+  // 비밀번호 검증 (hash 또는 평문 fallback)
+  const verified = await Promise.all(
+    candidates.map(async (row) => {
+      const stored = typeof row.client_lookup_password === "string" ? row.client_lookup_password : "";
+      const ok = await verifyLookupPassword(lookupPassword, stored);
+      return ok ? row : null;
+    }),
+  );
+  const rows = verified.filter((r): r is Record<string, unknown> => r != null);
   if (rows.length === 0) {
     return { error: "일치하는 견적요청을 찾을 수 없습니다.", status: 404 } as const;
   }
-  return { rows: rows as Record<string, unknown>[] } as const;
+  return { rows } as const;
 }
 
 export async function loadPayload(admin: Admin, app: Record<string, unknown>) {
