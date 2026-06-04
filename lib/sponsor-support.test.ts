@@ -155,7 +155,7 @@ describe("getApprovedSponsorSupport", () => {
   it("데이터가 없으면 모든 값이 0이고 status는 none이다", async () => {
     const admin = makeMockAdmin([]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     const expected: ApplicationSponsorSupportSummary = {
@@ -175,7 +175,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "approved", approved_support_amount: 100_000 },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.approved_support_amount_total, 300_000);
@@ -188,7 +188,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "preapproved", estimated_support_amount: 150_000 },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.preapproved_support_amount_total, 150_000);
@@ -201,7 +201,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "pending", estimated_support_amount: 100_000 },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.preapproved_support_amount_total, 100_000);
@@ -214,7 +214,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "rejected" },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.rejected_count, 1);
@@ -227,7 +227,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "expired" },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.rejected_count, 2);
@@ -239,7 +239,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "preapproved", estimated_support_amount: 100_000 },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.status, "mixed");
@@ -250,7 +250,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "approved", approved_support_amount: null, estimated_support_amount: 180_000 },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     assert.equal(result.approved_support_amount_total, 180_000);
@@ -262,7 +262,7 @@ describe("getApprovedSponsorSupport", () => {
       { status: "approved", approved_support_amount: -100 },
     ]);
     const result = await getApprovedSponsorSupport(
-      admin as Parameters<typeof getApprovedSponsorSupport>[0],
+      admin as unknown as Parameters<typeof getApprovedSponsorSupport>[0],
       "app-1",
     );
     // 금액이 0 이하이면 합산 제외, 하지만 count는 올라감
