@@ -246,7 +246,8 @@ export default function PartnerRegisterPage() {
       : "첨부를 권장합니다. 미첨부 시에도 신청 가능하지만 검토 과정에서 추가 확인이 필요할 수 있습니다.";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#f3f8fb] pb-28">
+    <div className="min-h-screen bg-slate-200">
+    <main className="relative mx-auto min-h-screen w-full max-w-[480px] overflow-hidden bg-[#f3f8fb] pb-28">
       <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] px-6 text-white shadow-lg shadow-blue-900/25 ring-1 ring-white/20">
         <Link
           href="/"
@@ -610,5 +611,6 @@ export default function PartnerRegisterPage() {
         />
       ) : null}
     </main>
+    </div>
   );
 }
