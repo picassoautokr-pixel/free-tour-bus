@@ -52,7 +52,7 @@ export default function SponsorRegisterPage() {
     "mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold outline-none focus:border-blue-500";
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-sky-50 to-[#f3f8fb] pb-16">
+    <main className="mx-auto min-h-screen w-full max-w-[480px] bg-gradient-to-b from-sky-50 to-[#f3f8fb] pb-16">
       <header className="relative z-10 flex h-[78px] items-center justify-between rounded-b-[2rem] bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] px-6 text-white shadow-lg shadow-blue-900/25 ring-1 ring-white/20">
         <Link
           href="/"
