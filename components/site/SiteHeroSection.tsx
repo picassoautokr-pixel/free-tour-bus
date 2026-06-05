@@ -34,21 +34,39 @@ export function SiteHeroSection() {
           <br />
           견적 신청만해도 전액 무료!~
         </p>
-        <div className="relative mt-6 grid gap-2 sm:mx-auto sm:max-w-[28rem] sm:grid-cols-2">
-          <Link
-            href={partnerRegisterHref}
-            className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-2xl border border-blue-200/90 bg-white/80 px-4 py-2.5 text-center text-sm font-black leading-5 tracking-[-0.02em] text-blue-800 shadow-sm shadow-blue-900/5 ring-1 ring-blue-100/80 transition hover:border-blue-300 hover:bg-blue-50/90 hover:ring-blue-200/80 active:scale-[0.99]"
-            style={{ WebkitTapHighlightColor: "transparent" }}
-          >
-            기사님/운수업체 제휴하기
-          </Link>
-          <Link
-            href={sponsorRegisterHref}
-            className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-2xl border border-emerald-200/90 bg-white/80 px-4 py-2.5 text-center text-sm font-black leading-5 tracking-[-0.02em] text-emerald-800 shadow-sm shadow-emerald-900/5 ring-1 ring-emerald-100/80 transition hover:border-emerald-300 hover:bg-emerald-50/90 hover:ring-emerald-200/80 active:scale-[0.99]"
-            style={{ WebkitTapHighlightColor: "transparent" }}
-          >
-            후원업체 제휴하기
-          </Link>
+        <div className="relative mt-6 grid gap-3 sm:mx-auto sm:max-w-[28rem] sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Link
+              href={partnerRegisterHref}
+              className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-2xl border border-blue-200/90 bg-white/80 px-4 py-2.5 text-center text-sm font-black leading-5 tracking-[-0.02em] text-blue-800 shadow-sm shadow-blue-900/5 ring-1 ring-blue-100/80 transition hover:border-blue-300 hover:bg-blue-50/90 hover:ring-blue-200/80 active:scale-[0.99]"
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              기사님/운수업체 제휴하기
+            </Link>
+            <Link
+              href="/partner/login"
+              className="inline-flex min-h-9 w-full touch-manipulation items-center justify-center rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-2 text-center text-xs font-semibold tracking-[-0.02em] text-blue-600 transition hover:bg-blue-100/80 active:scale-[0.99]"
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              제휴기사 로그인
+            </Link>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Link
+              href={sponsorRegisterHref}
+              className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-2xl border border-emerald-200/90 bg-white/80 px-4 py-2.5 text-center text-sm font-black leading-5 tracking-[-0.02em] text-emerald-800 shadow-sm shadow-emerald-900/5 ring-1 ring-emerald-100/80 transition hover:border-emerald-300 hover:bg-emerald-50/90 hover:ring-emerald-200/80 active:scale-[0.99]"
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              후원업체 제휴하기
+            </Link>
+            <Link
+              href="/sponsor/login"
+              className="inline-flex min-h-9 w-full touch-manipulation items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-2 text-center text-xs font-semibold tracking-[-0.02em] text-emerald-600 transition hover:bg-emerald-100/80 active:scale-[0.99]"
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              후원업체 로그인
+            </Link>
+          </div>
         </div>
       </section>
     </>
