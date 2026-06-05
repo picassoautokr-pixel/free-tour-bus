@@ -252,9 +252,13 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
               <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">
                 {call.request_message || "요청사항 없음"}
               </p>
-              <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
+              <a
+                href="/partner/register"
+                className="mt-3 flex items-center gap-1 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100 hover:bg-blue-100 transition-colors"
+              >
                 회원 등록 시 지원금 견적 제출 가능
-              </p>
+                <span className="ml-auto text-blue-600">→ 제휴기사 회원가입</span>
+              </a>
             </article>
           ))
         )}
