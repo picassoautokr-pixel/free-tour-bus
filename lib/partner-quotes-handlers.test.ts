@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import {
   safeText,
   parsePrice,
-} from "./partner-quotes-handlers.ts";
+} from "./partner-quotes-handlers";
 
 // ---------------------------------------------------------------------------
 // safeText

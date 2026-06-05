@@ -13,7 +13,7 @@ import {
   digits,
   parseInteger,
   isMissingColumnError,
-} from "./client-quotes-handlers.ts";
+} from "./client-quotes-handlers";
 
 // ---------------------------------------------------------------------------
 // safeText

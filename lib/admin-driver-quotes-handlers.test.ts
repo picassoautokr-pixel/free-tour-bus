@@ -12,7 +12,7 @@ import {
   safeText,
   parseInteger,
   isMissingColumnError,
-} from "./admin-driver-quotes-handlers.ts";
+} from "./admin-driver-quotes-handlers";
 
 // ---------------------------------------------------------------------------
 // safeText

@@ -22,6 +22,8 @@ import {
   SponsorSettingsStaffPanel,
   type SponsorStaffFormState,
 } from "@/components/sponsor/SponsorSettingsStaffPanel";
+import { SponsorDashboardHeader } from "@/components/sponsor/SponsorDashboardHeader";
+import { SponsorCustomerDetailModal } from "@/components/sponsor/SponsorCustomerDetailModal";
 import { roleLoginPath } from "@/lib/role-hosts";
 import {
   isConfirmedCall,
@@ -35,7 +37,6 @@ import {
   LABEL,
   labelWithCount,
   PAYOUT_FILTERS,
-  SPONSOR_DASHBOARD_TITLE,
   SPONSOR_MAIN_TABS,
   type CardExpandMode,
   type ConfirmedPayoutFilter,
@@ -192,7 +193,7 @@ export default function SponsorDashboardPage() {
         }
         if (notificationPermissionRef.current === "granted" && typeof window !== "undefined") {
           try {
-            new window.Notification(SPONSOR_DASHBOARD_TITLE, {
+            new window.Notification("무료버스 후원업체", {
               body: LABEL.newReviewToast,
             });
           } catch {
@@ -511,72 +512,17 @@ export default function SponsorDashboardPage() {
       ) : null}
       <section className="mx-auto max-w-3xl">
         <div className="rounded-[2rem] border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:p-6">
-          <div className="flex flex-col gap-4">
-            <div>
-              <p className="text-xs font-black text-blue-600">{SPONSOR_DASHBOARD_TITLE}</p>
-              <h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-slate-950">
-                {safeText(company?.company_name, "후원업체")}
-              </h1>
-            </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-100">
-              <p className="text-xs font-black text-slate-500">후원업체 프로필</p>
-              <p className="mt-1 text-sm font-black text-slate-900">
-                {safeText(company?.company_name, "—")} · {safeText(company?.manager_name, "—")}
-              </p>
-              <p className="mt-0.5 text-xs font-bold text-slate-600">
-                {safeText(company?.phone, "—")} · {LABEL.companyStatus}:{" "}
-                {safeText(company?.status, "—")}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600">
-                {realtimeStatusLabel(realtimeStatus)}
-              </span>
-              <button
-                type="button"
-                onClick={() => void toggleSound()}
-                className={`min-h-10 rounded-xl border px-3 text-xs font-black ${
-                  soundEnabled
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                    : "border-slate-200 bg-white text-slate-800"
-                }`}
-                style={tapStyle}
-              >
-                {soundEnabled ? LABEL.soundOn : LABEL.soundOff}
-              </button>
-              <button
-                type="button"
-                onClick={() => void requestBrowserNotifications()}
-                disabled={
-                  notificationPermission === "granted" ||
-                  notificationPermission === "unsupported"
-                }
-                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-60"
-                style={tapStyle}
-              >
-                {notificationPermission === "granted"
-                  ? LABEL.browserNotifyOn
-                  : LABEL.browserNotify}
-              </button>
-              <button
-                type="button"
-                onClick={() => void load()}
-                disabled={loading}
-                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-800 disabled:opacity-50"
-                style={tapStyle}
-              >
-                {loading ? LABEL.loading : LABEL.refresh}
-              </button>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="min-h-10 rounded-xl bg-slate-950 px-3 text-xs font-black text-white"
-                style={tapStyle}
-              >
-                {LABEL.logout}
-              </button>
-            </div>
-          </div>
+          <SponsorDashboardHeader
+            company={company}
+            realtimeStatusValue={realtimeStatusLabel(realtimeStatus)}
+            soundEnabled={soundEnabled}
+            notificationPermission={notificationPermission}
+            loading={loading}
+            onToggleSound={() => void toggleSound()}
+            onRequestNotifications={() => void requestBrowserNotifications()}
+            onRefresh={() => void load()}
+            onLogout={() => void logout()}
+          />
 
           <SponsorReportCards summary={summary} />
 
@@ -712,70 +658,10 @@ export default function SponsorDashboardPage() {
         ) : null}
 
         {customerDetailCall ? (
-          <div
-            className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
-            role="dialog"
-            aria-modal="true"
-          >
-            <button
-              type="button"
-              className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
-              aria-label="닫기"
-              onClick={() => setCustomerDetailCall(null)}
-            />
-            <div className="relative w-full max-w-md rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-              <h2 className="text-lg font-black text-slate-950">{LABEL.customerInfoTitle}</h2>
-              <dl className="mt-4 space-y-3 text-sm">
-                <div className="rounded-xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                  <dt className="text-[11px] font-bold text-emerald-700">{LABEL.customer}</dt>
-                  <dd className="mt-1 font-black">
-                    {customerDetailCall.debug_contact_lookup?.popup_customer_name ||
-                      customerDetailCall.popup_customer_name ||
-                      customerDetailCall.customer_name ||
-                      LABEL.dash}
-                  </dd>
-                  <dd className="mt-1 font-semibold">
-                    {customerDetailCall.debug_contact_lookup?.popup_customer_phone ||
-                      customerDetailCall.popup_customer_phone ||
-                      customerDetailCall.customer_phone ||
-                      LABEL.dash}
-                  </dd>
-                </div>
-                <div className="rounded-xl bg-blue-50 p-3 ring-1 ring-blue-100">
-                  <dt className="text-[11px] font-bold text-blue-700">{LABEL.driverInfo}</dt>
-                  {customerDetailCall.popup_driver_company ||
-                  customerDetailCall.driver_company ||
-                  customerDetailCall.driver_company_name ? (
-                    <dd className="mt-1 text-xs font-bold text-blue-800">
-                      {customerDetailCall.debug_contact_lookup?.popup_driver_company ||
-                        customerDetailCall.popup_driver_company ||
-                        customerDetailCall.driver_company ||
-                        customerDetailCall.driver_company_name}
-                    </dd>
-                  ) : null}
-                  <dd className="mt-1 font-black">
-                    {customerDetailCall.debug_contact_lookup?.popup_driver_name ||
-                      customerDetailCall.popup_driver_name ||
-                      customerDetailCall.driver_name ||
-                      LABEL.dash}
-                  </dd>
-                  <dd className="mt-1 font-semibold">
-                    {customerDetailCall.debug_contact_lookup?.popup_driver_phone ||
-                      customerDetailCall.popup_driver_phone ||
-                      customerDetailCall.driver_phone ||
-                      LABEL.dash}
-                  </dd>
-                </div>
-              </dl>
-              <button
-                type="button"
-                className="mt-6 min-h-12 w-full rounded-2xl bg-slate-900 text-sm font-black text-white"
-                onClick={() => setCustomerDetailCall(null)}
-              >
-                닫기
-              </button>
-            </div>
-          </div>
+          <SponsorCustomerDetailModal
+            call={customerDetailCall}
+            onClose={() => setCustomerDetailCall(null)}
+          />
         ) : null}
 
         {mainTab === "settings" && settingsSubTab === "rules" ? (
