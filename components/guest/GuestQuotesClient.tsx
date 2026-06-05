@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
-import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
+import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
   useSupabaseRealtimeRefresh,
 } from "@/hooks/useSupabaseRealtimeRefresh";
 import { formatRouteWithStopovers, formatStopovers } from "@/lib/stopovers";
-import { normalizeSponsorStage } from "@/lib/status-normalizer";
 
 type GuestCall = {
   id: string;
@@ -31,198 +30,28 @@ type GuestCall = {
   target_member_price?: number | null;
   quote_closed_at?: string;
   auto_final_confirm_at?: string;
-  sponsor_support_status?: string;
-  sponsor_estimated_amount?: number | null;
-  sponsor_confirmed_amount?: number | null;
 };
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
-function ListCell({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-0.5 truncate text-xs font-black text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function formatWon(amount: number | null | undefined): string {
-  if (amount == null) return "—";
-  return `${amount.toLocaleString("ko-KR")}원`;
-}
-
-function formatDeadline(deadlineAt: string | undefined | null): string {
-  if (!deadlineAt) return "—";
-  const diff = new Date(deadlineAt).getTime() - Date.now();
-  if (diff <= 0) return "마감";
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  if (h >= 24) {
-    const d = Math.floor(h / 24);
-    return `${d}일 ${h % 24}시간`;
-  }
-  return `${h}시간 ${m}분`;
-}
-
-/** 스폰서 단계 정보 박스 */
-function SponsorInfoBox({ call }: { call: GuestCall }) {
-  const stage = normalizeSponsorStage(call.sponsor_support_status);
-  const isConfirmed = stage === "confirmed";
-  const isReview = stage === "review";
-  const hasSupport = isConfirmed || isReview;
-
-  const sponsorAmount = isConfirmed
-    ? call.sponsor_confirmed_amount
-    : call.sponsor_estimated_amount;
-  const amountLabel = isConfirmed ? "확정 지원금" : "예상 지원금";
-  const badgeLabel = isConfirmed ? "지원확정" : "지원검토";
-  const badgeTone = isConfirmed
-    ? "bg-emerald-600 text-white"
-    : "bg-blue-600 text-white";
-
-  return (
-    <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 ring-1 ring-slate-100">
-      {/* 스폰서 단계 배지 + 금액 */}
-      <div className="flex flex-wrap items-center gap-2">
-        {hasSupport ? (
-          <span className={`inline-flex rounded-full px-3 py-0.5 text-xs font-black ${badgeTone}`}>
-            {badgeLabel}
-          </span>
-        ) : null}
-        {hasSupport && sponsorAmount != null ? (
-          <span className="text-sm font-black text-slate-900">
-            {amountLabel} : {formatWon(sponsorAmount)}
-          </span>
-        ) : hasSupport ? (
-          <span className="text-xs font-semibold text-slate-500">{amountLabel} : 미확정</span>
-        ) : null}
-      </div>
-
-      {/* 희망 견적가 */}
-      <div className="mt-2 flex flex-wrap gap-3 text-xs font-bold text-slate-600">
-        {call.target_normal_price != null ? (
-          <span>희망견적가 : {formatWon(call.target_normal_price)}</span>
-        ) : null}
-        {call.target_member_price != null ? (
-          <span>할인견적가 : {formatWon(call.target_member_price)}</span>
-        ) : null}
-      </div>
-
-      {/* 제휴기사 안내 */}
-      <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
-        제휴기사 가입시 : 지원금을 직접 확인하고, 지원금 할인 견적을 제출할 수 있습니다.
-      </p>
-    </div>
-  );
-}
-
-function GuestCallCard({
-  call,
-  openId,
-  setOpenId,
-}: {
-  call: GuestCall;
-  openId: string | null;
-  setOpenId: (id: string | null) => void;
-}) {
-  const closed = Boolean(call.quote_closed_at);
-  const isOpen = openId === call.id;
-  const stopoverText = formatStopovers(call.stopovers) || "—";
-  const departureDate = call.departure_date.trim() || "미정";
-  const departureTime = call.departure_time.trim() || "—";
-  const region = call.departure_region.trim() || "—";
-
-  return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100 transition">
-      <div className="p-4">
-        {/* 경로 제목 */}
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="min-w-0 flex-1 text-sm font-black leading-snug text-slate-900 sm:text-base">
-            {formatRouteWithStopovers(call.departure, call.stopovers, call.destination)}
-          </h2>
-          {region !== "—" ? (
-            <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black text-blue-700">
-              {region}
-            </span>
-          ) : null}
-        </div>
-
-        {/* 스폰서 정보 박스 */}
-        <SponsorInfoBox call={call} />
-
-        {/* 정보 그리드 — 파트너 카드 ListCell 스타일 */}
-        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
-          <ListCell label="출발일" value={departureDate} />
-          <ListCell label="출발시간" value={departureTime} />
-          <ListCell label="출발지역" value={region} />
-          <ListCell label="출발지" value={call.departure || "—"} />
-          <ListCell label="경유지" value={stopoverText} />
-          <ListCell label="도착지" value={call.destination || "—"} />
-          <ListCell
-            label="인원수"
-            value={call.passenger_count != null ? `${call.passenger_count}명` : "미확정"}
-          />
-          <ListCell label="왕복/편도" value={call.trip_type || "—"} />
-          <ListCell label="차량등급" value={call.bus_grade || "—"} />
-          <ListCell
-            label="남은 마감시간"
-            value={closed ? "마감됨" : formatDeadline(call.quote_deadline_at)}
-          />
-          <ListCell
-            label="전적 진행현황"
-            value={
-              call.quote_limit_count != null
-                ? `${call.quote_count ?? 0} / ${call.quote_limit_count}건`
-                : `${call.quote_count ?? 0}건`
-            }
-          />
-        </div>
-
-        {/* 버튼 */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={closed && !isOpen}
-            onClick={() => setOpenId(isOpen ? null : call.id)}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-black text-white disabled:bg-slate-300"
-            style={tapStyle}
-          >
-            {closed && !isOpen ? "마감됨" : isOpen ? "접기" : "견적 제출"}
-          </button>
-        </div>
-      </div>
-
-      {/* 견적 제출 폼 확장 */}
-      {isOpen ? (
-        <div className="border-t border-slate-100 bg-slate-50 p-4">
-          <GuestQuoteForm
-            applicationId={call.id}
-            compact
-            passengerCount={call.passenger_count}
-            registerHref="/partner/register"
-            quoteClosed={closed}
-            sponsorStatus={call.sponsor_support_status}
-            sponsorEstimatedAmount={call.sponsor_estimated_amount}
-            sponsorConfirmedAmount={call.sponsor_confirmed_amount}
-          />
-        </div>
-      ) : null}
-    </article>
-  );
+function departureLine(call: GuestCall) {
+  return [call.departure_date || "미정", call.departure_time].filter(Boolean).join(" ");
 }
 
 export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[] }) {
   const [quotes, setQuotes] = useState(initialQuotes);
-  const [region, setRegion] = useState<ServiceRegion | "">("");
+  // 다중 선택 지역 필터 — 빈 Set = 전체
+  const [selectedRegions, setSelectedRegions] = useState<Set<ServiceRegion>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const subscribedLoggedRef = useRef(false);
 
   const filtered = useMemo(
-    () => (region === "" ? quotes : quotes.filter((q) => q.departure_region === region)),
-    [quotes, region],
+    () =>
+      selectedRegions.size === 0
+        ? quotes
+        : quotes.filter((q) => selectedRegions.has(q.departure_region as ServiceRegion)),
+    [quotes, selectedRegions],
   );
 
   const refresh = useCallback(async () => {
@@ -231,14 +60,13 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
     }
     setLoading(true);
     try {
-      const query = region ? `?region=${encodeURIComponent(region)}` : "";
-      const res = await fetch(`/api/guest/quotes${query}`);
+      const res = await fetch(`/api/guest/quotes`);
       const json = (await res.json()) as { quotes?: GuestCall[] };
       setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
     } finally {
       setLoading(false);
     }
-  }, [region]);
+  }, []);
 
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "guest-quotes-live",
@@ -271,6 +99,18 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
     return () => window.clearTimeout(id);
   }, [toastMessage]);
 
+  function toggleRegion(item: ServiceRegion) {
+    setSelectedRegions((prev) => {
+      const next = new Set(prev);
+      if (next.has(item)) {
+        next.delete(item);
+      } else {
+        next.add(item);
+      }
+      return next;
+    });
+  }
+
   return (
     <div>
       {toastMessage ? (
@@ -281,14 +121,12 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           {toastMessage}
         </div>
       ) : null}
-
-      {/* 지역 필터 */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-sm font-black text-slate-900">지역 필터</h2>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              전국 견적요청을 로그인 없이 확인할 수 있습니다.
+              복수 선택 가능 · 전국 견적요청을 로그인 없이 확인할 수 있습니다.
             </p>
           </div>
           <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-600">
@@ -305,13 +143,14 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           </button>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
+          {/* 전체 지역 버튼 — 선택된 지역이 없을 때 활성 */}
           <button
             type="button"
-            onClick={() => setRegion("")}
-            className={`min-h-9 rounded-full border px-3 text-xs font-black ${
-              region === ""
+            onClick={() => setSelectedRegions(new Set())}
+            className={`min-h-9 rounded-full border px-3 text-xs font-black transition-colors ${
+              selectedRegions.size === 0
                 ? "border-blue-600 bg-blue-600 text-white"
-                : "border-slate-200 bg-white text-slate-700"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
             }`}
           >
             전체 지역
@@ -320,20 +159,31 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
             <button
               key={item}
               type="button"
-              onClick={() => setRegion(item)}
-              className={`min-h-9 rounded-full border px-3 text-xs font-black ${
-                region === item
+              onClick={() => toggleRegion(item)}
+              className={`min-h-9 rounded-full border px-3 text-xs font-black transition-colors ${
+                selectedRegions.has(item)
                   ? "border-blue-600 bg-blue-600 text-white"
-                  : "border-slate-200 bg-white text-slate-700"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
               }`}
             >
               {item}
             </button>
           ))}
         </div>
+        {selectedRegions.size > 0 && (
+          <p className="mt-3 text-xs font-semibold text-blue-700">
+            선택된 지역: {Array.from(selectedRegions).join(", ")}
+            <button
+              type="button"
+              onClick={() => setSelectedRegions(new Set())}
+              className="ml-2 text-slate-400 underline hover:text-slate-600"
+            >
+              초기화
+            </button>
+          </p>
+        )}
       </div>
 
-      {/* 카드 목록 */}
       <div className="mt-5 space-y-4">
         {filtered.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">
@@ -341,12 +191,71 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           </div>
         ) : (
           filtered.map((call) => (
-            <GuestCallCard
-              key={call.id}
-              call={call}
-              openId={openId}
-              setOpenId={setOpenId}
-            />
+            <article key={call.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">
+                    {call.departure_region || "지역 미정"}
+                  </span>
+                  <h3 className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">
+                    {formatRouteWithStopovers(
+                      call.departure,
+                      call.stopovers,
+                      call.destination,
+                    )}
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    {departureLine(call)}
+                  </p>
+                  {formatStopovers(call.stopovers) ? (
+                    <p className="mt-1 text-sm font-semibold text-slate-600">
+                      경유지: {formatStopovers(call.stopovers)}
+                    </p>
+                  ) : null}
+                </div>
+                {/* 비회원 견적 제출 버튼 제거 — 회원만 견적 제출 가능 */}
+              </div>
+              <div className="mt-4">
+                <QuoteStatusSummary
+                  quoteStatus={call.quote_status ?? "collecting"}
+                  quoteDeadlineAt={call.quote_deadline_at}
+                  autoFinalConfirmAt={call.auto_final_confirm_at}
+                  quoteCount={call.quote_count}
+                  quoteLimitCount={call.quote_limit_count}
+                  targetNormalPrice={call.target_normal_price}
+                  targetMemberPrice={call.target_member_price}
+                  compact
+                />
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <dt className="text-[11px] font-bold text-slate-400">인원수</dt>
+                  <dd className="mt-1 font-black text-slate-900">{call.passenger_count ?? "—"}</dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <dt className="text-[11px] font-bold text-slate-400">왕복/편도</dt>
+                  <dd className="mt-1 font-black text-slate-900">{call.trip_type}</dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <dt className="text-[11px] font-bold text-slate-400">등급</dt>
+                  <dd className="mt-1 font-black text-slate-900">{call.bus_grade}</dd>
+                </div>
+                {formatStopovers(call.stopovers) ? (
+                  <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+                    <dt className="text-[11px] font-bold text-slate-400">경유지</dt>
+                    <dd className="mt-1 font-black text-slate-900">
+                      {formatStopovers(call.stopovers)}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+              <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">
+                {call.request_message || "요청사항 없음"}
+              </p>
+              <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
+                회원 등록 시 지원금 견적 제출 가능
+              </p>
+            </article>
           ))
         )}
       </div>

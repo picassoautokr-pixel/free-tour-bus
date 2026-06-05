@@ -1,17 +1,8 @@
 import { GuestQuotesClient } from "@/components/guest/GuestQuotesClient";
 import { parseStopovers } from "@/lib/stopovers";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
-import { filterVisibleApplicationRows } from "@/lib/application-visibility";
 
 const APPLICATION_TYPE_NEW_BOOKING = "신규로 예약이 필요하신 경우";
-
-const MATCHED_STATUSES = new Set([
-  "auto_selected",
-  "final_selected",
-  "contract_pending",
-  "completed",
-  "matched",
-]);
 
 function safeText(value: unknown, emptyLabel = ""): string {
   if (value == null) return emptyLabel;
@@ -55,46 +46,25 @@ export default async function GuestQuotesPage() {
     target_member_price?: number | null;
     quote_closed_at?: string;
     auto_final_confirm_at?: string;
-    sponsor_support_status?: string;
-    sponsor_estimated_amount?: number | null;
-    sponsor_confirmed_amount?: number | null;
   }> = [];
 
   if (admin) {
     const { data } = await admin
       .from("applications")
       .select(
-        "id, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, sponsor_support_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
+        "id, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
       )
       .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
       .order("created_at", { ascending: false })
       .limit(80);
-
-    const allRows = filterVisibleApplicationRows(
-      (Array.isArray(data) ? data : []) as Record<string, unknown>[],
-    );
-    const rows = allRows.filter(
-      (raw) => !MATCHED_STATUSES.has(safeText(raw.quote_status).trim().toLowerCase()),
-    );
-
+    const rows = Array.isArray(data) ? data : [];
     const ids = rows.map((raw) => safeText((raw as { id?: unknown }).id)).filter(Boolean);
     const quoteCountByApplication = new Map<string, number>();
-    const sponsorByApp = new Map<
-      string,
-      { status: string; estimated: number | null; approved: number | null }
-    >();
-
     if (ids.length > 0) {
-      const [{ data: memberRows }, { data: guestRows }, { data: sponsorRows }] =
-        await Promise.all([
-          admin.from("driver_quotes").select("application_id").in("application_id", ids),
-          admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
-          admin
-            .from("sponsor_preapprovals")
-            .select("application_id, status, estimated_support_amount, approved_support_amount")
-            .in("application_id", ids)
-            .order("created_at", { ascending: false }),
-        ]);
+      const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
+        admin.from("driver_quotes").select("application_id").in("application_id", ids),
+        admin.from("guest_driver_quotes").select("application_id").in("application_id", ids),
+      ]);
       for (const raw of Array.isArray(memberRows) ? memberRows : []) {
         const id = safeText((raw as { application_id?: unknown }).application_id);
         quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
@@ -103,24 +73,10 @@ export default async function GuestQuotesPage() {
         const id = safeText((raw as { application_id?: unknown }).application_id);
         quoteCountByApplication.set(id, (quoteCountByApplication.get(id) ?? 0) + 1);
       }
-      for (const raw of Array.isArray(sponsorRows) ? sponsorRows : []) {
-        const r = raw as Record<string, unknown>;
-        const appId = safeText(r.application_id);
-        if (!sponsorByApp.has(appId)) {
-          sponsorByApp.set(appId, {
-            status: safeText(r.status),
-            estimated: parseInteger(r.estimated_support_amount),
-            approved: parseInteger(r.approved_support_amount),
-          });
-        }
-      }
     }
-
     initialQuotes = rows.map((raw) => {
       const row = raw as Record<string, unknown>;
       const id = safeText(row.id);
-      const sponsor = sponsorByApp.get(id);
-      const sponsorStatus = safeText(row.sponsor_support_status) || (sponsor?.status ?? "");
       return {
         id,
         departure_region: safeText(row.departure_region),
@@ -141,9 +97,6 @@ export default async function GuestQuotesPage() {
         target_member_price: parseInteger(row.target_member_price),
         quote_closed_at: safeText(row.quote_closed_at, ""),
         auto_final_confirm_at: safeText(row.auto_final_confirm_at, ""),
-        sponsor_support_status: sponsorStatus,
-        sponsor_estimated_amount: sponsor?.estimated ?? null,
-        sponsor_confirmed_amount: sponsor?.approved ?? null,
       };
     });
   }

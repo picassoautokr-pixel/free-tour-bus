@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { normalizeSponsorStage } from "@/lib/status-normalizer";
+import { estimateSponsorSupport } from "@/lib/support-estimate";
 
 const tapStyle = { WebkitTapHighlightColor: "transparent" } as const;
 
@@ -21,9 +21,6 @@ type Props = {
   passengerCount?: number | null;
   registerHref?: string;
   quoteClosed?: boolean;
-  sponsorStatus?: string;
-  sponsorEstimatedAmount?: number | null;
-  sponsorConfirmedAmount?: number | null;
 };
 
 export function GuestQuoteForm({
@@ -33,9 +30,6 @@ export function GuestQuoteForm({
   passengerCount = null,
   registerHref = "/partner/register",
   quoteClosed = false,
-  sponsorStatus = "",
-  sponsorEstimatedAmount = null,
-  sponsorConfirmedAmount = null,
 }: Props) {
   const [companyName, setCompanyName] = useState("");
   const [driverName, setDriverName] = useState("");
@@ -48,20 +42,10 @@ export function GuestQuoteForm({
   const [error, setError] = useState<string | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
-
-  const sponsorStage = normalizeSponsorStage(sponsorStatus);
-  const isConfirmed = sponsorStage === "confirmed";
-  const isReview = sponsorStage === "review";
-  const hasSupport = isConfirmed || isReview;
-
-  const displayAmount = isConfirmed ? sponsorConfirmedAmount : sponsorEstimatedAmount;
-  const amountLabel = isConfirmed ? "확정 지원금" : "예상 지원금";
-  const supportHeadline = isConfirmed
-    ? "후원업체 지원금 적용 할인 적용가 제출 가능"
-    : "후원업체 지원금 적용 예상가 제출 가능";
-  const comparisonText = isConfirmed
-    ? "회원 기사만 제출 가능하며 고객은 일반견적가와 지원금 할인 적용가를 비교할 수 있습니다."
-    : "회원 기사만 제출 가능하며 고객은 일반견적가와 지원금 할인 예상가를 비교할 수 있습니다.";
+  const supportEstimate = estimateSponsorSupport({
+    passengerCount,
+    price: 0,
+  });
 
   const submit = async () => {
     if (quoteClosed) return;
@@ -251,26 +235,18 @@ export function GuestQuoteForm({
           회원 전용 지원금 견적 ⭐
         </p>
         <p className="mt-2 text-sm font-semibold leading-6 text-blue-900">
-          {hasSupport ? supportHeadline : "후원업체 지원금 적용 예상가 제출 가능"}
+          후원업체 지원금 적용 예상가 제출 가능
         </p>
-        {hasSupport ? (
-          <p className="mt-3 text-sm font-black text-blue-950">
-            {amountLabel}:{" "}
-            {displayAmount != null
-              ? `${displayAmount.toLocaleString("ko-KR")}원`
-              : "미확정"}
-          </p>
-        ) : null}
+        <p className="mt-3 text-sm font-black text-blue-950">
+          예상 지원금: 약{" "}
+          {supportEstimate.supportAmount.toLocaleString("ko-KR")}원
+        </p>
         <p className="mt-2 text-xs font-semibold leading-5 text-blue-800">
-          {hasSupport
-            ? comparisonText
-            : "회원 기사만 제출 가능하며 고객은 일반견적가와 지원금 할인 예상가를 비교할 수 있습니다."}
+          회원 기사만 제출 가능하며 고객은 일반가와 지원금 적용가를 비교할 수 있습니다.
         </p>
-        {!isConfirmed ? (
-          <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-500">
-            * 지원금 적용 예상가는 후원업체 심사 결과에 따라 실제 변동될 수 있습니다.
-          </p>
-        ) : null}
+        <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-500">
+          * 지원금 적용 예상가는 후원업체 심사 결과에 따라 실제 변동될 수 있습니다.
+        </p>
         <button
           type="button"
           onClick={() => setSupportModalOpen(true)}
