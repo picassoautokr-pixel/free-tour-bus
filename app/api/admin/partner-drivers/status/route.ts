@@ -1,11 +1,9 @@
-import { randomBytes } from "crypto";
-
 import { NextResponse } from "next/server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { sendDriverApprovalSms } from "@/lib/driver-approval-sms";
-import { resolvePartnerAuthEmail } from "@/lib/partner-phone-login";
+import { sendDriverApprovalSms, generateApprovalTempPassword } from "@/lib/driver-approval-sms";
+import { resolvePartnerAuthEmail, digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import {
   getPartnerSetPasswordRedirectTo,
   withExpectedEmail,
@@ -47,9 +45,7 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim() !== "";
 }
 
-function tempPassword(): string {
-  return `${randomBytes(18).toString("base64url")}Aa!1`;
-}
+// 임시 비밀번호는 generateApprovalTempPassword(phoneDigits) 로 생성합니다.
 
 async function findAuthUserIdByEmail(
   admin: SupabaseClient,
@@ -318,7 +314,7 @@ async function resolveOrCreateAuthUserId(
 
   const created = await admin.auth.admin.createUser({
     email,
-    password: tempPassword(),
+    password: Math.random().toString(36).slice(2) + "Aa!1",
     email_confirm: true,
   });
   if (!created.error && created.data.user?.id) {
@@ -505,7 +501,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const storedEmailTrimmed = String(r.email ?? "").trim();
+    // 전화번호 뒤 4자리 + 영문소문자 4개로 임시 비밀번호 생성
+    const phoneDigitsForPw = digitsOnlyKoreanMobile(String(r.phone ?? "")) ?? String(r.phone ?? "").replace(/\D/g, "");
+    const tempPw = generateApprovalTempPassword(phoneDigitsForPw);
+    const loginId = phoneDigitsForPw || String(r.phone ?? "").replace(/\D/g, "");
 
     const authResult = await resolveOrCreateAuthUserId(
       admin,
@@ -536,6 +535,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Auth 사용자 비밀번호를 임시 비밀번호로 설정
+    const { error: pwErr } = await admin.auth.admin.updateUserById(
+      authResult.userId,
+      { password: tempPw, email_confirm: true },
+    );
+    if (pwErr) {
+      console.warn("[partner-drivers/status] 임시 비밀번호 설정 실패:", pwErr.message);
+    }
+
     const profErr = await upsertDriverProfile(admin, {
       userId: authResult.userId,
       companyName: String(r.company_name ?? "").trim() || "제휴 기사",
@@ -562,6 +570,8 @@ export async function POST(request: Request) {
       status: "approved",
       auth_user_id: authResult.userId,
       approved_at: approvedAt,
+      temporary_password_issued_at: approvedAt,
+      password_changed_at: null,
       ...memoPatch,
     };
 
@@ -584,13 +594,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // 승인 문자 발송 (임시 비밀번호 포함)
     void sendDriverApprovalSms({
       toPhone: String(r.phone ?? "").replace(/\D/g, ""),
       companyName: String(r.company_name ?? ""),
-      infoLine:
-        storedEmailTrimmed !== ""
-          ? "로그인 안내 메일을 확인해 주세요."
-          : "전화번호로 로그인할 수 있습니다. 비밀번호는 문자·안내에 따라 설정해 주세요.",
+      tempPassword: tempPw,
+      loginId,
     }).catch(() => {});
 
     const { data: refreshed } = await admin
