@@ -121,12 +121,7 @@ export function QuoteStatusSummary({
             {quoteLimitCount != null ? ` / ${quoteLimitCount}` : ""}건
           </span>
         ) : null}
-        {formatPrice(targetNormalPrice) ? (
-          <span>일반 목표 {formatPrice(targetNormalPrice)}</span>
-        ) : null}
-        {formatPrice(targetMemberPrice) ? (
-          <span>지원금 적용 목표 {formatPrice(targetMemberPrice)}</span>
-        ) : null}
+        {/* 희망견적 표시 - 추후 사용 예정, 현재 숨김 */}
       </div>
       {quoteClosedReason ? (
         <p className="mt-2 text-[11px] font-semibold text-slate-500">

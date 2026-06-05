@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import { formatStopovers, parseStopovers } from "@/lib/stopovers";
 import { createServiceRoleSupabase } from "@/lib/supabase/service-role";
@@ -23,8 +22,6 @@ type SharedApplication = {
   quote_deadline_at: string;
   quote_limit_count: number | null;
   quote_count: number;
-  target_normal_price: number | null;
-  target_member_price: number | null;
   quote_closed_at: string;
   auto_final_confirm_at: string;
 };
@@ -118,7 +115,7 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const { data: referral, error } = await admin
     .from("quote_referrals")
     .select(
-      "id, token, status, expires_at, applications(id, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at)",
+      "id, token, status, expires_at, applications(id, departure, destination, stopovers, departure_date, departure_time, passenger_count, trip_type, bus_grade, request_message, quote_status, quote_deadline_at, quote_limit_count, quote_closed_at, auto_final_confirm_at)",
     )
     .eq("token", cleanToken)
     .maybeSingle();
@@ -157,13 +154,11 @@ export default async function SharedQuotePage({ params }: PageProps) {
   const applicationId = safeText(appRow.id, "");
   let quoteCount = 0;
   if (applicationId !== "") {
-    const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
-      admin.from("driver_quotes").select("id").eq("application_id", applicationId),
-      admin.from("guest_driver_quotes").select("id").eq("application_id", applicationId),
-    ]);
-    quoteCount =
-      (Array.isArray(memberRows) ? memberRows.length : 0) +
-      (Array.isArray(guestRows) ? guestRows.length : 0);
+    const { data: memberRows } = await admin
+      .from("driver_quotes")
+      .select("id")
+      .eq("application_id", applicationId);
+    quoteCount = Array.isArray(memberRows) ? memberRows.length : 0;
   }
 
   const app: SharedApplication = {
@@ -181,8 +176,6 @@ export default async function SharedQuotePage({ params }: PageProps) {
     quote_deadline_at: safeText(appRow.quote_deadline_at, ""),
     quote_limit_count: parseInteger(appRow.quote_limit_count),
     quote_count: quoteCount,
-    target_normal_price: parseInteger(appRow.target_normal_price),
-    target_member_price: parseInteger(appRow.target_member_price),
     quote_closed_at: safeText(appRow.quote_closed_at, ""),
     auto_final_confirm_at: safeText(appRow.auto_final_confirm_at, ""),
   };
@@ -219,8 +212,6 @@ export default async function SharedQuotePage({ params }: PageProps) {
             autoFinalConfirmAt={app.auto_final_confirm_at}
             quoteCount={app.quote_count}
             quoteLimitCount={app.quote_limit_count}
-            targetNormalPrice={app.target_normal_price}
-            targetMemberPrice={app.target_member_price}
           />
         </div>
 
@@ -240,18 +231,6 @@ export default async function SharedQuotePage({ params }: PageProps) {
             제휴기사 등록하고 견적 제출
           </Link>
         </div>
-        {applicationId !== "" ? (
-          <div className="mt-6">
-            <GuestQuoteForm
-              applicationId={applicationId}
-              referralToken={cleanToken}
-              passengerCount={app.passenger_count}
-              registerHref={`/partner/register?ref=${encodeURIComponent(cleanToken)}`}
-              quoteClosed={app.quote_closed_at !== ""}
-              compact
-            />
-          </div>
-        ) : null}
       </section>
     </main>
   );

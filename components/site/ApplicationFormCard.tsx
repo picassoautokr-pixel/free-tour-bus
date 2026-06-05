@@ -522,8 +522,8 @@ export function ApplicationFormCard({
               ) : null}
             </div>
 
-            {/* 희망견적 */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            {/* 희망견적 - 추후 사용 예정, 현재 숨김 */}
+            <div className="hidden rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-black tracking-[-0.03em] text-slate-900">
                 희망견적
               </p>

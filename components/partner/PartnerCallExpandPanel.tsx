@@ -218,16 +218,7 @@ export function PartnerCallExpandPanel({
 
         {mode === "quote" ? (
           <>
-            <Field label={LABEL.preferredTargetPrice}>
-              <span>
-                {LABEL.priorityNormal} {formatWon(call.target_normal_price)}
-                <span className="mx-1 text-slate-300">{LABEL.separator}</span>
-                {LABEL.priorityDiscount} {formatWon(call.target_member_price)}
-              </span>
-            </Field>
-            <Field label={LABEL.preferredQuoteTypes}>
-              {LABEL.preferredNormalQuote}, {LABEL.preferredDiscountQuote}
-            </Field>
+            {/* 희망견적 사용 전까지 숨김 */}
             {!hideSupport ? (
               <>
                 <Field label={LABEL.sponsor}>
