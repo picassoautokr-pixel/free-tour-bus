@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx --yes tsx --test lib/support-calculation.test.ts lib/quote-support-display-model.test.ts lib/quote-support-snapshot.test.ts lib/support-breakdown-snapshot.test.ts lib/sponsor-matched-contact.test.ts lib/sponsor-dashboard-call-shape.test.ts lib/selected-price-display.test.ts lib/quote-debug-trace.test.ts lib/admin-driver-quotes-handlers.test.ts lib/partner-quotes-handlers.test.ts lib/client-quotes-handlers.test.ts lib/quote-auction.test.ts lib/support-estimate.test.ts lib/quote-display-prices.test.ts lib/sponsor-support.test.ts",
+    "test": "npx --yes tsx --test lib/support-calculation.test.ts lib/quote-support-display-model.test.ts lib/quote-support-snapshot.test.ts lib/support-breakdown-snapshot.test.ts lib/sponsor-matched-contact.test.ts lib/sponsor-dashboard-call-shape.test.ts lib/selected-price-display.test.ts lib/quote-debug-trace.test.ts lib/admin-driver-quotes-handlers.test.ts lib/partner-quotes-handlers.test.ts lib/client-quotes-handlers.test.ts lib/quote-auction.test.ts lib/support-estimate.test.ts lib/quote-display-prices.test.ts lib/sponsor-support.test.ts lib/client-application-view-model.test.ts lib/partner-call-view-model.test.ts lib/sponsor-call-view-model.test.ts lib/client-member-quote-payload.test.ts lib/admin-application-detail-build.test.ts",
     "verify:sponsor-flow": "node scripts/sponsor-flow-verify.mjs",
     "verify:e2e": "node scripts/verify-e2e-flow.mjs"
   },
