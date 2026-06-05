@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SERVICE_REGIONS, type ServiceRegion } from "@/lib/regions";
-import { GuestQuoteForm } from "@/components/guest/GuestQuoteForm";
 import { QuoteStatusSummary } from "@/components/QuoteStatusSummary";
 import {
   realtimeStatusLabel,
@@ -41,15 +40,18 @@ function departureLine(call: GuestCall) {
 
 export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[] }) {
   const [quotes, setQuotes] = useState(initialQuotes);
-  const [region, setRegion] = useState<ServiceRegion | "">("");
+  // 다중 선택 지역 필터 — 빈 Set = 전체
+  const [selectedRegions, setSelectedRegions] = useState<Set<ServiceRegion>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const subscribedLoggedRef = useRef(false);
 
   const filtered = useMemo(
-    () => (region === "" ? quotes : quotes.filter((q) => q.departure_region === region)),
-    [quotes, region],
+    () =>
+      selectedRegions.size === 0
+        ? quotes
+        : quotes.filter((q) => selectedRegions.has(q.departure_region as ServiceRegion)),
+    [quotes, selectedRegions],
   );
 
   const refresh = useCallback(async () => {
@@ -58,14 +60,13 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
     }
     setLoading(true);
     try {
-      const query = region ? `?region=${encodeURIComponent(region)}` : "";
-      const res = await fetch(`/api/guest/quotes${query}`);
+      const res = await fetch(`/api/guest/quotes`);
       const json = (await res.json()) as { quotes?: GuestCall[] };
       setQuotes(Array.isArray(json.quotes) ? json.quotes : []);
     } finally {
       setLoading(false);
     }
-  }, [region]);
+  }, []);
 
   const realtimeStatus = useSupabaseRealtimeRefresh({
     channelName: "guest-quotes-live",
@@ -98,6 +99,18 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
     return () => window.clearTimeout(id);
   }, [toastMessage]);
 
+  function toggleRegion(item: ServiceRegion) {
+    setSelectedRegions((prev) => {
+      const next = new Set(prev);
+      if (next.has(item)) {
+        next.delete(item);
+      } else {
+        next.add(item);
+      }
+      return next;
+    });
+  }
+
   return (
     <div>
       {toastMessage ? (
@@ -113,7 +126,7 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           <div>
             <h2 className="text-sm font-black text-slate-900">지역 필터</h2>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              전국 견적요청을 로그인 없이 확인할 수 있습니다.
+              복수 선택 가능 · 전국 견적요청을 로그인 없이 확인할 수 있습니다.
             </p>
           </div>
           <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-600">
@@ -130,13 +143,14 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
           </button>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
+          {/* 전체 지역 버튼 — 선택된 지역이 없을 때 활성 */}
           <button
             type="button"
-            onClick={() => setRegion("")}
-            className={`min-h-9 rounded-full border px-3 text-xs font-black ${
-              region === ""
+            onClick={() => setSelectedRegions(new Set())}
+            className={`min-h-9 rounded-full border px-3 text-xs font-black transition-colors ${
+              selectedRegions.size === 0
                 ? "border-blue-600 bg-blue-600 text-white"
-                : "border-slate-200 bg-white text-slate-700"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
             }`}
           >
             전체 지역
@@ -145,17 +159,29 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
             <button
               key={item}
               type="button"
-              onClick={() => setRegion(item)}
-              className={`min-h-9 rounded-full border px-3 text-xs font-black ${
-                region === item
+              onClick={() => toggleRegion(item)}
+              className={`min-h-9 rounded-full border px-3 text-xs font-black transition-colors ${
+                selectedRegions.has(item)
                   ? "border-blue-600 bg-blue-600 text-white"
-                  : "border-slate-200 bg-white text-slate-700"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
               }`}
             >
               {item}
             </button>
           ))}
         </div>
+        {selectedRegions.size > 0 && (
+          <p className="mt-3 text-xs font-semibold text-blue-700">
+            선택된 지역: {Array.from(selectedRegions).join(", ")}
+            <button
+              type="button"
+              onClick={() => setSelectedRegions(new Set())}
+              className="ml-2 text-slate-400 underline hover:text-slate-600"
+            >
+              초기화
+            </button>
+          </p>
+        )}
       </div>
 
       <div className="mt-5 space-y-4">
@@ -187,15 +213,7 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
                     </p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  disabled={call.quote_closed_at != null && call.quote_closed_at !== ""}
-                  onClick={() => setOpenId((prev) => (prev === call.id ? null : call.id))}
-                  className="min-h-10 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm disabled:bg-slate-300"
-                  style={tapStyle}
-                >
-                  {call.quote_closed_at ? "견적 마감됨" : "견적 제출"}
-                </button>
+                {/* 비회원 견적 제출 버튼 제거 — 회원만 견적 제출 가능 */}
               </div>
               <div className="mt-4">
                 <QuoteStatusSummary
@@ -237,17 +255,6 @@ export function GuestQuotesClient({ initialQuotes }: { initialQuotes: GuestCall[
               <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800 ring-1 ring-blue-100">
                 회원 등록 시 지원금 견적 제출 가능
               </p>
-              {openId === call.id ? (
-                <div className="mt-4">
-                  <GuestQuoteForm
-                    applicationId={call.id}
-                    compact
-                    passengerCount={call.passenger_count}
-                    registerHref="/partner/register"
-                    quoteClosed={call.quote_closed_at != null && call.quote_closed_at !== ""}
-                  />
-                </div>
-              ) : null}
             </article>
           ))
         )}
