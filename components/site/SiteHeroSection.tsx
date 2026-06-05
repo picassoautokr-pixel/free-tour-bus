@@ -16,7 +16,7 @@ export function SiteHeroSection() {
           href="/client/dashboard"
           className="rounded-full px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/15 hover:text-white"
         >
-          로그인
+          내 견적 확인
         </Link>
       </header>
 
