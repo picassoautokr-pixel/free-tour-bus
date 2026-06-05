@@ -73,7 +73,11 @@ export async function GET(request: Request) {
       "id, created_at, receipt_number, application_type, trip_type, bus_grade, departure_region, departure, destination, stopovers, departure_date, departure_time, passenger_count, request_message, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_final_confirm_at",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
-    .order("created_at", { ascending: false })
+    .gte("departure_date", (() => {
+      const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })()) // 오늘(KST) 이후 출발일만 표시
+    .order("departure_date", { ascending: true })
     .limit(80);
 
   if (region) query = query.eq("departure_region", region);
