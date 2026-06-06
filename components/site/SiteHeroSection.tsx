@@ -25,14 +25,14 @@ export function SiteHeroSection() {
           무료전세버스 견적 신청
         </p>
         <p className="relative text-[1.9rem] font-black leading-[1.2] tracking-[-0.06em] text-slate-950 sm:text-[2.12rem]">
-          무료버스 견적을
+          버스비는 아끼고,
           <br />
-          바로 신청하세요
+          이동시간은 가치있게
         </p>
-        <p className="relative mt-6 text-[1rem] font-semibold leading-8 tracking-[-0.035em] text-slate-500 sm:text-[1.03rem]">
-          열심히 일한 당신은 전액 무료!~
+        <p className="relative mt-6 text-[1rem] font-semibold leading-7 tracking-[-0.035em] text-slate-500 sm:text-[1.03rem]">
+          15분 재테크 브리핑과 후원사 할인 지원금 혜택
           <br />
-          견적 신청만해도 전액 무료!~
+          기업·근로자 단체 특별 지원 프로그램
         </p>
         <div className="relative mt-6 grid gap-3 sm:mx-auto sm:max-w-[28rem] sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
