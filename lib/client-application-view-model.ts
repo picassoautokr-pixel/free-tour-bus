@@ -42,7 +42,6 @@ export type ClientQuote = {
   confirmed_driver_support?: number | null;
   confirmed_discount_price?: number | null;
   support_settlement_type?: string;
-  extension_support_amount?: number | null;
   preapproved_support_amount?: number | null;
   approved_support_amount?: number | null;
   sponsor_approved_support_amount?: number | null;

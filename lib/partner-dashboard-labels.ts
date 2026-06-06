@@ -39,7 +39,6 @@ export const LABEL = {
   supportDiscountExpectedPrice: "지원금 할인 예상가",
   supportDiscountPlannedPrice: "지원금 할인 예상가",
   supportDiscountAppliedPrice: "지원금 할인 적용가",
-  extensionSupport: "연장 지원금",
   finalDiscountPrice: "최종 할인 적용가",
   tripType: "운행",
   busGrade: "차량등급",
@@ -65,13 +64,10 @@ export const LABEL = {
   departureRegion: "출발지역",
   quoteCountRemaining: "남은 마감건수",
   selectedQuote: "선택 견적",
-  extensionRound: "연장 회차",
   customerExpectedSupport: "고객 예상 지원금",
   partnerExpectedSupport: "기사 예상 지원금",
   customerConfirmedSupportInput: "고객 확정 지원금",
   partnerConfirmedSupportDisplay: "기사 확정 지원금",
-  plannedExtensionSupport: "예상 연장 지원금",
-  confirmedExtensionSupport: "확정 연장 지원금",
   contractNumber: "계약번호",
   customerName: "고객 이름",
   customerPhone: "전화번호",
@@ -137,6 +133,5 @@ export const SETTLEMENT_OPTIONS = [
 export const SUPPORT_UI = {
   planned: "text-blue-600 bg-blue-50 ring-blue-100",
   confirmed: "text-emerald-600 bg-emerald-50 ring-emerald-100",
-  extension: "text-amber-600 bg-amber-50 ring-amber-100",
   unconfirmed: "text-slate-500 bg-slate-50 ring-slate-100",
 } as const;

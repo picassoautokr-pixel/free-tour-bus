@@ -53,15 +53,7 @@ export function PartnerSupportSummary({
         value={fmt(breakdown.customerPlannedSupport, "planned", breakdown)}
         tone="planned"
       />
-      <Tile
-        label={LABEL.extensionSupport}
-        value={fmt(
-          breakdown.extensionSupport,
-          breakdown.isConfirmed ? "final" : "planned",
-          breakdown,
-        )}
-        tone="extension"
-      />
+
       {showSettlement ? (
         <div className={`rounded-xl p-3 ring-1 sm:col-span-2 ${SUPPORT_UI.unconfirmed}`}>
           <p className="text-[11px] font-bold opacity-80">{LABEL.settlementMode}</p>
@@ -78,7 +70,7 @@ export function PartnerSupportSummary({
           <Tile
             label={LABEL.finalDiscountPrice}
             value={fmt(breakdown.finalDiscountAppliedPrice, "final", breakdown)}
-            tone="extension"
+            tone="confirmed"
           />
         </>
       ) : null}

@@ -228,7 +228,7 @@ export function SponsorCallCard({
                   {supportModel.display_rows.map((row) => (
                     <p key={row.label} className="flex justify-between gap-3">
                       <span className="font-bold text-slate-500">{row.label}</span>
-                      <span>{row.label === "연장회차" ? row.value ?? 0 : formatWon(row.value)}</span>
+                      <span>{formatWon(row.value)}</span>
                     </p>
                   ))}
                   <p className="flex justify-between gap-3">

@@ -72,14 +72,6 @@ function buildRows(breakdown: QuoteSupportBreakdown, mode: "full" | "customer"):
     emphasis: "confirmed",
   });
 
-  if (breakdown.extensionSupport != null) {
-    rows.push({
-      label: "연장 지원금",
-      value: fmt(breakdown.extensionSupport, breakdown.isConfirmed ? "final" : "planned"),
-      emphasis: "final",
-    });
-  }
-
   rows.push({
     label: "최종 할인 적용가",
     value: fmt(breakdown.finalDiscountAppliedPrice, "final"),

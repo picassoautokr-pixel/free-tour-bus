@@ -103,7 +103,6 @@ function mergeModelConfirmedIntoBreakdown(
     partnerConfirmedSupport: model.confirmed_driver_support,
     supportDiscountAppliedPrice: model.final_discount_price ?? b.supportDiscountAppliedPrice,
     finalDiscountAppliedPrice: model.final_discount_price ?? b.finalDiscountAppliedPrice,
-    extensionSupport: model.confirmed_extension_support,
     isConfirmed: true,
   };
 }
@@ -146,10 +145,6 @@ export function mapQuoteWithSupport(
     total_confirmed_support: model.confirmed_total_support,
     customer_confirmed_support: model.confirmed_customer_support,
     partner_confirmed_support: model.confirmed_driver_support,
-    extension_support:
-      model.support_stage === "지원확정"
-        ? model.confirmed_extension_support
-        : model.planned_extension_support,
     support_breakdown: b,
     sponsor_quote_enabled: b.sponsorQuoteEnabled,
   };

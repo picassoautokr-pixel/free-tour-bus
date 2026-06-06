@@ -66,7 +66,6 @@ export type DriverQuoteDetail = {
   support_discount_planned_price?: number | null;
   support_discount_applied_price?: number | null;
   final_discount_applied_price?: number | null;
-  extension_support_amount?: number | null;
   vehicle_type: string;
   available_time: string;
   message: string;

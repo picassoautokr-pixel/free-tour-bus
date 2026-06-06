@@ -3,7 +3,6 @@ import {
   buildQuoteFormPlannedPreview,
   buildQuoteSupportBreakdown,
   calculatePlannedDiscountPrice,
-  extensionPlannedFromPartnerSupport,
   formatSupportAmount,
   formatSupportAmountFromBreakdown,
   SETTLEMENT_TYPE_LABELS,
@@ -44,7 +43,6 @@ export type PartnerCallLike = {
   quote_limit_count: number | null;
   target_normal_price: number | null;
   target_member_price: number | null;
-  extension_round: number;
   sponsor_support_status?: string;
   sponsor_approved_support_amount?: number | null;
   sponsor_estimated_support_amount?: number | null;
@@ -72,7 +70,6 @@ export type PartnerMyQuoteLike = {
   planned_discount_price?: number | null;
   member_price?: number | null;
   client_reward_amount?: number | null;
-  extension_support_amount?: number | null;
   confirmed_total_support?: number | null;
   approved_support_amount?: number | null;
   sponsor_approved_support_amount?: number | null;
@@ -100,7 +97,6 @@ function quoteSupportInputFromCall(call: PartnerCallLike): QuoteSupportInput {
     client_reward_amount: q.client_reward_amount,
     support_discount_amount: q.support_discount_amount,
     driver_support_amount: q.driver_support_amount,
-    extension_support_amount: q.extension_support_amount,
     sponsor_approved_support_amount:
       q.sponsor_approved_support_amount ?? call.sponsor_approved_support_amount,
     sponsor_quote_enabled: q.sponsor_quote_enabled ?? true,
@@ -115,8 +111,6 @@ function supportBreakdownOptions(call: PartnerCallLike): BuildQuoteSupportBreakd
     applicationTotalPlannedSupport: app.totalPlanned,
     sponsorEstimatedSupportAmount: call.sponsor_estimated_support_amount,
     sponsorApprovedSupportAmount: call.sponsor_approved_support_amount,
-    applicationExtensionSupportAmount:
-      call.my_quote?.extension_support_amount ?? null,
   };
 }
 
@@ -178,7 +172,6 @@ export function quoteSupportDisplayModelForCall(
           approved_support_amount: call.sponsor_approved_support_amount,
         },
     support_breakdown: call.my_quote.support_breakdown,
-    extension_count: call.extension_round,
   });
 }
 
@@ -195,8 +188,6 @@ export function partnerSupportSummaryForCard(call: PartnerCallLike): {
 
   if (model) {
     const showConfirmed = model.support_stage === "지원확정";
-    // breakdown.isConfirmed은 stored snapshot 기반이라 모델 단계와 불일치할 수 있음.
-    // showConfirmed=true이면 isConfirmed를 강제 true로 동기화해 "미확정" 오표시를 방지.
     const effectiveBreakdown =
       breakdown && showConfirmed && !breakdown.isConfirmed
         ? { ...breakdown, isConfirmed: true as const }
@@ -285,13 +276,6 @@ export function applicationSupportTotals(call: PartnerCallLike) {
   };
 }
 
-export function extensionPlannedAmount(
-  partnerPlannedSupport: number,
-  extensionRound: number,
-): number {
-  return extensionPlannedFromPartnerSupport(partnerPlannedSupport, extensionRound);
-}
-
 export function departureTimestamp(call: PartnerCallLike): number | null {
   const date = call.departure_date.trim();
   if (!date) return null;
@@ -354,26 +338,14 @@ export function settlementLabel(type?: string): string {
   return SETTLEMENT_TYPE_LABELS[type === "ratio" ? "ratio" : "client_priority"];
 }
 
-/** 견적 작성 시 연장 지원금 (기사 예정 × 회차%) */
-export function quoteFormExtensionPreview(params: {
-  customerPlanned: number;
-  totalPlanned: number;
-  extensionRound: number;
-}): number {
-  const partnerPlanned = Math.max(params.totalPlanned - params.customerPlanned, 0);
-  return extensionPlannedAmount(partnerPlanned, params.extensionRound);
-}
-
 export function quoteFormPlannedDiscountPrice(params: {
   normalPrice: number;
   customerPlanned: number;
-  extensionPlanned: number;
 }): number {
   return (
     calculatePlannedDiscountPrice(
       params.normalPrice,
       params.customerPlanned,
-      params.extensionPlanned,
     ) ?? 0
   );
 }
@@ -383,19 +355,10 @@ export function quoteFormPlannedAmounts(params: {
   normalPrice: number | null;
   customerPlanned: number | null;
   totalPlanned: number | null;
-  extensionRound: number;
 }) {
-  const extensionFromRound =
-    params.totalPlanned != null && params.customerPlanned != null
-      ? extensionPlannedAmount(
-          Math.max(params.totalPlanned - params.customerPlanned, 0),
-          params.extensionRound,
-        )
-      : 0;
   return buildQuoteFormPlannedPreview({
     normalPrice: params.normalPrice,
     totalPlanned: params.totalPlanned,
     customerPlanned: params.customerPlanned,
-    extensionAmount: extensionFromRound,
   });
 }

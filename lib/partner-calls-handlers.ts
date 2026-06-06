@@ -190,7 +190,6 @@ type MyQuotePayload = {
   support_discount_planned_price?: number | null;
   support_discount_applied_price?: number | null;
   final_discount_applied_price?: number | null;
-  extension_support_amount?: number | null;
   support_breakdown?: QuoteSupportBreakdown;
   total_planned_support?: number | null;
   customer_planned_support?: number | null;
@@ -229,7 +228,7 @@ export async function handlePartnerCallsGet(
   } = await admin
     .from("applications")
     .select(
-      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_number, contract_pdf_generated_at, contract_pdf_url, client_price_selection_kind, selected_price_type, selected_price_label, selected_price",
+      "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_status, contract_started_at, client_contract_confirmed_at, driver_contract_confirmed_at, deposit_amount, deposit_status, deposit_confirmed_at, contract_memo, contract_number, contract_pdf_generated_at, contract_pdf_url, client_price_selection_kind, selected_price_type, selected_price_label, selected_price",
     )
     .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
     .order("created_at", { ascending: false })
@@ -238,7 +237,7 @@ export async function handlePartnerCallsGet(
     applicationsResult = await admin
       .from("applications")
       .select(
-        "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, extension_round, support_client_reward_ratio, support_driver_ratio, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_number",
+        "id, created_at, receipt_number, applicant_name, phone, application_type, trip_type, bus_grade, departure, departure_region, destination, stopovers, departure_date, departure_time, return_date, passenger_count, request_message, status, quote_status, quote_deadline_at, quote_limit_count, target_normal_price, target_member_price, quote_closed_at, auto_selected_quote_id, auto_selected_quote_source, final_selected_quote_id, final_selected_quote_source, auto_final_confirm_at, contact_revealed_at, contract_number",
       )
       .eq("application_type", APPLICATION_TYPE_NEW_BOOKING)
       .order("created_at", { ascending: false })
@@ -444,7 +443,6 @@ export async function handlePartnerCallsGet(
         applicationTotalPlannedSupport: sponsorEstimated ?? sponsorApproved,
         sponsorEstimatedSupportAmount: sponsorEstimated,
         sponsorApprovedSupportAmount: sponsorApproved,
-        applicationExtensionSupportAmount: parseInteger(row.extension_support_amount),
       });
       quotedByApplication.set(applicationId, {
         source: "member",
@@ -463,7 +461,6 @@ export async function handlePartnerCallsGet(
         final_customer_support_amount: supportFields.customer_confirmed_support,
         final_driver_support_amount: supportFields.partner_confirmed_support,
         final_member_price: supportFields.support_discount_applied_price,
-        extension_support_amount: supportFields.extension_support,
         support_breakdown: supportFields.support_breakdown,
         support_recalculated_at: safeText(row.support_recalculated_at),
         is_member_quote: row.is_member_quote === true,
@@ -614,9 +611,7 @@ export async function handlePartnerCallsGet(
         target_normal_price: parseInteger(row.target_normal_price),
         target_member_price: parseInteger(row.target_member_price),
         quote_closed_at: safeText(row.quote_closed_at, ""),
-        extension_round: parseInteger(row.extension_round) ?? 0,
-        support_client_reward_ratio: parseInteger(row.support_client_reward_ratio) ?? 0,
-        support_driver_ratio: parseInteger(row.support_driver_ratio) ?? 100,
+
         auto_selected_quote_id: autoSelectedQuoteId,
         auto_selected_quote_source: safeText(row.auto_selected_quote_source, ""),
         final_selected_quote_id: finalSelectedQuoteId,

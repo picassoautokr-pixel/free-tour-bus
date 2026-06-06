@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { CustomerSupportSheet } from "@/components/CustomerSupportSheet";
+import { NoticePopup } from "@/components/NoticePopup";
 import { ApplicationBenefitsSection } from "@/components/site/ApplicationBenefitsSection";
 import { ApplicationFormCard } from "@/components/site/ApplicationFormCard";
 import { ApplicationSuccessModal } from "@/components/site/ApplicationSuccessModal";
@@ -349,6 +350,8 @@ export default function Home() {
           }}
         />
       ) : null}
+
+      <NoticePopup onKakaoClick={() => setSupportSheetOpen(false)} />
 
       <CustomerSupportSheet
         open={supportSheetOpen}

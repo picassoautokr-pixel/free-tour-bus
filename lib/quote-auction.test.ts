@@ -11,8 +11,6 @@ import {
   nextBusinessStartAt,
   calculateAutoFinalConfirmAt,
   isApplicationQuoteAccepting,
-  supportRewardRatios,
-  supportRewardAmounts,
   quoteLifecycleSelectColumns,
   type QuoteAutomationSettings,
 } from "./quote-auction";
@@ -281,104 +279,6 @@ describe("isApplicationQuoteAccepting", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// supportRewardRatios
-// ---------------------------------------------------------------------------
-
-describe("supportRewardRatios", () => {
-  it("연장 0회(기본): client_reward_ratio=0, driver_ratio=100", () => {
-    const result = supportRewardRatios(0);
-    assert.equal(result.support_client_reward_ratio, 0);
-    assert.equal(result.support_driver_ratio, 100);
-  });
-
-  it("연장 1회: client_reward_ratio=20, driver_ratio=80", () => {
-    const result = supportRewardRatios(1);
-    assert.equal(result.support_client_reward_ratio, 20);
-    assert.equal(result.support_driver_ratio, 80);
-  });
-
-  it("연장 2회: client_reward_ratio=40, driver_ratio=60", () => {
-    const result = supportRewardRatios(2);
-    assert.equal(result.support_client_reward_ratio, 40);
-    assert.equal(result.support_driver_ratio, 60);
-  });
-
-  it("연장 3회 이상도 40/60을 유지한다", () => {
-    const result = supportRewardRatios(5);
-    assert.equal(result.support_client_reward_ratio, 40);
-    assert.equal(result.support_driver_ratio, 60);
-  });
-
-  it("음수 입력은 0회로 처리한다", () => {
-    const result = supportRewardRatios(-1);
-    assert.equal(result.support_client_reward_ratio, 0);
-    assert.equal(result.support_driver_ratio, 100);
-  });
-
-  it("문자열 숫자 입력도 처리한다", () => {
-    const result = supportRewardRatios("1");
-    assert.equal(result.support_client_reward_ratio, 20);
-    assert.equal(result.support_driver_ratio, 80);
-  });
-
-  it("null/undefined 입력은 0회로 처리한다", () => {
-    assert.equal(supportRewardRatios(null).support_client_reward_ratio, 0);
-    assert.equal(supportRewardRatios(undefined).support_client_reward_ratio, 0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// supportRewardAmounts
-// ---------------------------------------------------------------------------
-
-describe("supportRewardAmounts", () => {
-  it("10명, 연장 0회: 지원금 200,000원, 고객 보상 0원, 기사 지원 200,000원", () => {
-    const result = supportRewardAmounts({ passengerCount: 10, extensionRound: 0 });
-    assert.equal(result.estimated_support_amount, 200_000);
-    assert.equal(result.client_reward_amount, 0);
-    assert.equal(result.driver_support_amount, 200_000);
-  });
-
-  it("10명, 연장 1회: 고객 보상 20%, 기사 지원 80%", () => {
-    const result = supportRewardAmounts({ passengerCount: 10, extensionRound: 1 });
-    assert.equal(result.estimated_support_amount, 200_000);
-    assert.equal(result.client_reward_amount, 40_000);   // 200,000 × 20%
-    assert.equal(result.driver_support_amount, 160_000); // 200,000 × 80%
-  });
-
-  it("10명, 연장 2회: 고객 보상 40%, 기사 지원 60%", () => {
-    const result = supportRewardAmounts({ passengerCount: 10, extensionRound: 2 });
-    assert.equal(result.estimated_support_amount, 200_000);
-    assert.equal(result.client_reward_amount, 80_000);   // 200,000 × 40%
-    assert.equal(result.driver_support_amount, 120_000); // 200,000 × 60%
-  });
-
-  it("45명(최대): 지원금 800,000원으로 상한 적용", () => {
-    const result = supportRewardAmounts({ passengerCount: 45, extensionRound: 0 });
-    assert.equal(result.estimated_support_amount, 800_000);
-  });
-
-  it("0명: 지원금 0원", () => {
-    const result = supportRewardAmounts({ passengerCount: 0, extensionRound: 0 });
-    assert.equal(result.estimated_support_amount, 0);
-    assert.equal(result.client_reward_amount, 0);
-    assert.equal(result.driver_support_amount, 0);
-  });
-
-  it("client_reward_amount + driver_support_amount = estimated_support_amount", () => {
-    for (const round of [0, 1, 2, 3]) {
-      const result = supportRewardAmounts({ passengerCount: 15, extensionRound: round });
-      assert.equal(
-        result.client_reward_amount + result.driver_support_amount,
-        result.estimated_support_amount,
-        `연장 ${round}회에서 합계가 맞지 않음`,
-      );
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // quoteLifecycleSelectColumns
 // ---------------------------------------------------------------------------
 

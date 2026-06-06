@@ -12,7 +12,6 @@ test("confirmed client-priority support display model uses shared formula", () =
       selected_price_label: "지원금 할인 적용가",
       selected_price: 300_000,
       client_price_selection_kind: "support_confirmed_selected",
-      extension_round: 0,
     },
     quote: {
       price: 600_000,
@@ -25,7 +24,6 @@ test("confirmed client-priority support display model uses shared formula", () =
       approved_support_amount: 500_000,
       estimated_support_amount: 500_000,
     },
-    extension_count: 0,
   });
 
   assert.equal(model.support_stage, "지원확정");
@@ -34,7 +32,6 @@ test("confirmed client-priority support display model uses shared formula", () =
   assert.equal(model.confirmed_total_support, 500_000);
   assert.equal(model.confirmed_customer_support, 300_000);
   assert.equal(model.confirmed_driver_support, 200_000);
-  assert.equal(model.confirmed_extension_support, 0);
   assert.equal(model.final_discount_price, 300_000);
   assert.equal(model.selected_price_label, "지원금 할인 적용가");
   assert.equal(model.selected_price, 300_000);
@@ -45,8 +42,6 @@ test("confirmed client-priority support display model uses shared formula", () =
       ["확정 지원금", 500_000],
       ["고객 확정 지원금", 300_000],
       ["기사 확정 지원금", 200_000],
-      ["연장회차", 0],
-      ["확정 연장 지원금", 0],
       ["지원금 할인 적용가", 300_000],
     ],
   );

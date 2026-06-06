@@ -364,7 +364,6 @@ export async function loadPayload(admin: Admin, app: Record<string, unknown>) {
         confirmed_customer_support: support.confirmed_customer_support,
         confirmed_driver_support: support.confirmed_driver_support,
         support_settlement_type: safeText(row.support_settlement_type),
-        extension_support_amount: support.extension_support_amount,
         preapproved_support_amount: parseInteger(row.preapproved_support_amount),
         approved_support_amount:
           support.confirmed_total_support ?? parseInteger(row.approved_support_amount),

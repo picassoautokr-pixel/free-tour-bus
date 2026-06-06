@@ -361,7 +361,6 @@ async function loadMemberAndGuestQuotes(
       support_discount_planned_price: supportFields.support_discount_planned_price,
       member_price: supportFields.member_price,
       final_member_price: supportFields.support_discount_applied_price,
-      extension_support_amount: supportFields.extension_support,
       support_breakdown: supportFields.support_breakdown,
     };
   });

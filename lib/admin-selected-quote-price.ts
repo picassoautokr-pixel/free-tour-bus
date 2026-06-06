@@ -88,13 +88,9 @@ function confirmedDiscountFromQuote(
   const customer =
     breakdownField(breakdown, "confirmed_customer_support", "customerConfirmedSupport") ??
     parseInteger(quote.confirmed_customer_support);
-  const extension =
-    breakdownField(breakdown, "confirmed_extension_support", "extensionSupport") ??
-    parseInteger(quote.extension_support_amount) ??
-    0;
 
   if (normalPrice != null && customer != null) {
-    return Math.max(normalPrice - customer - Math.max(0, extension), 0);
+    return Math.max(normalPrice - customer, 0);
   }
   return null;
 }
@@ -119,13 +115,9 @@ function plannedDiscountFromQuote(
   const customer =
     breakdownField(breakdown, "planned_customer_support", "customerPlannedSupport") ??
     parseInteger(quote.planned_customer_support);
-  const extension =
-    breakdownField(breakdown, "planned_extension_support", "extensionSupport") ??
-    parseInteger(quote.extension_support_amount) ??
-    0;
 
   if (normalPrice != null && customer != null) {
-    return Math.max(normalPrice - customer - Math.max(0, extension), 0);
+    return Math.max(normalPrice - customer, 0);
   }
   return null;
 }
@@ -161,7 +153,6 @@ export function resolveAdminSelectedQuoteDisplay(params: {
     selected_price_type: params.application.selected_price_type,
     selected_price_label: params.application.selected_price_label,
     selected_price: params.application.selected_price,
-    extension_count: params.application.extension_round,
   });
   if (model.selected_quote_type === "할인견적") {
     return {

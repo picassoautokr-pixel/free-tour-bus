@@ -241,8 +241,7 @@ export function AdminDriverQuotesSection({
                 {application.quote_status}
               </p>
               <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-                현재 회차 {application.extension_round}회 · 자동연장{" "}
-                {application.extension_round}회 · 지원금 상태{" "}
+                지원금 상태{" "}
                 {application.final_selected_quote_id ? "가승인 후보 있음" : "검토중"}
               </p>
             </div>
@@ -274,20 +273,7 @@ export function AdminDriverQuotesSection({
                   : "—"}
               </dd>
             </div>
-            <div className="rounded-lg bg-amber-50 p-2">
-              <dt className="font-bold text-amber-600">고객 감사지원금</dt>
-              <dd className="mt-1 font-semibold text-amber-900">
-                {application.client_reward_amount.toLocaleString("ko-KR")}원 (
-                {application.support_client_reward_ratio}%)
-              </dd>
-            </div>
-            <div className="rounded-lg bg-blue-50 p-2">
-              <dt className="font-bold text-blue-600">기사 지원금</dt>
-              <dd className="mt-1 font-semibold text-blue-900">
-                {application.driver_support_amount.toLocaleString("ko-KR")}원 (
-                {application.support_driver_ratio}%)
-              </dd>
-            </div>
+
             <div className="rounded-lg bg-emerald-50 p-2">
               <dt className="font-bold text-emerald-600">연락처 공개</dt>
               <dd className="mt-1 font-semibold text-emerald-900">
@@ -306,18 +292,7 @@ export function AdminDriverQuotesSection({
                   {application.quote_status === "collecting" ? "견적 수집중" : "가승인 검토"}
                 </dd>
               </div>
-              <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">클라이언트 혜택</dt>
-                <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.client_reward_amount.toLocaleString("ko-KR")}원
-                </dd>
-              </div>
-              <div className="rounded-lg bg-white p-2">
-                <dt className="font-bold text-emerald-600">기사 지원</dt>
-                <dd className="mt-1 font-semibold text-emerald-950">
-                  {application.driver_support_amount.toLocaleString("ko-KR")}원
-                </dd>
-              </div>
+
               <div className="rounded-lg bg-white p-2">
                 <dt className="font-bold text-emerald-600">매칭 상태</dt>
                 <dd className="mt-1 font-semibold text-emerald-950">

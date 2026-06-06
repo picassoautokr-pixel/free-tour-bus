@@ -1,5 +1,4 @@
 import {
-  calculateExtensionSupport,
   calculateSupportDiscountPrice,
   calculateSupportDistribution,
   parseSupportInteger,
@@ -23,7 +22,6 @@ export type ConfirmedSupportSnapshot = {
   driver: number;
   discountPrice: number;
   finalPrice: number;
-  extensionSupport: number | null;
 };
 
 export type QuoteSupportRow = {
@@ -41,7 +39,6 @@ export type QuoteSupportRow = {
   confirmed_driver_support?: unknown;
   confirmed_discount_price?: unknown;
   confirmed_final_price?: unknown;
-  extension_support_amount?: unknown;
   preapproved_support_amount?: unknown;
   estimated_support_amount?: unknown;
   sponsor_support_amount?: unknown;
@@ -86,7 +83,6 @@ export function readStoredConfirmedSupport(
     driver,
     discountPrice,
     finalPrice,
-    extensionSupport: parseSupportInteger(row.extension_support_amount),
   };
 }
 
@@ -96,8 +92,6 @@ export function computeConfirmedFromPlanned(params: {
   settlementType: SupportSettlementType;
   planned: PlannedSupportSnapshot;
   confirmedTotal: number;
-  extensionApplied?: boolean;
-  extensionSupportAmount?: number | null;
 }): ConfirmedSupportSnapshot | { error: string } {
   const confirmedTotal = Math.max(0, Math.trunc(params.confirmedTotal));
   if (confirmedTotal <= 0) {
@@ -120,25 +114,12 @@ export function computeConfirmedFromPlanned(params: {
     return { error: "지원금 할인 적용가를 계산할 수 없습니다." };
   }
 
-  const extensionSupport =
-    params.extensionSupportAmount != null
-      ? params.extensionSupportAmount
-      : params.extensionApplied === true
-        ? calculateExtensionSupport(distributed.partnerAmount)
-        : null;
-
-  const finalPrice =
-    extensionSupport != null
-      ? Math.max(discountPrice - extensionSupport, 0)
-      : discountPrice;
-
   return {
     total: confirmedTotal,
     customer: distributed.customerAmount,
     driver: distributed.partnerAmount,
     discountPrice,
-    finalPrice,
-    extensionSupport,
+    finalPrice: discountPrice,
   };
 }
 
@@ -162,8 +143,6 @@ export function buildPlannedDbPayload(planned: PlannedSupportSnapshot) {
 
 /** 확정 필드만 갱신 — planned_* / customer_support_amount 등 예정 컬럼 미포함 */
 export function buildConfirmedDbPayload(confirmed: ConfirmedSupportSnapshot) {
-  // confirmed_discount_price / final_member_price 모두 extension까지 차감한 최종 적용가로 저장
-  // (extension이 없으면 finalPrice === discountPrice)
   return {
     confirmed_total_support: confirmed.total,
     confirmed_customer_support: confirmed.customer,
@@ -174,13 +153,12 @@ export function buildConfirmedDbPayload(confirmed: ConfirmedSupportSnapshot) {
     final_customer_support_amount: confirmed.customer,
     final_driver_support_amount: confirmed.driver,
     final_member_price: confirmed.finalPrice,
-    extension_support_amount: confirmed.extensionSupport,
     support_recalculated_at: new Date().toISOString(),
   };
 }
 
 export const DRIVER_QUOTE_SUPPORT_SELECT =
-  "id, price, support_breakdown, support_settlement_type, extension_support_amount, extension_applied";
+  "id, price, support_breakdown, support_settlement_type";
 
 export function clearConfirmedDbPayload() {
   return {
@@ -193,6 +171,7 @@ export function clearConfirmedDbPayload() {
     final_customer_support_amount: null,
     final_driver_support_amount: null,
     final_member_price: null,
-    extension_support_amount: null,
   };
 }
+
+export { resolveSettlementType };

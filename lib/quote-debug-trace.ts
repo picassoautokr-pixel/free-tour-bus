@@ -23,7 +23,6 @@ import {
   calculateTotalPlannedSupport,
   DEFAULT_MAX_SUPPORT_AMOUNT,
   DEFAULT_SUPPORT_PER_PERSON,
-  extensionPlannedFromPartnerSupport,
   parseSupportInteger,
   resolveConfirmedTotalSupport,
   resolvePlannedSupportSnapshot,
@@ -192,8 +191,6 @@ function buildSupportSections(
   const maxCase = parseSupportInteger(rule.max_support_amount) ?? DEFAULT_MAX_SUPPORT_AMOUNT;
   const maxPassengers = parseSupportInteger(rule.max_passenger_count) ?? 0;
   const dailyBudget = parseSupportInteger(rule.daily_budget);
-  const extensionRound = parseSupportInteger(app.extension_round) ?? 0;
-
   const eligiblePassengers =
     maxPassengers > 0 ? Math.min(passengers, maxPassengers) : passengers;
   const rawPlanned = eligiblePassengers * perPerson + perCase;
@@ -217,12 +214,6 @@ function buildSupportSections(
       parseSupportInteger(pre.approved_support_amount) ??
       parseSupportInteger(app.sponsor_approved_support_amount),
   });
-
-  const extPct = extensionRound === 1 ? 20 : extensionRound >= 2 ? 40 : 0;
-  const extPlanned =
-    plannedSnap != null
-      ? extensionPlannedFromPartnerSupport(plannedSnap.driver, extensionRound)
-      : breakdown.extensionSupport;
 
   const serviceRegions = Array.isArray(rule.service_regions)
     ? (rule.service_regions as unknown[]).map(String)
@@ -377,32 +368,12 @@ function buildSupportSections(
       calculator: "calculatePlannedDriverSupport()",
       result: breakdown.partnerPlannedSupport,
     }),
-    entry("extension_round", "17. 연장 회차", {
-      value: extensionRound,
-      fields: ["application.extension_round"],
-      calculator: "(원본)",
-      result: extensionRound,
-    }),
-    entry("extension_pct", "18. 연장 지원금 적용 %", {
-      value: extPct,
-      fields: ["application.extension_round"],
-      formula: "1회차=20%, 2회차+=40% (기사 예정 지원금 × %)",
-      calculator: "extensionPlannedFromPartnerSupport()",
-      result: `${extPct}%`,
-    }),
-    entry("extension_planned", "19. 예상 연장 지원금", {
-      value: extPlanned,
-      fields: ["quote.extension_support_amount", "breakdown.extensionSupport"],
-      calculator: "extensionPlannedFromPartnerSupport(partnerPlanned, extensionRound)",
-      result: extPlanned,
-    }),
-    entry("total_customer_planned", "20. 총 고객 예상 지원금", {
-      value:
-        (breakdown.customerPlannedSupport ?? 0) + (extPlanned ?? 0),
-      fields: ["customerPlannedSupport", "extensionSupport"],
-      formula: "고객 예상 지원금 + 예상 연장 지원금",
-      calculator: "(합산)",
-      result: (breakdown.customerPlannedSupport ?? 0) + (extPlanned ?? 0),
+    entry("total_customer_planned", "17. 총 고객 예상 지원금", {
+      value: breakdown.customerPlannedSupport ?? 0,
+      fields: ["customerPlannedSupport"],
+      formula: "고객 예상 지원금",
+      calculator: "(직접)",
+      result: breakdown.customerPlannedSupport ?? 0,
     }),
     entry("discount_planned", "21. 지원금 할인 예정가", {
       value: breakdown.supportDiscountPlannedPrice,
@@ -463,22 +434,12 @@ function buildSupportSections(
       calculator: "computeConfirmedFromPlanned()",
       result: breakdown.partnerConfirmedSupport,
     }),
-    entry("extension_confirmed", "27. 확정 연장 지원금", {
-      value: breakdown.extensionSupport,
-      fields: ["breakdown.extensionSupport", "quote.extension_support_amount"],
-      calculator: "calculateExtensionSupport(partnerConfirmed)",
-      result: breakdown.extensionSupport,
-    }),
-    entry("total_customer_confirmed", "28. 총 고객 확정 지원금", {
-      value:
-        (breakdown.customerConfirmedSupport ?? 0) +
-        (breakdown.isConfirmed ? (breakdown.extensionSupport ?? 0) : 0),
-      fields: ["customerConfirmedSupport", "extensionSupport"],
-      formula: "고객 확정 + 확정 연장",
-      calculator: "(합산)",
-      result:
-        (breakdown.customerConfirmedSupport ?? 0) +
-        (breakdown.isConfirmed ? (breakdown.extensionSupport ?? 0) : 0),
+    entry("total_customer_confirmed", "27. 총 고객 확정 지원금", {
+      value: breakdown.customerConfirmedSupport ?? 0,
+      fields: ["customerConfirmedSupport"],
+      formula: "고객 확정 지원금",
+      calculator: "(직접)",
+      result: breakdown.customerConfirmedSupport ?? 0,
     }),
     entry("discount_applied", "29. 지원금 할인 적용가", {
       value: breakdown.supportDiscountAppliedPrice ?? breakdown.finalDiscountAppliedPrice,

@@ -217,8 +217,8 @@ describe("applyClientPartnerQuoteApiFields", () => {
     it("application.target_normal_price로 price를 채운다", () => {
       const quote = makeClientQuote({ source: "member", price: null });
       const result = applyClientPartnerQuoteApiFields(quote, {
-        sponsor_support_status: null,
-        sponsor_approved_support_amount: null,
+        sponsor_support_status: undefined,
+        sponsor_approved_support_amount: undefined,
         target_normal_price: 1500000,
         target_member_price: null,
       });
@@ -320,7 +320,7 @@ describe("applyClientPartnerQuoteApiFields", () => {
         support_breakdown: breakdown as never,
       });
       const result = applyClientPartnerQuoteApiFields(quote);
-      const bd = result.support_breakdown as typeof breakdown & {
+      const bd = result.support_breakdown as unknown as typeof breakdown & {
         confirmed_total_support: number | null;
       };
       assert.ok(bd != null);

@@ -74,7 +74,6 @@ export function PartnerCallExpandPanel({
     target_normal_price: number | null;
     target_member_price: number | null;
     request_message?: string;
-    extension_round: number;
     sponsors?: Array<{
       id: string;
       company_name: string;
@@ -135,7 +134,6 @@ export function PartnerCallExpandPanel({
     normalPrice: quotePriceValue,
     customerPlanned: customerPlannedInput,
     totalPlanned: totalPlannedForForm > 0 ? totalPlannedForForm : null,
-    extensionRound: call.extension_round,
   });
 
   // 지원확정 상태에서 폼 입력값으로 확정 수치를 동적 계산 (DB 저장 전 미리보기)
@@ -143,18 +141,12 @@ export function PartnerCallExpandPanel({
     if (!sponsorConfirmed || confirmedTotal == null || customerPlannedInput == null) {
       return null;
     }
-    const driverBase = Math.max(confirmedTotal - customerPlannedInput, 0);
-    const extensionRound = call.extension_round;
-    const extension =
-      extensionRound > 0 && driverBase > 0
-        ? Math.min(Math.round(driverBase * extensionRound * 0.2), driverBase)
-        : 0;
-    const driver = Math.max(driverBase - extension, 0);
+    const driver = Math.max(confirmedTotal - customerPlannedInput, 0);
     const discountPrice =
       quotePriceValue != null
-        ? Math.max(quotePriceValue - customerPlannedInput - extension, 0)
+        ? Math.max(quotePriceValue - customerPlannedInput, 0)
         : null;
-    return { driver, extension, discountPrice };
+    return { driver, discountPrice };
   })();
 
   const supportInputLimit =
@@ -292,7 +284,6 @@ export function PartnerCallExpandPanel({
                       </span>
                     ) : null}
                   </label>
-                  <Field label={LABEL.extensionRound}>{call.extension_round}</Field>
                   <Field
                     label={
                       sponsorConfirmed
@@ -310,23 +301,6 @@ export function PartnerCallExpandPanel({
                                 null),
                         )
                       : formatWon(formPlannedPreview.partnerPlannedSupport)}
-                  </Field>
-                  <Field
-                    label={
-                      sponsorConfirmed
-                        ? LABEL.confirmedExtensionSupport
-                        : LABEL.plannedExtensionSupport
-                    }
-                  >
-                    {sponsorConfirmed
-                      ? formatWon(
-                          isEditMode
-                            ? (formConfirmedPreview?.extension ?? null)
-                            : (supportModel?.confirmed_extension_support != null
-                                ? supportModel.confirmed_extension_support
-                                : (formConfirmedPreview?.extension ?? null)),
-                        )
-                      : formatWon(formPlannedPreview.extensionSupport)}
                   </Field>
                   <Field label={discountLabel}>
                     {formatWon(
@@ -467,7 +441,6 @@ export function PartnerCallExpandPanel({
             </Field>
             {breakdown && breakdown.calculationStatus === "ok" ? (
               <>
-                <Field label={LABEL.extensionRound}>{call.extension_round}</Field>
                 <Field label={LABEL.settlementMode}>
                   {settlementLabel(breakdown.settlementType)}
                 </Field>
@@ -501,15 +474,6 @@ export function PartnerCallExpandPanel({
                     breakdown,
                   )}
                 </Field>
-                {(breakdown.extensionSupport ?? 0) > 0 ? (
-                  <Field label={LABEL.extensionSupport}>
-                    {fmt(
-                      breakdown.extensionSupport,
-                      breakdown.isConfirmed ? "final" : "planned",
-                      breakdown,
-                    )}
-                  </Field>
-                ) : null}
                 <Field label={discountLabel}>{formatWon(discountAmount)}</Field>
               </>
             ) : null}

@@ -141,7 +141,6 @@ export function buildAdminMemberQuoteSupportDisplay(
         }
       : null,
     support_breakdown: ctx.quote.support_breakdown,
-    extension_count: ctx.application.extension_round,
   });
 
   const fallbacksUsed = [
@@ -190,10 +189,7 @@ export function buildAdminMemberQuoteSupportDisplay(
           ? model.final_discount_price
           : model.planned_discount_price,
       confirmed_customer_support_source: model.debug.customer_support_source,
-      confirmed_customer_support_formula:
-        model.debug.customer_support_source === "derived:normal-final_discount-extension"
-          ? "normal_price - final_discount_price - confirmed_extension_support"
-          : null,
+      confirmed_customer_support_formula: null,
       confirmed_customer_support_derived_preview: model.confirmed_customer_support,
       confirmed_driver_support: model.confirmed_driver_support,
       fallbacks_used: fallbacksUsed,
@@ -210,7 +206,6 @@ function buildAdminMemberQuoteDebug(
     discount: number | null;
     customerDisplay: ReturnType<typeof resolveConfirmedCustomerSupportDisplay> | null;
     driverConfirmed: number | null;
-    extensionRaw: number | null;
     normalPrice: number | null;
   },
 ): AdminMemberQuoteDebug {
@@ -239,7 +234,6 @@ function buildAdminMemberQuoteDebug(
       ? deriveCustomerConfirmedSupport({
           normalPrice: resolved.normalPrice,
           finalDiscountPrice: resolved.discount,
-          confirmedExtensionSupport: resolved.extensionRaw,
         })
       : null;
 

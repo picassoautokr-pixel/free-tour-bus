@@ -15,7 +15,6 @@ import {
 import { parseInteger, safeText, sponsorSupportTypeLabel } from "@/lib/sponsor";
 import {
   calculateSupportDiscountPrice,
-  extensionPlannedFromPartnerSupport,
   resolveSettlementType,
   type QuoteSupportBreakdown,
   type SupportSettlementType,
@@ -50,13 +49,11 @@ export type SupportBreakdownSnapshot = {
   planned_total_support: number | null;
   planned_customer_support: number | null;
   planned_driver_support: number | null;
-  planned_extension_support: number | null;
   planned_discount_price: number | null;
 
   confirmed_total_support: number | null;
   confirmed_customer_support: number | null;
   confirmed_driver_support: number | null;
-  confirmed_extension_support: number | null;
   /** 지원금 할인 적용가 (normal_price - confirmed_customer_support) */
   confirmed_discount_price?: number | null;
   final_discount_price: number | null;
@@ -72,7 +69,6 @@ export type SupportBreakdownSnapshot = {
   totalConfirmedSupport?: number | null;
   customerConfirmedSupport?: number | null;
   partnerConfirmedSupport?: number | null;
-  confirmedExtensionSupport?: number | null;
   supportDiscountAppliedPrice?: number | null;
   finalDiscountAppliedPrice?: number | null;
   isConfirmed?: boolean;
@@ -122,13 +118,8 @@ export function buildPlannedSupportBreakdownSnapshot(params: {
   planned: PlannedSupportSnapshot;
   supportMode?: SupportSettlementType;
   sponsorQuoteEnabled?: boolean;
-  extensionRound?: number;
 }): SupportBreakdownSnapshot {
   const normal = params.normalPrice;
-  const plannedExtension =
-    params.extensionRound != null && params.extensionRound > 0
-      ? extensionPlannedFromPartnerSupport(params.planned.driver, params.extensionRound)
-      : 0;
 
   return {
     version: 1,
@@ -141,12 +132,10 @@ export function buildPlannedSupportBreakdownSnapshot(params: {
     planned_total_support: params.planned.total,
     planned_customer_support: params.planned.customer,
     planned_driver_support: params.planned.driver,
-    planned_extension_support: plannedExtension,
     planned_discount_price: params.planned.discountPrice,
     confirmed_total_support: null,
     confirmed_customer_support: null,
     confirmed_driver_support: null,
-    confirmed_extension_support: null,
     final_discount_price: null,
     calculation_status: normal != null && normal > 0 ? "ok" : "incomplete",
   };
@@ -160,7 +149,6 @@ export function applyConfirmedToSupportBreakdownSnapshot(
     driver: number;
     discountPrice: number;
     finalPrice: number;
-    extensionSupport: number | null;
   },
 ): SupportBreakdownSnapshot {
   const now = new Date().toISOString();
@@ -171,7 +159,6 @@ export function applyConfirmedToSupportBreakdownSnapshot(
     confirmed_total_support: confirmed.total,
     confirmed_customer_support: confirmed.customer,
     confirmed_driver_support: confirmed.driver,
-    confirmed_extension_support: confirmed.extensionSupport,
     confirmed_discount_price: confirmed.discountPrice,
     final_discount_price: confirmed.finalPrice,
     planned_discount_price:
@@ -185,7 +172,6 @@ export function applyConfirmedToSupportBreakdownSnapshot(
     totalConfirmedSupport: confirmed.total,
     customerConfirmedSupport: confirmed.customer,
     partnerConfirmedSupport: confirmed.driver,
-    confirmedExtensionSupport: confirmed.extensionSupport ?? null,
     supportDiscountAppliedPrice: confirmed.discountPrice,
     finalDiscountAppliedPrice: confirmed.finalPrice,
     isConfirmed: true,
@@ -247,9 +233,6 @@ export function snapshotToQuoteSupportBreakdown(
     customerConfirmedSupport: snapshot.confirmed_customer_support,
     partnerConfirmedSupport: snapshot.confirmed_driver_support,
     supportDiscountAppliedPrice: isConfirmed ? supportDiscountApplied : null,
-    extensionSupport: isConfirmed
-      ? snapshot.confirmed_extension_support
-      : snapshot.planned_extension_support,
     finalDiscountAppliedPrice: snapshot.final_discount_price,
     isConfirmed,
   };
@@ -258,7 +241,6 @@ export function snapshotToQuoteSupportBreakdown(
 export function buildConfirmedSnapshotFromPlanned(
   snapshot: SupportBreakdownSnapshot,
   confirmedTotal: number,
-  options?: { extensionApplied?: boolean; extensionSupportAmount?: number | null },
 ): SupportBreakdownSnapshot | null {
   const normal = snapshot.normal_price;
   if (normal == null || normal <= 0) return null;
@@ -285,8 +267,6 @@ export function buildConfirmedSnapshotFromPlanned(
     settlementType: snapshot.support_mode,
     planned,
     confirmedTotal,
-    extensionApplied: options?.extensionApplied,
-    extensionSupportAmount: options?.extensionSupportAmount,
   });
   if ("error" in computed) {
     return {
@@ -370,7 +350,7 @@ export async function refreshApplicationSupportBreakdownSnapshot(
   const { data: application } = await admin
     .from("applications")
     .select(
-      "id, passenger_count, target_normal_price, target_member_price, extension_round, support_client_reward_ratio",
+      "id, passenger_count, target_normal_price, target_member_price, support_client_reward_ratio",
     )
     .eq("id", id)
     .maybeSingle();
@@ -379,7 +359,6 @@ export async function refreshApplicationSupportBreakdownSnapshot(
   const app = application as Record<string, unknown>;
   const normalPrice = parseInteger(app.target_normal_price);
   const targetMember = parseInteger(app.target_member_price);
-  const extensionRound = parseInteger(app.extension_round) ?? 0;
 
   const { rule, totalPlanned } = await loadPrimaryPreapprovalRule(admin, id);
   if (totalPlanned <= 0 && !rule) return null;
@@ -419,12 +398,11 @@ export async function refreshApplicationSupportBreakdownSnapshot(
     planned,
     supportMode: "client_priority",
     sponsorQuoteEnabled: totalPlanned > 0,
-    extensionRound,
   });
 
   logSupportSnapshotDebug("refreshApplicationSupportBreakdownSnapshot", {
     application_id: id,
-    input: { normalPrice, targetMember, totalPlanned, customerPlanned, driverPlanned, extensionRound },
+    input: { normalPrice, targetMember, totalPlanned, customerPlanned, driverPlanned },
     calculated_planned: planned,
     saved_snapshot: snapshot,
   });
@@ -469,7 +447,6 @@ export async function freezeQuotePlannedSupportBreakdown(
     normalPrice: number;
     planned: PlannedSupportSnapshot;
     supportMode?: SupportSettlementType;
-    extensionRound?: number;
   },
 ): Promise<SupportBreakdownSnapshot> {
   const snapshot = buildPlannedSupportBreakdownSnapshot({
@@ -478,7 +455,6 @@ export async function freezeQuotePlannedSupportBreakdown(
     normalPrice: params.normalPrice,
     planned: params.planned,
     supportMode: params.supportMode,
-    extensionRound: params.extensionRound,
   });
   logSupportSnapshotDebug("freezeQuotePlannedSupportBreakdown", {
     quote_id: quoteId,
@@ -496,7 +472,7 @@ async function refreshDriverQuotesSupportBreakdownForApplication(
 ): Promise<void> {
   const { data: quotes } = await admin
     .from("driver_quotes")
-    .select("id, price, support_breakdown, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, support_settlement_type, sponsor_quote_enabled, extension_support_amount")
+    .select("id, price, support_breakdown, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, support_settlement_type, sponsor_quote_enabled")
     .eq("application_id", applicationId);
 
   for (const raw of Array.isArray(quotes) ? quotes : []) {
@@ -615,7 +591,7 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
   const { data: quotes } = await admin
     .from("driver_quotes")
     .select(
-      "id, price, support_breakdown, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price, extension_support_amount, extension_applied",
+      "id, price, support_breakdown, support_settlement_type, planned_total_support, planned_customer_support, planned_driver_support, planned_discount_price",
     )
     .eq("application_id", applicationId);
 
@@ -623,7 +599,6 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
     const row = raw as QuoteSupportRow & {
       id?: string;
       support_breakdown?: unknown;
-      extension_applied?: unknown;
     };
     const quoteId = safeText(row.id);
     if (!quoteId) continue;
@@ -700,13 +675,8 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
       });
     }
 
-    const extensionSupportAmount = parseInteger(row.extension_support_amount);
-
     // --- 확정 스냅샷 계산 ---
-    const updated = buildConfirmedSnapshotFromPlanned(snapshot, confirmedTotal, {
-      extensionApplied: row.extension_applied === true,
-      extensionSupportAmount,
-    });
+    const updated = buildConfirmedSnapshotFromPlanned(snapshot, confirmedTotal);
     if (!updated) {
       logSupportSnapshotDebug("refreshQuoteSnapshotsAfterSponsorConfirm.merge_failed", {
         quote_id: quoteId,
@@ -743,8 +713,6 @@ export async function refreshQuoteSnapshotsAfterSponsorConfirm(
         finalPrice: snapshot.planned_discount_price ?? 0,
       },
       confirmedTotal,
-      extensionApplied: row.extension_applied === true,
-      extensionSupportAmount,
     });
     if (!("error" in confirmed)) {
       await admin

@@ -266,7 +266,6 @@ export async function handlePartnerQuotePost(
     sponsorSummary.status === "none" && totalPlannedSupport > 0
       ? "preapproved"
       : sponsorSummary.status;
-  const extensionRound = parsePrice(activeApplication.extension_round) ?? 0;
   const confirmedPayload =
     confirmedTotal > 0
       ? (() => {
@@ -275,7 +274,6 @@ export async function handlePartnerQuotePost(
             settlementType: resolveSettlementType(supportSettlementType),
             planned: plannedSnapshot,
             confirmedTotal,
-            extensionApplied: extensionRound > 0,
           });
           return "error" in computed ? null : buildConfirmedDbPayload(computed);
         })()
@@ -630,18 +628,11 @@ export async function handlePartnerQuotePost(
         .maybeSingle();
       rule = ruleRow ? (ruleRow as SponsorRuleRecord) : null;
     }
-    const { data: appExt } = await admin
-      .from("applications")
-      .select("extension_round")
-      .eq("id", applicationId)
-      .maybeSingle();
     await freezeQuotePlannedSupportBreakdown(admin, insertedId, {
       rule,
       normalPrice: price,
       planned: plannedSnapshot,
       supportMode: resolveSettlementType(supportSettlementType),
-      extensionRound:
-        parsePrice((appExt as Record<string, unknown> | null)?.extension_round) ?? 0,
     });
   }
 
@@ -744,10 +735,6 @@ export async function handlePartnerQuotePatch(
     sponsorSummary.status === "none" && totalPlannedSupport > 0
       ? "preapproved"
       : sponsorSummary.status;
-  const patchExtensionRound =
-    parsePrice(
-      (application as unknown as Record<string, unknown> | null)?.extension_round,
-    ) ?? 0;
   const confirmedPayload =
     confirmedTotal > 0
       ? (() => {
@@ -756,7 +743,6 @@ export async function handlePartnerQuotePatch(
             settlementType: resolveSettlementType(supportSettlementType),
             planned: plannedSnapshot,
             confirmedTotal,
-            extensionApplied: patchExtensionRound > 0,
           });
           return "error" in computed ? null : buildConfirmedDbPayload(computed);
         })()
@@ -806,7 +792,6 @@ export async function handlePartnerQuotePatch(
       "final_customer_support_amount",
       "final_driver_support_amount",
       "final_member_price",
-      "extension_support_amount",
       "support_recalculated_at",
     ];
     const fallbackPayload: Record<string, unknown> = { ...updatePayload };
@@ -839,7 +824,6 @@ export async function handlePartnerQuotePatch(
     normalPrice: price,
     planned: plannedSnapshot,
     supportMode: resolveSettlementType(supportSettlementType),
-    extensionRound: patchExtensionRound,
   });
   if (confirmedTotal > 0) {
     await refreshQuoteSnapshotsAfterSponsorConfirm(admin, applicationId);

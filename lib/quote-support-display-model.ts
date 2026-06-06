@@ -45,9 +45,6 @@ export type QuoteSupportDisplayModel = {
   confirmed_customer_support: number | null;
   planned_driver_support: number | null;
   confirmed_driver_support: number | null;
-  extension_count: number;
-  planned_extension_support: number;
-  confirmed_extension_support: number;
   planned_discount_price: number | null;
   final_discount_price: number | null;
   selected_price_label: string;
@@ -68,7 +65,6 @@ export type QuoteSupportDisplayInput = {
   selected_price_type?: unknown;
   selected_price?: unknown;
   selected_price_label?: unknown;
-  extension_count?: unknown;
 };
 
 type ResolvedNumber = {
@@ -177,14 +173,6 @@ function resolveStage(params: {
   return { stage: "지원검토", source: "default" };
 }
 
-function calculateExtension(partnerSupport: number, extensionCount: number): number {
-  if (partnerSupport <= 0 || extensionCount <= 0) return 0;
-  return Math.min(
-    Math.round(partnerSupport * extensionCount * 0.2),
-    partnerSupport,
-  );
-}
-
 function calculateRatioCustomerSupport(params: {
   plannedCustomer: number | null;
   plannedTotal: number | null;
@@ -269,12 +257,6 @@ export function buildQuoteSupportDisplayModel(
     confirmedTotal: confirmedTotal.value,
   });
 
-  const extensionCount =
-    parseAmount(input.extension_count) ??
-    parseAmount(app.extension_round) ??
-    parseAmount(app.extension_count) ??
-    0;
-
   const settlement = settlementType(
     quote.support_settlement_type ??
       breakdown?.support_mode ??
@@ -297,15 +279,6 @@ export function buildQuoteSupportDisplayModel(
       ? Math.max(plannedTotal.value - plannedCustomer.value, 0)
       : null);
 
-  const plannedExtensionRaw = pickAmount([
-    [
-      "support_breakdown.planned_extension_support",
-      readBreakdownAmount(breakdown, "planned_extension_support", "plannedExtensionSupport"),
-    ],
-  ]);
-  const plannedExtension =
-    plannedExtensionRaw.value ?? calculateExtension(plannedDriver ?? 0, extensionCount);
-
   const plannedDiscountRaw = pickAmount([
     [
       "support_breakdown.planned_discount_price",
@@ -318,16 +291,8 @@ export function buildQuoteSupportDisplayModel(
   const plannedDiscount =
     plannedDiscountRaw.value ??
     (normal.value != null && plannedCustomer.value != null
-      ? Math.max(normal.value - plannedCustomer.value - plannedExtension, 0)
+      ? Math.max(normal.value - plannedCustomer.value, 0)
       : null);
-
-  const confirmedExtensionRaw = pickAmount([
-    [
-      "support_breakdown.confirmed_extension_support",
-      readBreakdownAmount(breakdown, "confirmed_extension_support", "extensionSupport"),
-    ],
-    ["quote.extension_support_amount", quote.extension_support_amount],
-  ]);
 
   const confirmedCustomerStored = pickAmount([
     [
@@ -357,7 +322,6 @@ export function buildQuoteSupportDisplayModel(
     ["quote.final_member_price", quote.final_member_price],
   ]);
 
-  let confirmedExtension = confirmedExtensionRaw.value ?? 0;
   let confirmedCustomer = confirmedCustomerStored.value;
   let customerSupportSource = confirmedCustomerStored.source;
 
@@ -382,20 +346,16 @@ export function buildQuoteSupportDisplayModel(
     finalDiscountStored.value != null
   ) {
     confirmedCustomer = Math.max(
-      normal.value - finalDiscountStored.value - confirmedExtension,
+      normal.value - finalDiscountStored.value,
       0,
     );
-    customerSupportSource = "derived:normal-final_discount-extension";
+    customerSupportSource = "derived:normal-final_discount";
   }
 
   const driverBeforeExtension =
     confirmedTotal.value != null && confirmedCustomer != null
       ? Math.max(confirmedTotal.value - confirmedCustomer, 0)
       : null;
-
-  if (confirmedExtensionRaw.value == null && driverBeforeExtension != null) {
-    confirmedExtension = calculateExtension(driverBeforeExtension, extensionCount);
-  }
 
   const confirmedDriverStored = pickAmount([
     [
@@ -407,14 +367,12 @@ export function buildQuoteSupportDisplayModel(
   ]);
   const confirmedDriver =
     confirmedDriverStored.value ??
-    (driverBeforeExtension != null
-      ? Math.max(driverBeforeExtension - confirmedExtension, 0)
-      : null);
+    driverBeforeExtension;
 
   const finalDiscount =
     finalDiscountStored.value ??
     (normal.value != null && confirmedCustomer != null
-      ? Math.max(normal.value - confirmedCustomer - confirmedExtension, 0)
+      ? Math.max(normal.value - confirmedCustomer, 0)
       : null);
 
   const selectedSource = selectedPriceSource(input);
@@ -447,8 +405,6 @@ export function buildQuoteSupportDisplayModel(
           { label: "확정 지원금", value: confirmedTotal.value },
           { label: "고객 확정 지원금", value: confirmedCustomer },
           { label: "기사 확정 지원금", value: confirmedDriver },
-          { label: "연장회차", value: extensionCount },
-          { label: "확정 연장 지원금", value: confirmedExtension },
           { label: "지원금 할인 적용가", value: finalDiscount },
         ]
       : [
@@ -456,8 +412,6 @@ export function buildQuoteSupportDisplayModel(
           { label: "예상 지원금", value: plannedTotal.value },
           { label: "고객 예상 지원금", value: plannedCustomer.value },
           { label: "기사 예상 지원금", value: plannedDriver },
-          { label: "연장회차", value: extensionCount },
-          { label: "예상 연장 지원금", value: plannedExtension },
           { label: "지원금 할인 예상가", value: plannedDiscount },
         ];
 
@@ -471,9 +425,6 @@ export function buildQuoteSupportDisplayModel(
     confirmed_customer_support: confirmedCustomer,
     planned_driver_support: plannedDriver,
     confirmed_driver_support: confirmedDriver,
-    extension_count: extensionCount,
-    planned_extension_support: positiveOrZero(plannedExtension),
-    confirmed_extension_support: positiveOrZero(confirmedExtension),
     planned_discount_price: plannedDiscount,
     final_discount_price: finalDiscount,
     selected_price_label: selectedLabel,
@@ -496,9 +447,9 @@ export function buildQuoteSupportDisplayModel(
       discount_price_source:
         stage.stage === "지원확정"
           ? finalDiscountStored.source ??
-            (finalDiscount != null ? "formula:normal-customer-extension" : null)
+            (finalDiscount != null ? "formula:normal-customer" : null)
           : plannedDiscountRaw.source ??
-            (plannedDiscount != null ? "formula:normal-customer-extension" : null),
+            (plannedDiscount != null ? "formula:normal-customer" : null),
       support_breakdown_raw: breakdown,
     },
   };

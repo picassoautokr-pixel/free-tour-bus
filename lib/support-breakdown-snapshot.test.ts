@@ -67,7 +67,6 @@ describe("support breakdown snapshot immutability", () => {
       driver: 10_000,
       discountPrice: 420_000,
       finalPrice: 420_000,
-      extensionSupport: 0,
     });
     assert.equal(confirmed.per_person_support, 20_000);
     assert.equal(confirmed.planned_total_support, 100_000);

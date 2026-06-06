@@ -142,7 +142,6 @@ export function clientQuoteSupportInput(
       quote.sponsor_approved_support_amount ??
       application?.sponsor_approved_support_amount,
     estimated_support_amount: raw.estimated_support_amount,
-    extension_support_amount: quote.extension_support_amount ?? breakdown?.extensionSupport,
     sponsor_quote_enabled: quote.sponsor_quote_enabled,
     support_breakdown: breakdown,
   };
@@ -321,9 +320,8 @@ export function resolveSupportAppliedPrice(
   });
   if (!planned) return null;
 
-  const extension = parseNum(quote.extension_support_amount) ?? 0;
   const customerConfirmed = Math.min(planned.customer, confirmedTotal);
-  return Math.max(normalPrice - customerConfirmed - extension, 0);
+  return Math.max(normalPrice - customerConfirmed, 0);
 }
 
 export function resolveSupportPlannedPrice(quote: ClientQuote, application?: ClientApplication): number | null {

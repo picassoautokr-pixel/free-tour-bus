@@ -64,7 +64,6 @@ export type ClientMemberQuoteSupportFields = {
   confirmed_total_support: number | null;
   confirmed_customer_support: number | null;
   confirmed_driver_support: number | null;
-  extension_support_amount: number | null;
   sponsor_quote_enabled: boolean;
 };
 
@@ -82,7 +81,6 @@ function resolveNormalPrice(
 function resolveEffectivePlannedCustomer(
   row: MemberQuoteRow,
   normalPrice: number,
-  extensionSupport: number,
   options?: ClientMemberQuoteSupportOptions,
 ): number {
   const explicit = parseIntField(
@@ -96,13 +94,13 @@ function resolveEffectivePlannedCustomer(
   const targetNormal = parseIntField(options?.applicationTargetNormalPrice);
   const targetMember = parseIntField(options?.applicationTargetMemberPrice);
   if (targetNormal > 0 && targetMember > 0 && targetNormal > targetMember) {
-    return Math.max(targetNormal - targetMember - extensionSupport, 0);
+    return Math.max(targetNormal - targetMember, 0);
   }
 
   if (normalPrice > 0) {
     const memberOrDiscount = parseIntField(row.member_price ?? row.sponsor_discounted_price);
     if (memberOrDiscount > 0 && memberOrDiscount < normalPrice) {
-      return Math.max(normalPrice - memberOrDiscount - extensionSupport, 0);
+      return Math.max(normalPrice - memberOrDiscount, 0);
     }
   }
   return 0;
@@ -129,7 +127,6 @@ function computeClientSupportFromRow(
   normalPrice: number;
   plannedCustomerSupport: number;
   confirmedTotalSupport: number;
-  extensionSupport: number;
   isConfirmed: boolean;
   confirmedCustomerSupport: number | null;
   discountAppliedPrice: number | null;
@@ -137,13 +134,7 @@ function computeClientSupportFromRow(
   driverConfirmedSupport: number | null;
 } {
   const normalPrice = resolveNormalPrice(row, options);
-  const extensionSupport = parseIntField(row.extension_support_amount);
-  const plannedCustomerSupport = resolveEffectivePlannedCustomer(
-    row,
-    normalPrice,
-    extensionSupport,
-    options,
-  );
+  const plannedCustomerSupport = resolveEffectivePlannedCustomer(row, normalPrice, options);
   const confirmedTotalSupport = resolveConfirmedTotalSupport(row, options);
 
   const quoteSponsorStatus = safeStatus(row.sponsor_support_status);
@@ -155,7 +146,7 @@ function computeClientSupportFromRow(
 
   const plannedDiscountPrice =
     normalPrice > 0 && plannedCustomerSupport > 0
-      ? Math.max(normalPrice - plannedCustomerSupport - extensionSupport, 0)
+      ? Math.max(normalPrice - plannedCustomerSupport, 0)
       : null;
 
   let confirmedCustomerSupport: number | null = null;
@@ -180,15 +171,11 @@ function computeClientSupportFromRow(
       quoteFinalCustomerSupport: row.final_customer_support_amount,
       normalPrice,
       finalDiscountPrice: discountAppliedPrice,
-      confirmedExtensionSupport: extensionSupport,
     });
     confirmedCustomerSupport = customerResolved.value;
 
     if (discountAppliedPrice == null && confirmedCustomerSupport != null && normalPrice > 0) {
-      discountAppliedPrice = Math.max(
-        normalPrice - confirmedCustomerSupport - extensionSupport,
-        0,
-      );
+      discountAppliedPrice = Math.max(normalPrice - confirmedCustomerSupport, 0);
     }
     if (confirmedCustomerSupport == null && discountAppliedPrice != null) {
       confirmedCustomerSupport = resolveConfirmedCustomerSupportDisplay({
@@ -197,7 +184,6 @@ function computeClientSupportFromRow(
         quoteFinalCustomerSupport: row.final_customer_support_amount as unknown,
         normalPrice,
         finalDiscountPrice: discountAppliedPrice,
-        confirmedExtensionSupport: extensionSupport,
       }).value;
     }
 
@@ -208,7 +194,6 @@ function computeClientSupportFromRow(
         : resolvePartnerConfirmedSupport({
             confirmedTotalSupport: confirmedTotalSupport > 0 ? confirmedTotalSupport : null,
             confirmedCustomerSupport,
-            confirmedExtensionSupport: extensionSupport,
           });
   }
 
@@ -216,7 +201,6 @@ function computeClientSupportFromRow(
     normalPrice,
     plannedCustomerSupport,
     confirmedTotalSupport,
-    extensionSupport,
     isConfirmed,
     confirmedCustomerSupport,
     discountAppliedPrice,
@@ -255,7 +239,6 @@ function mergeSerializedBreakdown(
       computed.driverConfirmedSupport ?? base.partnerConfirmedSupport,
     supportDiscountAppliedPrice: applied ?? base.supportDiscountAppliedPrice,
     finalDiscountAppliedPrice: applied ?? base.finalDiscountAppliedPrice,
-    extensionSupport: computed.extensionSupport,
     confirmed_discount_price: applied,
     final_discount_applied_price: applied,
     confirmed_total_support: confirmedTotal,
@@ -304,10 +287,6 @@ export function buildClientMemberQuoteSupport(
     normalPrice: model.normal_price ?? 0,
     plannedCustomerSupport: model.planned_customer_support ?? 0,
     confirmedTotalSupport: model.confirmed_total_support ?? 0,
-    extensionSupport:
-      model.support_stage === "지원확정"
-        ? model.confirmed_extension_support
-        : model.planned_extension_support,
     isConfirmed: model.support_stage === "지원확정",
     confirmedCustomerSupport: model.confirmed_customer_support,
     discountAppliedPrice: model.final_discount_price,
@@ -333,10 +312,6 @@ export function buildClientMemberQuoteSupport(
         : null,
     confirmed_customer_support: model.confirmed_customer_support,
     confirmed_driver_support: model.confirmed_driver_support,
-    extension_support_amount:
-      model.support_stage === "지원확정"
-        ? model.confirmed_extension_support
-        : model.planned_extension_support,
     sponsor_quote_enabled: baseBreakdown.sponsorQuoteEnabled,
   };
 }
@@ -378,7 +353,6 @@ export function applyClientPartnerQuoteApiFields(
     breakdown?.confirmed_customer_support ??
     breakdown?.customerConfirmedSupport ??
     null;
-  const extension = quote.extension_support_amount ?? breakdown?.extensionSupport ?? 0;
 
   const sponsorStatus =
     quote.sponsor_support_status ??
@@ -407,11 +381,10 @@ export function applyClientPartnerQuoteApiFields(
       quoteFinalCustomerSupport: quote.final_customer_support_amount,
       normalPrice,
       finalDiscountPrice: applied,
-      confirmedExtensionSupport: extension,
     });
     confirmedCustomer = customerResolved.value;
     if (applied == null && confirmedCustomer != null && normalPrice != null) {
-      applied = Math.max(normalPrice - confirmedCustomer - extension, 0);
+      applied = Math.max(normalPrice - confirmedCustomer, 0);
     }
     if (confirmedCustomer == null && applied != null && normalPrice != null) {
       confirmedCustomer = resolveConfirmedCustomerSupportDisplay({
@@ -421,7 +394,6 @@ export function applyClientPartnerQuoteApiFields(
         quoteFinalCustomerSupport: quote.final_customer_support_amount,
         normalPrice,
         finalDiscountPrice: applied,
-        confirmedExtensionSupport: extension,
       }).value;
     }
   }

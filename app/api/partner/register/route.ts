@@ -121,7 +121,7 @@ function duplicateResponse(row: DuplicatePartnerRow) {
       action_label: "다시 신청하기",
       action_url: "resubmit",
       secondary_action_label: "고객센터 문의",
-      secondary_action_url: "https://open.kakao.com/o/spkjNeui",
+      secondary_action_url: "https://open.kakao.com/o/sZJ2nnyi",
       company_name: row.company_name,
       manager_name: row.manager_name,
       created_at: row.created_at,

@@ -3,7 +3,6 @@ import { describe, it } from "node:test";
 
 import {
   buildQuoteSupportBreakdown,
-  calculateExtensionSupport,
   calculateSupportDistribution,
   calculateTotalPlannedSupport,
   formatSupportAmount,
@@ -217,7 +216,6 @@ describe("resolveConfirmedCustomerSupportDisplay", () => {
       quoteConfirmedCustomer: null,
       normalPrice: 500_000,
       finalDiscountPrice: 300_000,
-      confirmedExtensionSupport: 0,
     });
     assert.equal(result.value, 200_000);
     assert.equal(result.source, "derived_from_price");
@@ -225,7 +223,6 @@ describe("resolveConfirmedCustomerSupportDisplay", () => {
       resolvePartnerConfirmedSupport({
         confirmedTotalSupport: 250_000,
         confirmedCustomerSupport: 200_000,
-        confirmedExtensionSupport: 0,
       }),
       50_000,
     );
@@ -233,7 +230,6 @@ describe("resolveConfirmedCustomerSupportDisplay", () => {
       deriveCustomerConfirmedSupport({
         normalPrice: 500_000,
         finalDiscountPrice: 300_000,
-        confirmedExtensionSupport: 0,
       }),
       200_000,
     );
@@ -333,25 +329,4 @@ describe("resolvePlannedSupportSnapshot", () => {
   });
 });
 
-describe("calculateExtensionSupport", () => {
-  it("is 20% of partner confirmed support", () => {
-    assert.equal(calculateExtensionSupport(300_000), 60_000);
-  });
 
-  it("final discount applies extension after confirmed price", () => {
-    const breakdown = buildQuoteSupportBreakdown({
-      price: 500_000,
-      support_settlement_type: "ratio",
-      planned_total_support: 1_000_000,
-      planned_customer_support: 300_000,
-      planned_driver_support: 700_000,
-      planned_discount_price: 200_000,
-      confirmed_total_support: 600_000,
-      sponsor_quote_enabled: true,
-      extension_applied: true,
-    });
-    assert.equal(breakdown.supportDiscountAppliedPrice, 320_000);
-    assert.equal(breakdown.extensionSupport, 84_000);
-    assert.equal(breakdown.finalDiscountAppliedPrice, 236_000);
-  });
-});

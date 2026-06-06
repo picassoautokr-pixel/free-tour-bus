@@ -2,7 +2,7 @@
 
 import { BottomSheet } from "@/components/BottomSheet";
 
-const KAKAO_CHAT_URL = "https://open.kakao.com/o/spkjNeui";
+const KAKAO_CHAT_URL = "https://open.kakao.com/o/sZJ2nnyi";
 /** tel / sms URI용 (하이픈 없음) */
 const CONTACT_PHONE_DIGITS = "01056789833";
 const CONTACT_PHONE_LABEL = "010-5678-9833";

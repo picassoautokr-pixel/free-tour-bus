@@ -27,7 +27,6 @@ export type QuoteSupportBreakdown = {
   customerConfirmedSupport: number | null;
   partnerConfirmedSupport: number | null;
   supportDiscountAppliedPrice: number | null;
-  extensionSupport: number | null;
   finalDiscountAppliedPrice: number | null;
   isConfirmed: boolean;
 };
@@ -58,8 +57,6 @@ export type QuoteSupportInput = {
   sponsor_discounted_price?: unknown;
   sponsor_support_amount?: unknown;
   sponsor_quote_enabled?: unknown;
-  extension_support_amount?: unknown;
-  extension_applied?: boolean;
   client_reward_amount?: unknown;
   sponsor_approved_support_amount?: unknown;
   support_breakdown?: Pick<QuoteSupportBreakdown, "totalConfirmedSupport" | "isConfirmed"> | null;
@@ -69,7 +66,6 @@ export type PlannedSupportResolveContext = {
   applicationTotalPlannedSupport?: number | null;
   sponsorEstimatedSupportAmount?: number | null;
   sponsorApprovedSupportAmount?: number | null;
-  applicationExtensionSupportAmount?: number | null;
 };
 
 export type BuildQuoteSupportBreakdownOptions = {
@@ -98,7 +94,7 @@ export function parseSupportInteger(value: unknown): number | null {
 
 /** 고객 확정 지원금 역산 공식 (클라이언트·파트너·어드민 공통) */
 export const CONFIRMED_CUSTOMER_DERIVE_FORMULA =
-  "normal_price - final_discount_price - confirmed_extension_support";
+  "normal_price - final_discount_price";
 
 export type ConfirmedCustomerSupportSource =
   | "support_breakdown"
@@ -107,34 +103,29 @@ export type ConfirmedCustomerSupportSource =
   | "missing";
 
 /**
- * 일반견적가 − 지원금 할인 적용가 − 확정 연장 지원금
- * (confirmed_total_support 로 대체하지 않음)
+ * 일반견적가 − 지원금 할인 적용가
  */
 export function deriveCustomerConfirmedSupport(params: {
   normalPrice: number | null;
   finalDiscountPrice: number | null;
-  confirmedExtensionSupport?: number | null;
 }): number | null {
   const normal = params.normalPrice;
   const discount = params.finalDiscountPrice;
   if (normal == null || discount == null) return null;
-  const extension = Math.max(0, params.confirmedExtensionSupport ?? 0);
-  const value = normal - discount - extension;
+  const value = normal - discount;
   if (!Number.isFinite(value) || value < 0) return null;
   return Math.trunc(value);
 }
 
-/** 기사 확정 지원금 = 총 확정 − 고객 확정 − 연장 확정 */
+/** 기사 확정 지원금 = 총 확정 − 고객 확정 */
 export function resolvePartnerConfirmedSupport(params: {
   confirmedTotalSupport: number | null;
   confirmedCustomerSupport: number | null;
-  confirmedExtensionSupport?: number | null;
 }): number | null {
   const total = params.confirmedTotalSupport;
   const customer = params.confirmedCustomerSupport;
   if (total == null || customer == null) return null;
-  const extension = Math.max(0, params.confirmedExtensionSupport ?? 0);
-  return Math.max(Math.trunc(total - customer - extension), 0);
+  return Math.max(Math.trunc(total - customer), 0);
 }
 
 /** 저장된 할인 적용가 필드 우선 (역산용) */
@@ -170,7 +161,6 @@ export function resolveConfirmedCustomerSupportDisplay(params: {
   quoteFinalCustomerSupport?: unknown;
   normalPrice: number | null;
   finalDiscountPrice: number | null;
-  confirmedExtensionSupport?: number | null;
 }): {
   value: number | null;
   source: ConfirmedCustomerSupportSource;
@@ -191,7 +181,6 @@ export function resolveConfirmedCustomerSupportDisplay(params: {
   const derived = deriveCustomerConfirmedSupport({
     normalPrice: params.normalPrice,
     finalDiscountPrice: params.finalDiscountPrice,
-    confirmedExtensionSupport: params.confirmedExtensionSupport,
   });
   if (derived != null) {
     return {
@@ -265,18 +254,17 @@ export function calculateSupportDiscountPrice(
   normalPrice: number | null,
   customerSupportAmount: number,
 ): number | null {
-  return calculatePlannedDiscountPrice(normalPrice, customerSupportAmount, 0);
+  return calculatePlannedDiscountPrice(normalPrice, customerSupportAmount);
 }
 
-/** 지원금 할인 예정가 = 일반견적가 − 고객 예정 − 연장 지원금 */
+/** 지원금 할인 예정가 = 일반견적가 − 고객 예정 */
 export function calculatePlannedDiscountPrice(
   normalPrice: number | null,
   customerSupportAmount: number,
-  extensionSupportAmount = 0,
 ): number | null {
   if (normalPrice == null) return null;
   return Math.max(
-    normalPrice - Math.max(0, customerSupportAmount) - Math.max(0, extensionSupportAmount),
+    normalPrice - Math.max(0, customerSupportAmount),
     0,
   );
 }
@@ -352,25 +340,12 @@ export function resolveConfirmedTotalSupport(
   return null;
 }
 
-export function resolveExtensionSupportAmount(
-  quote: QuoteSupportInput,
-  ctx?: PlannedSupportResolveContext,
-): number {
-  const fromQuote = parseSupportInteger(quote.extension_support_amount);
-  if (fromQuote != null) return Math.max(0, fromQuote);
-  if (ctx?.applicationExtensionSupportAmount != null) {
-    return Math.max(0, ctx.applicationExtensionSupportAmount);
-  }
-  return 0;
-}
-
 export function calculatePlannedDriverSupport(
   totalPlanned: number,
   customerPlanned: number,
-  extensionSupport: number,
 ): number {
   return Math.max(
-    Math.max(0, totalPlanned) - Math.max(0, customerPlanned) - Math.max(0, extensionSupport),
+    Math.max(0, totalPlanned) - Math.max(0, customerPlanned),
     0,
   );
 }
@@ -384,7 +359,6 @@ export function resolvePlannedSupportSnapshot(
   const total = resolvePlannedTotalSupport(quote, ctx);
   if (total == null) return null;
 
-  const extension = resolveExtensionSupportAmount(quote, ctx);
   const customerRaw = resolvePlannedCustomerSupport(quote);
   const customer = Math.min(
     Math.max(0, customerRaw),
@@ -394,16 +368,16 @@ export function resolvePlannedSupportSnapshot(
   const driver =
     parseSupportInteger(quote.planned_driver_support) ??
     parseSupportInteger(quote.driver_support_amount) ??
-    calculatePlannedDriverSupport(total, customer, extension);
+    calculatePlannedDriverSupport(total, customer);
 
   const discountPrice =
     parseSupportInteger(quote.planned_discount_price) ??
     parseSupportInteger(quote.member_price) ??
     parseSupportInteger(quote.sponsor_discounted_price) ??
-    calculatePlannedDiscountPrice(normalPrice, customer, extension);
+    calculatePlannedDiscountPrice(normalPrice, customer);
 
   const resolvedDiscount =
-    discountPrice ?? (normalPrice != null ? calculatePlannedDiscountPrice(normalPrice, customer, extension) : 0) ?? 0;
+    discountPrice ?? (normalPrice != null ? calculatePlannedDiscountPrice(normalPrice, customer) : 0) ?? 0;
 
   const finalPrice =
     parseSupportInteger(quote.planned_final_price) ?? Math.max(0, resolvedDiscount);
@@ -422,11 +396,9 @@ export function buildQuoteFormPlannedPreview(input: {
   normalPrice: number | null;
   totalPlanned: number | null;
   customerPlanned: number | null;
-  extensionAmount?: number | null;
 }): {
   totalPlannedSupport: number | null;
   customerPlannedSupport: number;
-  extensionSupport: number;
   partnerPlannedSupport: number;
   supportDiscountPlannedPrice: number | null;
 } {
@@ -435,39 +407,20 @@ export function buildQuoteFormPlannedPreview(input: {
     return {
       totalPlannedSupport: null,
       customerPlannedSupport: Math.max(0, input.customerPlanned ?? 0),
-      extensionSupport: Math.max(0, input.extensionAmount ?? 0),
       partnerPlannedSupport: 0,
       supportDiscountPlannedPrice: null,
     };
   }
   const customer = Math.max(0, input.customerPlanned ?? 0);
-  const extension = Math.max(0, input.extensionAmount ?? 0);
   return {
     totalPlannedSupport: total,
     customerPlannedSupport: customer,
-    extensionSupport: extension,
-    partnerPlannedSupport: calculatePlannedDriverSupport(total, customer, extension),
+    partnerPlannedSupport: calculatePlannedDriverSupport(total, customer),
     supportDiscountPlannedPrice: calculatePlannedDiscountPrice(
       input.normalPrice,
       customer,
-      extension,
     ),
   };
-}
-
-/** 연장 지원금 = 제휴기사 확정 지원금 × 20% */
-/** 견적 작성 시 연장 지원금 = 기사 예정 지원금 × 회차별 고객 비율 */
-export function extensionPlannedFromPartnerSupport(
-  partnerPlannedSupport: number,
-  extensionRound: number,
-): number {
-  if (extensionRound <= 0 || partnerPlannedSupport <= 0) return 0;
-  const clientPct = extensionRound === 1 ? 20 : 40;
-  return Math.round((partnerPlannedSupport * clientPct) / 100);
-}
-
-export function calculateExtensionSupport(partnerConfirmedSupport: number): number {
-  return Math.round(Math.max(0, partnerConfirmedSupport) * 0.2);
 }
 
 export function resolveSettlementType(value: unknown): SupportSettlementType {
@@ -508,7 +461,6 @@ export function buildQuoteSupportBreakdown(
       customerConfirmedSupport: null,
       partnerConfirmedSupport: null,
       supportDiscountAppliedPrice: null,
-      extensionSupport: null,
       finalDiscountAppliedPrice: null,
       isConfirmed: false,
     };
@@ -519,7 +471,6 @@ export function buildQuoteSupportBreakdown(
       applicationTotalPlannedSupport: options?.applicationTotalPlannedSupport,
       sponsorEstimatedSupportAmount: options?.sponsorEstimatedSupportAmount,
       sponsorApprovedSupportAmount: options?.sponsorApprovedSupportAmount,
-      applicationExtensionSupportAmount: options?.applicationExtensionSupportAmount,
     });
     if (!planned) {
       return {
@@ -536,7 +487,6 @@ export function buildQuoteSupportBreakdown(
         customerConfirmedSupport: null,
         partnerConfirmedSupport: null,
         supportDiscountAppliedPrice: null,
-        extensionSupport: null,
         finalDiscountAppliedPrice: null,
         isConfirmed: false,
       };
@@ -554,7 +504,6 @@ export function buildQuoteSupportBreakdown(
     let customerConfirmed: number | null = null;
     let partnerConfirmed: number | null = null;
     let supportDiscountAppliedPrice: number | null = null;
-    let extensionSupport: number | null = null;
     let finalDiscountAppliedPrice: number | null = null;
 
     if (isConfirmed && confirmedTotal != null) {
@@ -563,7 +512,6 @@ export function buildQuoteSupportBreakdown(
         customerConfirmed = stored.customer;
         partnerConfirmed = stored.driver;
         supportDiscountAppliedPrice = stored.discountPrice;
-        extensionSupport = stored.extensionSupport;
         finalDiscountAppliedPrice = stored.finalPrice;
       } else {
         const computed = computeConfirmedFromPlanned({
@@ -571,8 +519,6 @@ export function buildQuoteSupportBreakdown(
           settlementType,
           planned,
           confirmedTotal,
-          extensionApplied: quote.extension_applied,
-          extensionSupportAmount: parseSupportInteger(quote.extension_support_amount),
         });
         if ("error" in computed) {
           return {
@@ -589,7 +535,6 @@ export function buildQuoteSupportBreakdown(
             customerConfirmedSupport: null,
             partnerConfirmedSupport: null,
             supportDiscountAppliedPrice: null,
-            extensionSupport: null,
             finalDiscountAppliedPrice: null,
             isConfirmed: true,
           };
@@ -597,14 +542,9 @@ export function buildQuoteSupportBreakdown(
         customerConfirmed = computed.customer;
         partnerConfirmed = computed.driver;
         supportDiscountAppliedPrice = computed.discountPrice;
-        extensionSupport = computed.extensionSupport;
         finalDiscountAppliedPrice = computed.finalPrice;
       }
     }
-
-    const plannedExtension = resolveExtensionSupportAmount(row, {
-      applicationExtensionSupportAmount: options?.applicationExtensionSupportAmount,
-    });
 
     return {
       calculationStatus: "ok",
@@ -619,7 +559,6 @@ export function buildQuoteSupportBreakdown(
       customerConfirmedSupport: customerConfirmed,
       partnerConfirmedSupport: partnerConfirmed,
       supportDiscountAppliedPrice,
-      extensionSupport: isConfirmed ? extensionSupport : plannedExtension,
       finalDiscountAppliedPrice,
       isConfirmed,
     };
@@ -638,7 +577,6 @@ export function buildQuoteSupportBreakdown(
       customerConfirmedSupport: null,
       partnerConfirmedSupport: null,
       supportDiscountAppliedPrice: null,
-      extensionSupport: null,
       finalDiscountAppliedPrice: null,
       isConfirmed: false,
     };
@@ -705,8 +643,6 @@ export function calculateSupportSettlementResult(input: {
   customerSupportAmount: number;
   driverSupportAmount: number;
   fallbackMemberPrice?: number | null;
-  extensionApplied?: boolean;
-  extensionSupportAmount?: number | null;
 }) {
   const breakdown = buildQuoteSupportBreakdown(
     {
@@ -717,8 +653,6 @@ export function calculateSupportSettlementResult(input: {
       customer_support_amount: input.customerSupportAmount,
       driver_support_amount: input.driverSupportAmount,
       sponsor_quote_enabled: true,
-      extension_applied: input.extensionApplied,
-      extension_support_amount: input.extensionSupportAmount,
     },
     { applicationApprovedSupportTotal: input.approvedSupportAmount },
   );
@@ -742,7 +676,6 @@ export function calculateSupportSettlementResult(input: {
           (input.price == null
             ? input.fallbackMemberPrice ?? null
             : Math.max(input.price - customerForPrice, 0)),
-    extensionSupportAmount: breakdown.extensionSupport,
     finalDiscountAppliedPrice: breakdown.finalDiscountAppliedPrice,
     breakdown,
   };

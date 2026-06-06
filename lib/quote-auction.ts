@@ -61,7 +61,6 @@ type ApplicationNotificationContext = {
   departureDateTime: string;
   passengerCount: string;
   quoteDeadlineAt: string;
-  extensionRound: number;
 };
 
 function safeText(value: unknown, emptyLabel = ""): string {
@@ -319,10 +318,6 @@ export function quoteLifecycleSelectColumns(): string {
     "final_selected_quote_id",
     "final_selected_quote_source",
     "final_selected_at",
-    "extension_round",
-    "extension_started_at",
-    "support_client_reward_ratio",
-    "support_driver_ratio",
     "contract_status",
     "contract_started_at",
     "contract_number",
@@ -336,47 +331,7 @@ export function isApplicationQuoteAccepting(application: Record<string, unknown>
   return safeText(application.quote_closed_at) === "";
 }
 
-export function supportRewardRatios(extensionRound: unknown): {
-  support_client_reward_ratio: number;
-  support_driver_ratio: number;
-} {
-  const round = Math.max(0, parseInteger(extensionRound) ?? 0);
-  if (round <= 0) {
-    return { support_client_reward_ratio: 0, support_driver_ratio: 100 };
-  }
-  if (round === 1) {
-    return { support_client_reward_ratio: 20, support_driver_ratio: 80 };
-  }
-  return { support_client_reward_ratio: 40, support_driver_ratio: 60 };
-}
 
-export function supportRewardAmounts(params: {
-  passengerCount: unknown;
-  extensionRound: unknown;
-}): {
-  estimated_support_amount: number;
-  client_reward_amount: number;
-  driver_support_amount: number;
-  support_client_reward_ratio: number;
-  support_driver_ratio: number;
-} {
-  const estimated = estimateSponsorSupport({
-    passengerCount: params.passengerCount,
-    price: 0,
-  }).supportAmount;
-  const ratios = supportRewardRatios(params.extensionRound);
-  return {
-    estimated_support_amount: estimated,
-    client_reward_amount: Math.round(
-      (estimated * ratios.support_client_reward_ratio) / 100,
-    ),
-    driver_support_amount: Math.max(
-      estimated - Math.round((estimated * ratios.support_client_reward_ratio) / 100),
-      0,
-    ),
-    ...ratios,
-  };
-}
 
 async function fetchQuoteCandidates(
   admin: SupabaseLike,
@@ -535,7 +490,7 @@ async function getApplicationNotificationContext(
   const { data } = await admin
     .from("applications")
     .select(
-      "id, applicant_name, phone, departure, destination, departure_date, departure_time, passenger_count, quote_deadline_at, extension_round",
+      "id, applicant_name, phone, departure, destination, departure_date, departure_time, passenger_count, quote_deadline_at",
     )
     .eq("id", applicationId)
     .maybeSingle();
@@ -553,7 +508,6 @@ async function getApplicationNotificationContext(
     departureDateTime: dateTime || "미정",
     passengerCount: safeText(row.passenger_count, "미정"),
     quoteDeadlineAt: safeText(row.quote_deadline_at),
-    extensionRound: parseInteger(row.extension_round) ?? 0,
   };
 }
 
@@ -750,10 +704,7 @@ async function notifyExtendedNoQuotes(admin: SupabaseLike, applicationId: string
     message: `[무료관광버스]
 현재 접수된 견적이 없어 동일 조건으로 견적요청이 자동 연장되었습니다.
 
-연장 회차: ${app.extensionRound}회차
 다음 마감: ${formatDateTimeKorean(app.quoteDeadlineAt)}
-
-견적유지 감사지원금 혜택이 적용될 수 있습니다.
 
 확인:
 ${siteBaseUrl()}/client/dashboard`,
@@ -805,7 +756,6 @@ async function autoExtendNoQuotes(
   }
 
   const nextRound = currentRound + 1;
-  const ratios = supportRewardRatios(nextRound);
   const baseDeadline = safeText(application.quote_deadline_at) || new Date().toISOString();
   await admin
     .from("applications")
@@ -816,7 +766,6 @@ async function autoExtendNoQuotes(
       quote_status: "extended_no_quotes",
       quote_closed_at: null,
       quote_closed_reason: "no_quotes_auto_extended",
-      ...ratios,
     })
     .eq("id", safeText(application.id));
   await notifyExtendedNoQuotes(admin, safeText(application.id));

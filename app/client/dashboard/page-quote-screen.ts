@@ -95,8 +95,6 @@ export function quoteSupportIsConfirmed(
       application: application as unknown as Record<string, unknown>,
       quote: quote as unknown as Record<string, unknown>,
       support_breakdown: quote.support_breakdown,
-      extension_count: (application as unknown as Record<string, unknown> | undefined)
-        ?.extension_round,
     }).support_stage === "지원확정"
   );
 }
@@ -150,8 +148,6 @@ export function quoteSubmitPriceLines(
     application: application as unknown as Record<string, unknown>,
     quote: quote as unknown as Record<string, unknown>,
     support_breakdown: quote.support_breakdown,
-    extension_count: (application as unknown as Record<string, unknown> | undefined)
-      ?.extension_round,
   });
   const supportConfirmed = model.support_stage === "지원확정";
   const supportPrice = supportConfirmed

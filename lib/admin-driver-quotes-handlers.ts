@@ -9,7 +9,6 @@ import { digitsOnlyKoreanMobile } from "@/lib/partner-phone-login";
 import {
   processApplicationQuoteLifecycle,
   quoteLifecycleSelectColumns,
-  supportRewardAmounts,
 } from "@/lib/quote-auction";
 import { ensureContractNumber } from "@/lib/contract-deposit";
 import { buildAdminApplicationDetailPayload } from "@/lib/admin-application-detail-build";
@@ -236,7 +235,6 @@ export async function handleAdminDriverQuotesGet(
       final_customer_support_amount: supportFields.customer_confirmed_support,
       final_driver_support_amount: supportFields.partner_confirmed_support,
       final_member_price: supportFields.support_discount_applied_price,
-      extension_support_amount: supportFields.extension_support,
       support_breakdown: supportFields.support_breakdown,
       support_recalculated_at: safeText(row.support_recalculated_at),
       is_member_quote: row.is_member_quote === true,
@@ -421,10 +419,7 @@ export async function handleAdminDriverQuotesGet(
   }));
 
   const application = applicationRaw as Record<string, unknown> | null;
-  const supportRewards = supportRewardAmounts({
-    passengerCount: application?.passenger_count,
-    extensionRound: application?.extension_round,
-  });
+
   const contractNumber =
     application && safeText(application.final_selected_quote_id) !== ""
       ? await ensureContractNumber(admin, application)
@@ -530,7 +525,6 @@ export async function handleAdminDriverQuotesGet(
           final_selected_quote_id: safeText(application.final_selected_quote_id),
           final_selected_quote_source: safeText(application.final_selected_quote_source),
           final_selected_at: safeText(application.final_selected_at),
-          extension_round: parseInteger(application.extension_round) ?? 0,
           sponsor_support_status: safeText(sponsorSummary.sponsor_support_status, "none"),
           sponsor_approved_support_amount:
             parseInteger(sponsorSummary.sponsor_approved_support_amount) ?? 0,
@@ -576,13 +570,6 @@ export async function handleAdminDriverQuotesGet(
           deposit_status: safeText(application.deposit_status, "unpaid"),
           deposit_confirmed_at: safeText(application.deposit_confirmed_at),
           contract_memo: safeText(application.contract_memo),
-          extension_round: parseInteger(application.extension_round) ?? 0,
-          support_client_reward_ratio:
-            parseInteger(application.support_client_reward_ratio) ??
-            supportRewards.support_client_reward_ratio,
-          support_driver_ratio:
-            parseInteger(application.support_driver_ratio) ??
-            supportRewards.support_driver_ratio,
           contract_status: safeText(application.contract_status),
           sponsor_support_status: safeText(sponsorSummary.sponsor_support_status, "none"),
           sponsor_approved_support_amount:
@@ -591,9 +578,6 @@ export async function handleAdminDriverQuotesGet(
             parseInteger(sponsorSummary.sponsor_preapproved_count) ?? 0,
           sponsor_approved_count: parseInteger(sponsorSummary.sponsor_approved_count) ?? 0,
           sponsor_rejected_count: parseInteger(sponsorSummary.sponsor_rejected_count) ?? 0,
-          estimated_support_amount: supportRewards.estimated_support_amount,
-          client_reward_amount: supportRewards.client_reward_amount,
-          driver_support_amount: supportRewards.driver_support_amount,
         }
       : null,
     quotes: normalized,

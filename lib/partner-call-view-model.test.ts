@@ -12,14 +12,12 @@ import {
   sponsorStageLabel,
   sponsorStageConfirmed,
   applicationSupportTotals,
-  extensionPlannedAmount,
   departureTimestamp,
   matchedRunStatus,
   formatUntilDeparture,
   formatQuoteDeadline,
   formatQuoteProgress,
   settlementLabel,
-  quoteFormExtensionPreview,
   quoteFormPlannedDiscountPrice,
   quoteFormPlannedAmounts,
 } from "./partner-call-view-model";
@@ -99,17 +97,6 @@ describe("applicationSupportTotals", () => {
     assert.equal(result.totalPlanned, null);
     assert.equal(result.totalConfirmed, null);
     assert.equal(result.isConfirmed, false);
-  });
-});
-
-// ─── extensionPlannedAmount ───────────────────────────────────────────────────
-describe("extensionPlannedAmount", () => {
-  it("0회차 → 0", () => {
-    assert.equal(extensionPlannedAmount(100000, 0), 0);
-  });
-  it("양수 반환", () => {
-    const result = extensionPlannedAmount(100000, 1);
-    assert.ok(typeof result === "number" && result >= 0);
   });
 });
 
@@ -202,33 +189,12 @@ describe("settlementLabel", () => {
   });
 });
 
-// ─── quoteFormExtensionPreview ────────────────────────────────────────────────
-describe("quoteFormExtensionPreview", () => {
-  it("customerPlanned >= totalPlanned → 0", () => {
-    const result = quoteFormExtensionPreview({
-      customerPlanned: 100000,
-      totalPlanned: 80000,
-      extensionRound: 1,
-    });
-    assert.equal(result, 0);
-  });
-  it("partnerPlanned > 0 → 양수", () => {
-    const result = quoteFormExtensionPreview({
-      customerPlanned: 50000,
-      totalPlanned: 100000,
-      extensionRound: 1,
-    });
-    assert.ok(result >= 0);
-  });
-});
-
 // ─── quoteFormPlannedDiscountPrice ────────────────────────────────────────────
 describe("quoteFormPlannedDiscountPrice", () => {
   it("지원금 없으면 normalPrice 반환", () => {
     const result = quoteFormPlannedDiscountPrice({
       normalPrice: 1000000,
       customerPlanned: 0,
-      extensionPlanned: 0,
     });
     assert.equal(result, 1000000);
   });
@@ -236,7 +202,6 @@ describe("quoteFormPlannedDiscountPrice", () => {
     const result = quoteFormPlannedDiscountPrice({
       normalPrice: 1000000,
       customerPlanned: 100000,
-      extensionPlanned: 0,
     });
     assert.ok(result <= 1000000);
   });
@@ -249,7 +214,6 @@ describe("quoteFormPlannedAmounts", () => {
       normalPrice: null,
       customerPlanned: null,
       totalPlanned: null,
-      extensionRound: 0,
     });
     assert.ok(typeof result === "object" && result !== null);
   });
@@ -258,7 +222,6 @@ describe("quoteFormPlannedAmounts", () => {
       normalPrice: 1000000,
       customerPlanned: 50000,
       totalPlanned: 100000,
-      extensionRound: 1,
     });
     assert.ok(typeof result === "object");
   });

@@ -652,10 +652,6 @@ export function ApplicationDetailMatchedPanel({
                   label: "평균 확정 지원금",
                   value: formatAdminWon(quoteSummary.avg_approved_support),
                 },
-                {
-                  label: "연장회차",
-                  value: String(quoteSummary.extension_round),
-                },
               ]}
             />
             ) : null}
