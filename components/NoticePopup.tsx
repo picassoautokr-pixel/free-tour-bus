@@ -110,16 +110,13 @@ export function NoticePopup({ onKakaoClick }: NoticePopupProps) {
             />
 
             {/*
-              흰 버튼 오버레이
+              흰 버튼 오버레이 — 홈스크린으로 이동
               top: 85.9%, height: 7.9% (93.8% - 85.9%)
               left: 8.2%, right: 8.3%
             */}
             <a
-              href={KAKAO_CHAT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/"
               onClick={() => {
-                onKakaoClick?.();
                 handleClose();
               }}
               className="absolute cursor-pointer rounded-xl"
@@ -129,7 +126,7 @@ export function NoticePopup({ onKakaoClick }: NoticePopupProps) {
                 left: "8.2%",
                 right: "8.3%",
               }}
-              aria-label="일반 견적 카카오톡 문의하기"
+              aria-label="일반 견적 문의하기 - 홈으로 이동"
             />
           </div>
         </div>
