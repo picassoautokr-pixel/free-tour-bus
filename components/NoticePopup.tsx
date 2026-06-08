@@ -114,11 +114,9 @@ export function NoticePopup({ onKakaoClick }: NoticePopupProps) {
               top: 85.9%, height: 7.9% (93.8% - 85.9%)
               left: 8.2%, right: 8.3%
             */}
-            <a
-              href="/"
-              onClick={() => {
-                handleClose();
-              }}
+            <button
+              type="button"
+              onClick={handleClose}
               className="absolute cursor-pointer rounded-xl"
               style={{
                 top: "85.9%",
@@ -126,7 +124,7 @@ export function NoticePopup({ onKakaoClick }: NoticePopupProps) {
                 left: "8.2%",
                 right: "8.3%",
               }}
-              aria-label="일반 견적 문의하기 - 홈으로 이동"
+              aria-label="일반 견적 문의하기 - 팝업 닫기"
             />
           </div>
         </div>
